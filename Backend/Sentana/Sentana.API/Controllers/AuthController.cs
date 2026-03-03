@@ -66,5 +66,26 @@ namespace Sentana.API.Controllers
 
             return Ok(ApiResponse<UserProfileResponseDto>.Success(profile, "Lấy thông tin thành công!"));
         }
+
+
+        [HttpPut("profile")]
+        [Authorize]
+        public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequestDto request)
+        {
+            var accountIdClaim = User.FindFirstValue("AccountId");
+            if (!int.TryParse(accountIdClaim, out int accountId))
+            {
+                return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ."));
+            }
+
+            var result = await _authService.UpdateUserProfileAsync(accountId, request);
+
+            if (!result)
+            {
+                return BadRequest(ApiResponse<string>.Fail(400, "Cập nhật thông tin thất bại hoặc không có thay đổi."));
+            }
+
+            return Ok(ApiResponse<string>.Success(null, "Cập nhật thông tin thành công!"));
+        }
     }
 }
