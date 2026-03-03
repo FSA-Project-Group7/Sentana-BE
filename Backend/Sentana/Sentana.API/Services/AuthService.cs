@@ -21,6 +21,7 @@ namespace ApartmentBuildingManagement.API.Services
             _configuration = configuration;
         }
 
+        //login
         public async Task<LoginResponseDto?> LoginAsync(LoginRequestDto request)
         {
             // tìm user trong db
@@ -45,6 +46,7 @@ namespace ApartmentBuildingManagement.API.Services
             };
         }
 
+        //tạo jwt token cho login
         private string GenerateJwtToken(Account user)
         {
             var jwtSettings = _configuration.GetSection("JwtSettings");
@@ -68,6 +70,8 @@ namespace ApartmentBuildingManagement.API.Services
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
+
+        //get user profile
         public async Task<UserProfileResponseDto?> GetUserProfileAsync(int accountId)
         {
             var user = await _context.Accounts
@@ -94,6 +98,47 @@ namespace ApartmentBuildingManagement.API.Services
                 Address = user.Info?.Address,
                 CmndCccd = user.Info?.CmndCccd
             };
+        }
+
+        //update profile
+        public async Task<bool> UpdateUserProfileAsync(int accountId, UpdateProfileRequestDto request)
+        {
+            var user = await _context.Accounts
+                .Include(a => a.Info)
+                .FirstOrDefaultAsync(a => a.AccountId == accountId);
+
+            if (user == null) return false;
+
+            // 1. Cập nhật bảng Account
+            user.Email = request.Email ?? user.Email;
+            user.UpdatedAt = DateTime.Now;
+
+            // 2. Cập nhật bảng InFo
+            if (user.Info == null)
+            {
+                // Nếu chưa có thông tin thì tạo mới bản ghi Info
+                user.Info = new InFo
+                {
+                    FullName = request.FullName,
+                    PhoneNumber = request.PhoneNumber,
+                    CmndCccd = request.CmndCccd,
+                    Address = request.Address,
+                    BirthDay = request.BirthDay,
+                    CreatedAt = DateTime.Now
+                };
+            }
+            else
+            {
+                // Nếu đã có thì cập nhật 
+                user.Info.FullName = request.FullName ?? user.Info.FullName;
+                user.Info.PhoneNumber = request.PhoneNumber ?? user.Info.PhoneNumber;
+                user.Info.CmndCccd = request.CmndCccd ?? user.Info.CmndCccd;
+                user.Info.Address = request.Address ?? user.Info.Address;
+                user.Info.BirthDay = request.BirthDay ?? user.Info.BirthDay;
+                user.Info.UpdatedAt = DateTime.Now;
+            }
+
+            return await _context.SaveChangesAsync() > 0;
         }
     }
 }
