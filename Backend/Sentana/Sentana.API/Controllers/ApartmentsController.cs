@@ -38,7 +38,6 @@ namespace Sentana.API.Controllers
 
 			if (apartment == null) return NotFound("Không tìm thấy phòng này.");
 
-			// Cập nhật thông tin
 			apartment.ApartmentName = updatedData.ApartmentName;
 			apartment.ApartmentCode = updatedData.ApartmentCode;
 			apartment.Area = updatedData.Area;
