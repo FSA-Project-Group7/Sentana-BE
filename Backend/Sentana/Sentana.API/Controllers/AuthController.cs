@@ -18,17 +18,28 @@ namespace Sentana.API.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
         {
-            // gọi service 
-            var token = await _authService.LoginAsync(request);
+            var loginResult = await _authService.LoginAsync(request);
 
-            // if null = sai thông tin
-            if (token == null)
+            if (loginResult == null)
             {
                 return Unauthorized(ApiResponse<string>.Fail(401, "Sai tài khoản hoặc mật khẩu."));
             }
 
-            // trả token
-            return Ok(ApiResponse<string>.Success(token, "Đăng nhập thành công!"));
+            // Trả về object loginResult chứa cả Token và Role
+            return Ok(ApiResponse<LoginResponseDto>.Success(loginResult, "Đăng nhập thành công!"));
+        }
+
+        // test băm mật khẩu
+        [HttpGet("generate-hash")]
+        public IActionResult GenerateHash(string passwordText = "123123")
+        {
+            var hash = BCrypt.Net.BCrypt.HashPassword(passwordText);
+
+            return Ok(new
+            {
+                Original = passwordText,
+                HashedPassword = hash
+            });
         }
     }
 }
