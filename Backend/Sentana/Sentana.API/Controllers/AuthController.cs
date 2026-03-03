@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Auth;
 using Sentana.API.Helpers;
 using Sentana.API.Services;
@@ -40,6 +42,29 @@ namespace Sentana.API.Controllers
                 Original = passwordText,
                 HashedPassword = hash
             });
+        }
+
+        [HttpGet("profile")]
+        [Authorize] // jwt token
+        public async Task<IActionResult> GetMyProfile()
+        {
+            // lấy AccountId từ token
+            var accountIdClaim = User.FindFirstValue("AccountId");
+
+            if (!int.TryParse(accountIdClaim, out int accountId))
+            {
+                return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ."));
+            }
+
+            // AuthService
+            var profile = await _authService.GetUserProfileAsync(accountId);
+
+            if (profile == null)
+            {
+                return NotFound(ApiResponse<string>.Fail(404, "Không tìm thấy người dùng."));
+            }
+
+            return Ok(ApiResponse<UserProfileResponseDto>.Success(profile, "Lấy thông tin thành công!"));
         }
     }
 }

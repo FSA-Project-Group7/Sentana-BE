@@ -68,5 +68,32 @@ namespace ApartmentBuildingManagement.API.Services
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
+        public async Task<UserProfileResponseDto?> GetUserProfileAsync(int accountId)
+        {
+            var user = await _context.Accounts
+                .Include(a => a.Role)
+                .Include(a => a.Info)
+                .FirstOrDefaultAsync(a => a.AccountId == accountId && a.Status == GeneralStatus.Active);
+
+            if (user == null)
+            {
+                return null;
+            }
+
+            // gán dữ liệu sang cho UserProfileResponseDto
+            return new UserProfileResponseDto
+            {
+                AccountId = user.AccountId,
+                UserName = user.UserName,
+                Email = user.Email, 
+                Role = user.Role?.RoleName ?? "Resident",
+
+                FullName = user.Info?.FullName,
+                PhoneNumber = user.Info?.PhoneNumber,
+                BirthDay = user.Info?.BirthDay,
+                Address = user.Info?.Address,
+                CmndCccd = user.Info?.CmndCccd
+            };
+        }
     }
 }
