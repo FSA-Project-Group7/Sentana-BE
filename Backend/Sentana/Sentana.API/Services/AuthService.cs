@@ -21,22 +21,28 @@ namespace ApartmentBuildingManagement.API.Services
             _configuration = configuration;
         }
 
-        public async Task<string?> LoginAsync(LoginRequestDto request)
+        public async Task<LoginResponseDto?> LoginAsync(LoginRequestDto request)
         {
             // tìm user trong db
             var user = await _context.Accounts
                 .Include(a => a.Role)
                 .FirstOrDefaultAsync(a => a.UserName == request.UserName && a.Status == GeneralStatus.Active);
 
-            // kiểm tra tài khoản mật khẩu
-            // chưa hash nên check thường
-            if (user == null || request.Password != user.Password)
+            // Dùng BCrypt.Verify để kiểm tra mật khẩu 
+            if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.Password))
             {
                 return null;
             }
 
-            // trả jwt token
-            return GenerateJwtToken(user);
+            var token = GenerateJwtToken(user);
+
+            // Trả về DTO hoàn chỉnh 
+            return new LoginResponseDto
+            {
+                Token = token,
+                Role = user.Role?.RoleName ?? "Resident",
+                UserName = user.UserName
+            };
         }
 
         private string GenerateJwtToken(Account user)
