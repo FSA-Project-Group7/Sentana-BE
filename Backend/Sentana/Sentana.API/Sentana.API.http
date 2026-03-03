@@ -1,0 +1,6 @@
+@Sentana.API_HostAddress = http://localhost:5282
+
+GET {{Sentana.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
