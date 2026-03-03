@@ -80,6 +80,21 @@ namespace Sentana.API.Controllers
 
 			return Ok(apartments);
 		}
+		// US36 - Update Room Status
+		[HttpPatch("{id}/status")]
+		public async Task<IActionResult> UpdateStatus(int id, [FromBody] byte newStatus)
+		{
+			var apartment = await _context.Apartments
+				.FirstOrDefaultAsync(a => a.ApartmentId == id && a.IsDeleted == false);
+
+			if (apartment == null) return NotFound("Không tìm thấy phòng này.");
+
+			apartment.Status = (ApartmentStatus)newStatus;
+			apartment.UpdatedAt = DateTime.Now;
+
+			await _context.SaveChangesAsync();
+			return Ok(new { message = "Cập nhật trạng thái thành công!" });
+		}
 
 	}
 }
