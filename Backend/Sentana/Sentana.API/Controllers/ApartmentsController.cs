@@ -61,6 +61,25 @@ namespace Sentana.API.Controllers
 			await _context.SaveChangesAsync();
 			return Ok(new { message = "Đã xóa phòng khỏi danh sách thành công!" });
 		}
+		// US35 - View Room List
+		[HttpGet]
+		public async Task<IActionResult> GetApartmentList()
+		{
+			var apartments = await _context.Apartments
+				.Where(a => a.IsDeleted == false)
+				.Select(a => new
+				{
+					a.ApartmentId,
+					a.ApartmentCode,
+					a.ApartmentName,
+					a.FloorNumber,
+					a.Area,
+					a.Status // 1: Trống, 2: Đang ở, 3: Bảo trì
+				})
+				.ToListAsync();
+
+			return Ok(apartments);
+		}
 
 	}
 }
