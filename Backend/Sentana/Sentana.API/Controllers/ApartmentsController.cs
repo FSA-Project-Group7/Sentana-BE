@@ -46,6 +46,21 @@ namespace Sentana.API.Controllers
 			await _context.SaveChangesAsync();
 			return Ok(new { message = "Cập nhật thông tin phòng thành công!" });
 		}
+		// US34 - Delete Room (Xóa mềm)
+		[HttpDelete("{id}")]
+		public async Task<IActionResult> DeleteApartment(int id)
+		{
+			var apartment = await _context.Apartments
+				.FirstOrDefaultAsync(a => a.ApartmentId == id && a.IsDeleted == false);
+
+			if (apartment == null) return NotFound("Không tìm thấy phòng này.");
+
+			apartment.IsDeleted = true;
+			apartment.UpdatedAt = DateTime.Now;
+
+			await _context.SaveChangesAsync();
+			return Ok(new { message = "Đã xóa phòng khỏi danh sách thành công!" });
+		}
 
 	}
 }
