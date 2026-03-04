@@ -1,5 +1,4 @@
-﻿
-using Sentana.API.Models;
+﻿using Sentana.API.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -42,7 +41,35 @@ namespace ApartmentBuildingManagement.API
             builder.Services.AddControllers();
             // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
             builder.Services.AddEndpointsApiExplorer();
-            builder.Services.AddSwaggerGen();
+            builder.Services.AddSwaggerGen(c =>
+            {
+                c.SwaggerDoc("v1", new OpenApiInfo { Title = "Sentana.API", Version = "v1" });
+
+                // Gen AI để test chức năng get profile yêu cầu token
+                // 1. Cấu hình "Ổ khóa" cho Swagger
+                var securityScheme = new OpenApiSecurityScheme
+                {
+                    Name = "JWT Authentication",
+                    Description = "cho token jwt vào đây",
+                    In = ParameterLocation.Header,
+                    Type = SecuritySchemeType.Http,
+                    Scheme = "bearer", // Tự động thêm chữ 'Bearer' vào đầu Token
+                    BearerFormat = "JWT",
+                    Reference = new OpenApiReference
+                    {
+                        Id = "Bearer",
+                        Type = ReferenceType.SecurityScheme
+                    }
+                };
+
+                c.AddSecurityDefinition(securityScheme.Reference.Id, securityScheme);
+
+                // 2. Yêu cầu Swagger dùng "Ổ khóa" này cho mọi API có [Authorize]
+                c.AddSecurityRequirement(new OpenApiSecurityRequirement
+                {
+                        { securityScheme, new string[] { } }
+                });
+            });
 
             var app = builder.Build();
 
@@ -54,8 +81,6 @@ namespace ApartmentBuildingManagement.API
             }
 
             app.UseHttpsRedirection();
-
-            app.UseAuthorization();
 
             // cho đăng nhập
             app.UseAuthentication();
