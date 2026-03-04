@@ -7,6 +7,7 @@ using Sentana.API.Models;
 using Sentana.API.Services;
 using System.Text;
 
+
 namespace Sentana.API
 {
     public class Program
@@ -41,6 +42,7 @@ namespace Sentana.API
             // Add services to the container.
             builder.Services.AddScoped<IAuthService, AuthService>();
             builder.Services.AddScoped<IServiceService, ServiceService>();
+            builder.Services.AddScoped<ResidentService>();
             builder.Services.AddScoped<IBuildingService, BuildingService>();
 
             builder.Services.AddControllers();

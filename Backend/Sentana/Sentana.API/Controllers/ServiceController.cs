@@ -1,4 +1,4 @@
-﻿using ApartmentBuildingManagement.API.Services;
+﻿using Sentana.API.Services;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Service;
 
