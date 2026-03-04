@@ -1,4 +1,6 @@
-﻿namespace Sentana.API.DTOs.Service
+using Sentana.API.Enums;
+
+namespace Sentana.API.DTOs.Service
 {
     public class UpdateServiceRequestDto
     {
@@ -10,6 +12,6 @@
 
         public decimal ServiceFee { get; set; }
 
-        public int Status { get; set; }
+        public GeneralStatus Status { get; set; }
     }
 }

@@ -1,10 +1,9 @@
-﻿using Sentana.API.Enums;
-using Sentana.API.Models;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
+using Sentana.API.DTOs.Service;
 using Sentana.API.Enums;
 using Sentana.API.Models;
 
-namespace ApartmentBuildingManagement.API.Services
+namespace Sentana.API.Services
 {
     public class ServiceService : IServiceService
     {
@@ -13,6 +12,40 @@ namespace ApartmentBuildingManagement.API.Services
         public ServiceService(SentanaContext context)
         {
             _context = context;
+        }
+
+        public async Task<Service> CreateServiceAsync(CreateServiceRequestDto request)
+        {
+            var service = new Service
+            {
+                ServiceName = request.ServiceName,
+                Description = request.Description,
+                ServiceFee = request.ServiceFee,
+                Status = GeneralStatus.Active
+            };
+
+            _context.Services.Add(service);
+            await _context.SaveChangesAsync();
+
+            return service;
+        }
+
+        public async Task<Service> UpdateServiceAsync(UpdateServiceRequestDto request)
+        {
+            var service = await _context.Services
+                .FirstOrDefaultAsync(s => s.ServiceId == request.ServiceId);
+
+            if (service == null)
+                throw new Exception("Service not found.");
+
+            service.ServiceName = request.ServiceName;
+            service.Description = request.Description;
+            service.ServiceFee = request.ServiceFee;
+            service.Status = (GeneralStatus)request.Status;
+
+            await _context.SaveChangesAsync();
+
+            return service;
         }
 
         public async Task DeleteServiceAsync(int serviceId)
