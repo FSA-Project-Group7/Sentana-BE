@@ -4,6 +4,11 @@ namespace Sentana.API.Services
 {
     public interface IAuthService
     {
-        Task<string?> LoginAsync(LoginRequestDto request);
+        //login
+        Task<LoginResponseDto?> LoginAsync(LoginRequestDto request);
+        //get profile
+        Task<UserProfileResponseDto?> GetUserProfileAsync(int accountId);
+        //update profile
+        Task<bool> UpdateUserProfileAsync(int accountId, UpdateProfileRequestDto request);
     }
 }

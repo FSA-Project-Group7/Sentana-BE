@@ -1,11 +1,9 @@
-﻿using ApartmentBuildingManagement.API.Models;
-using ApartmentBuildingManagement.API.Services;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
 using Sentana.API.Models;
 using Sentana.API.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using System.Text;
 
 namespace ApartmentBuildingManagement.API
@@ -22,8 +20,8 @@ namespace ApartmentBuildingManagement.API
                     builder.Configuration.GetConnectionString("DefaultConnection")
                 )
             );
-            // 2️⃣ CONFIG JWT AUTHENTICATION
 
+            // 2️⃣ CONFIG JWT AUTHENTICATION
             var secretKey = builder.Configuration["JwtSettings:SecretKey"];
             var secretKeyBytes = Encoding.UTF8.GetBytes(secretKey!);
 
@@ -55,7 +53,7 @@ namespace ApartmentBuildingManagement.API
             {
                 options.SwaggerDoc("v1", new OpenApiInfo
                 {
-                    Title = "ApartmentBuildingManagement.API",
+                    Title = "Sentana.API",
                     Version = "v1"
                 });
 
@@ -63,11 +61,11 @@ namespace ApartmentBuildingManagement.API
                 options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
                 {
                     Name = "Authorization",
+                    Description = "Nhập token theo dạng: Bearer {your token}",
+                    In = ParameterLocation.Header,
                     Type = SecuritySchemeType.Http,
                     Scheme = "bearer",
-                    BearerFormat = "JWT",
-                    In = ParameterLocation.Header,
-                    Description = "Nhập token theo dạng: Bearer {your token}"
+                    BearerFormat = "JWT"
                 });
 
                 options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -77,8 +75,8 @@ namespace ApartmentBuildingManagement.API
                         {
                             Reference = new OpenApiReference
                             {
-                                Type = ReferenceType.SecurityScheme,
-                                Id = "Bearer"
+                                Id = "Bearer",
+                                Type = ReferenceType.SecurityScheme
                             }
                         },
                         new string[] {}
