@@ -1,13 +1,13 @@
-using Sentana.API.Models;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
-using Microsoft.OpenApi.Models;
 using ApartmentBuildingManagement.API.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using Sentana.API.Models;
 using Sentana.API.Services;
+using System.Text;
 
-namespace ApartmentBuildingManagement.API
+namespace Sentana.API
 {
     public class Program
     {
@@ -40,8 +40,6 @@ namespace ApartmentBuildingManagement.API
 
             // Add services to the container.
             builder.Services.AddScoped<IAuthService, AuthService>();
-
-            // giữ cả 2 service
             builder.Services.AddScoped<IServiceService, ServiceService>();
             builder.Services.AddScoped<IBuildingService, BuildingService>();
 
@@ -53,15 +51,13 @@ namespace ApartmentBuildingManagement.API
             {
                 c.SwaggerDoc("v1", new OpenApiInfo { Title = "Sentana.API", Version = "v1" });
 
-                // Gen AI để test chức năng get profile yêu cầu token
-                // 1. Cấu hình "Ổ khóa" cho Swagger
                 var securityScheme = new OpenApiSecurityScheme
                 {
                     Name = "JWT Authentication",
                     Description = "cho token jwt vào đây",
                     In = ParameterLocation.Header,
                     Type = SecuritySchemeType.Http,
-                    Scheme = "bearer", // Tự động thêm chữ 'Bearer' vào đầu Token
+                    Scheme = "bearer",
                     BearerFormat = "JWT",
                     Reference = new OpenApiReference
                     {
@@ -72,16 +68,14 @@ namespace ApartmentBuildingManagement.API
 
                 c.AddSecurityDefinition(securityScheme.Reference.Id, securityScheme);
 
-                // 2. Yêu cầu Swagger dùng "Ổ khóa" này cho mọi API có [Authorize]
                 c.AddSecurityRequirement(new OpenApiSecurityRequirement
                 {
-                        { securityScheme, new string[] { } }
+                    { securityScheme, new string[] { } }
                 });
             });
 
             var app = builder.Build();
 
-            // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
@@ -89,7 +83,7 @@ namespace ApartmentBuildingManagement.API
             }
 
             app.UseHttpsRedirection();
-            //
+
             // cho đăng nhập
             app.UseAuthentication();
             app.UseAuthorization();
