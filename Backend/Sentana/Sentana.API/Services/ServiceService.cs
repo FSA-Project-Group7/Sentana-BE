@@ -63,5 +63,21 @@ namespace Sentana.API.Services
 
             await _context.SaveChangesAsync();
         }
+        public async Task<bool> UpdateRoomServicePrice(UpdateRoomServicePriceRequestDto request)
+        {
+            var roomService = await _context.ApartmentServices
+                .FirstOrDefaultAsync(x =>
+                    x.ApartmentId == request.ApartmentId &&
+                    x.ServiceId == request.ServiceId);
+
+            if (roomService == null)
+                return false;
+
+            roomService.ActualPrice = request.ActualPrice;
+
+            await _context.SaveChangesAsync();
+
+            return true;
+        }
     }
 }

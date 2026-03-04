@@ -41,5 +41,15 @@ namespace Sentana.API.Controllers
                 });
             }
         }
+        [HttpPut("room/price")]
+        public async Task<IActionResult> UpdateRoomServicePrice(UpdateRoomServicePriceRequestDto request)
+        {
+            var result = await _serviceService.UpdateRoomServicePrice(request);
+
+            if (!result)
+                return NotFound("Service not found in room");
+
+            return Ok("Room service price updated successfully");
+        }
     }
 }
