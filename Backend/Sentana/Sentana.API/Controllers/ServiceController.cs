@@ -14,6 +14,23 @@ namespace ApartmentBuildingManagement.API.Controllers
         {
             _serviceService = serviceService;
         }
+        [HttpPut]
+        public async Task<IActionResult> UpdateService(UpdateServiceRequestDto request)
+        {
+            try
+            {
+                var result = await _serviceService.UpdateServiceAsync(request);
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    message = ex.Message
+                });
+            }
+        }
         [HttpPost]
         public async Task<IActionResult> CreateService(CreateServiceRequestDto request)
         {

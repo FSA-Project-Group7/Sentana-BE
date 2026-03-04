@@ -7,5 +7,6 @@ namespace ApartmentBuildingManagement.API.Services
     {
         Task DeleteServiceAsync(int serviceId);
         Task<Service> CreateServiceAsync(CreateServiceRequestDto request);
+        Task<Service> UpdateServiceAsync(UpdateServiceRequestDto request);
     }
 }
