@@ -1,4 +1,4 @@
-﻿using Sentana.API.Enums;
+using Sentana.API.Enums;
 
 namespace Sentana.API.DTOs.Service
 {
