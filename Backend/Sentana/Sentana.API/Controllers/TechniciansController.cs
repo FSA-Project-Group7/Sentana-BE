@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using Azure.Core;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Technician;
@@ -32,6 +33,29 @@ namespace Sentana.API.Controllers
             {
                 var errorResponse = ApiResponse<IEnumerable<TechnicianResponseDto>>.Fail(500, $"Đã xảy ra lỗi khi lấy danh sách kĩ thuật viên: {ex.Message}");
                 return StatusCode(500, errorResponse);
+            }
+        }
+
+        [HttpPost("CreateTechnician")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> CreateTechnician([FromBody]TechnicianRequestDto technicianRequest)
+        {
+            if (!ModelState.IsValid)
+            {
+                var allErrors = ModelState.Values
+                                  .SelectMany(v => v.Errors)
+                                  .Select(e => e.ErrorMessage);
+                string errorMessage = string.Join(" | ", allErrors);
+                return BadRequest(ApiResponse<object>.Fail(400, errorMessage));
+            }
+            try
+            {
+                var newTechnician = await _technicianService.CreateTechnician(technicianRequest);
+                return Ok(ApiResponse<TechnicianResponseDto>.Success(newTechnician, "Tạo tài khoản Kỹ thuật viên thành công!"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, $"Tạo tài khoản kĩ thuật viên thất bại {ex.Message}"));
             }
         }
     }
