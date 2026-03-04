@@ -1,5 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using ApartmentBuildingManagement.API.Services;
+﻿using ApartmentBuildingManagement.API.Services;
+using Microsoft.AspNetCore.Mvc;
+using Sentana.API.DTOs.Service;
 
 namespace ApartmentBuildingManagement.API.Controllers
 {
@@ -13,7 +14,13 @@ namespace ApartmentBuildingManagement.API.Controllers
         {
             _serviceService = serviceService;
         }
+        [HttpPost]
+        public async Task<IActionResult> CreateService(CreateServiceRequestDto request)
+        {
+            var result = await _serviceService.CreateServiceAsync(request);
 
+            return Ok(result);
+        }
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteService(int id)
         {
