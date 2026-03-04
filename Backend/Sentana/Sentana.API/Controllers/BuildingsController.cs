@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Sentana.API.DTOs.Building;
 using Sentana.API.Models;
 using Sentana.API.Services;
 
@@ -42,6 +43,34 @@ namespace Sentana.API.Controllers
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        // US29 - Update Building
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateBuilding(int id, [FromBody] UpdateBuildingDto updatedBuilding)
+        {
+            try
+            {
+                var accountIdClaim = User.FindFirst("AccountId");
+                int? accountId = null;
+
+                if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
+                {
+                    accountId = parsedAccountId;
+                }
+
+                var result = await _buildingService.UpdateBuildingAsync(id, updatedBuilding, accountId);
+
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
             }
         }
 
