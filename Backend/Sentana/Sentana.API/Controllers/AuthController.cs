@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Auth;
 using Sentana.API.Helpers;
 using Sentana.API.Services;
@@ -18,17 +20,72 @@ namespace Sentana.API.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
         {
-            // gọi service 
-            var token = await _authService.LoginAsync(request);
+            var loginResult = await _authService.LoginAsync(request);
 
-            // if null = sai thông tin
-            if (token == null)
+            if (loginResult == null)
             {
                 return Unauthorized(ApiResponse<string>.Fail(401, "Sai tài khoản hoặc mật khẩu."));
             }
 
-            // trả token
-            return Ok(ApiResponse<string>.Success(token, "Đăng nhập thành công!"));
+            // Trả về object loginResult chứa cả Token và Role
+            return Ok(ApiResponse<LoginResponseDto>.Success(loginResult, "Đăng nhập thành công!"));
+        }
+
+        // test băm mật khẩu
+        [HttpGet("generate-hash")]
+        public IActionResult GenerateHash(string passwordText = "123123")
+        {
+            var hash = BCrypt.Net.BCrypt.HashPassword(passwordText);
+
+            return Ok(new
+            {
+                Original = passwordText,
+                HashedPassword = hash
+            });
+        }
+
+        [HttpGet("profile")]
+        [Authorize] // jwt token
+        public async Task<IActionResult> GetMyProfile()
+        {
+            // lấy AccountId từ token
+            var accountIdClaim = User.FindFirstValue("AccountId");
+
+            if (!int.TryParse(accountIdClaim, out int accountId))
+            {
+                return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ."));
+            }
+
+            // AuthService
+            var profile = await _authService.GetUserProfileAsync(accountId);
+
+            if (profile == null)
+            {
+                return NotFound(ApiResponse<string>.Fail(404, "Không tìm thấy người dùng."));
+            }
+
+            return Ok(ApiResponse<UserProfileResponseDto>.Success(profile, "Lấy thông tin thành công!"));
+        }
+
+
+        [HttpPut("profile")]
+        [Authorize]
+        public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequestDto request)
+        {
+            var accountIdClaim = User.FindFirstValue("AccountId");
+            if (!int.TryParse(accountIdClaim, out int accountId))
+            {
+                return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ."));
+            }
+
+            var result = await _authService.UpdateUserProfileAsync(accountId, request);
+
+            if (!result)
+            {
+                return BadRequest(ApiResponse<string>.Fail(400, "Cập nhật thông tin thất bại hoặc không có thay đổi."));
+            }
+
+            return Ok(ApiResponse<string>.Success(null, "Cập nhật thông tin thành công!"));
         }
     }
 }
