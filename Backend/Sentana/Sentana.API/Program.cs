@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-﻿using Sentana.API.Models;
-=======
 using Sentana.API.Models;
->>>>>>> 13119bc8370273b5c7924c458307632a4c420bac
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -93,7 +89,7 @@ namespace ApartmentBuildingManagement.API
             }
 
             app.UseHttpsRedirection();
-
+            //
             // cho đăng nhập
             app.UseAuthentication();
             app.UseAuthorization();
