@@ -1,5 +1,5 @@
-﻿using ApartmentBuildingManagement.API.Enums;
-using ApartmentBuildingManagement.API.Models;
+﻿using Sentana.API.Enums;
+using Sentana.API.Models;
 using Microsoft.EntityFrameworkCore;
 using Sentana.API.Enums;
 using Sentana.API.Models;

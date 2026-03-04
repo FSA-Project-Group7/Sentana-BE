@@ -1,4 +1,4 @@
-﻿using ApartmentBuildingManagement.API.Models;
+﻿using Sentana.API.Models;
 
 namespace ApartmentBuildingManagement.API.Services
 {
