@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 ﻿using Sentana.API.Models;
+=======
+using Sentana.API.Models;
+>>>>>>> 13119bc8370273b5c7924c458307632a4c420bac
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -14,9 +18,11 @@ namespace ApartmentBuildingManagement.API
         public static void Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
+
             // cấu hình database
             builder.Services.AddDbContext<SentanaContext>(options =>
-            options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+                options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
             // cấu hình jwt
             var secretKey = builder.Configuration["JwtSettings:SecretKey"];
             var secretKeyBytes = Encoding.UTF8.GetBytes(secretKey!);
@@ -35,11 +41,17 @@ namespace ApartmentBuildingManagement.API
                         IssuerSigningKey = new SymmetricSecurityKey(secretKeyBytes)
                     };
                 });
+
             // Add services to the container.
             builder.Services.AddScoped<IAuthService, AuthService>();
+
+            // giữ cả 2 service
             builder.Services.AddScoped<IServiceService, ServiceService>();
+            builder.Services.AddScoped<IBuildingService, BuildingService>();
+
             builder.Services.AddControllers();
-            // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+
+            // Swagger
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen(c =>
             {

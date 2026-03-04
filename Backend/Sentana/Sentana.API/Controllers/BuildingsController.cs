@@ -1,6 +1,7 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sentana.API.Models;
+using Sentana.API.Services;
 
 namespace Sentana.API.Controllers
 {
@@ -9,43 +10,39 @@ namespace Sentana.API.Controllers
     public class BuildingsController : ControllerBase
     {
         private readonly SentanaContext _context;
+        private readonly IBuildingService _buildingService;
 
-        public BuildingsController(SentanaContext context)
+        public BuildingsController(SentanaContext context, IBuildingService buildingService)
         {
             _context = context;
+            _buildingService = buildingService;
         }
 
         // US28 - Create Building
         [HttpPost]
         public async Task<IActionResult> CreateBuilding([FromBody] Building newBuilding)
         {
-            if (newBuilding == null || string.IsNullOrWhiteSpace(newBuilding.BuildingName))
+            try
             {
-                return BadRequest(new { message = "Tên tòa nhà là bắt buộc." });
+                var accountIdClaim = User.FindFirst("AccountId");
+                int? accountId = null;
+                if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
+                {
+                    accountId = parsedAccountId;
+                }
+
+                var createdBuilding = await _buildingService.CreateBuildingAsync(newBuilding, accountId);
+
+                return CreatedAtAction(nameof(GetBuildingList), new { id = createdBuilding.BuildingId }, createdBuilding);
             }
-
-            var isNameExists = await _context.Buildings
-                .AnyAsync(b => b.BuildingName == newBuilding.BuildingName && b.IsDeleted == false);
-
-            if (isNameExists)
+            catch (ArgumentException ex)
             {
-                return BadRequest(new { message = "Tên tòa nhà đã tồn tại." });
+                return BadRequest(new { message = ex.Message });
             }
-
-            // Gán các giá trị hệ thống
-            newBuilding.CreatedAt = DateTime.Now;
-            newBuilding.IsDeleted = false;
-
-            var accountIdClaim = User.FindFirst("AccountId");
-            if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var accountId))
+            catch (InvalidOperationException ex)
             {
-                newBuilding.CreatedBy = accountId;
+                return BadRequest(new { message = ex.Message });
             }
-
-            _context.Buildings.Add(newBuilding);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetBuildingList), new { id = newBuilding.BuildingId }, newBuilding);
         }
 
         // View Building List - để kiểm tra building mới tạo
