@@ -63,5 +63,27 @@ namespace Sentana.API.Services
 
             await _context.SaveChangesAsync();
         }
+        public async Task<bool> AssignServiceToRoom(AssignRoomServiceRequestDto request)
+        {
+            var exist = await _context.ApartmentServices
+                .FirstOrDefaultAsync(x =>
+                    x.ApartmentId == request.ApartmentId &&
+                    x.ServiceId == request.ServiceId);
+
+            if (exist != null)
+                return false;
+
+            var roomService = new ApartmentService
+            {
+                ApartmentId = request.ApartmentId,
+                ServiceId = request.ServiceId
+            };
+
+            _context.ApartmentServices.Add(roomService);
+
+            await _context.SaveChangesAsync();
+
+            return true;
+        }
     }
 }
