@@ -8,6 +8,7 @@ using Sentana.API.DTOs.Auth;
 using Sentana.API.Enums;
 using Sentana.API.Services;
 using Microsoft.Extensions.Caching.Memory;
+using System.Security.Cryptography;
 
 namespace Sentana.API.Services
 {
@@ -39,13 +40,20 @@ namespace Sentana.API.Services
             {
                 return null;
             }
-
+             // tạo jwt token - access token
             var token = GenerateJwtToken(user);
+            // tạo refesh token
+            var refreshToken = GenerateRefreshToken();
+            user.RefreshToken = refreshToken;
+            user.RefreshTokenExpiryTime = DateTime.Now.AddDays(7); // Hạn sống 7 ngày
+            //lưu vào db
+            await _context.SaveChangesAsync();
 
             // Trả về DTO hoàn chỉnh 
             return new LoginResponseDto
             {
                 Token = token,
+                RefreshToken = refreshToken,
                 Role = user.Role?.RoleName ?? "Resident",
                 UserName = user.UserName,
                 AccountId = user.AccountId
@@ -240,6 +248,80 @@ namespace Sentana.API.Services
             _cache.Remove($"ChangePassOTP_{accountId}");
 
             return true;
+        }
+
+        // Refresh Token
+        private string GenerateRefreshToken()
+        {
+            var randomNumber = new byte[32];
+            using var rng = RandomNumberGenerator.Create();
+            rng.GetBytes(randomNumber);
+            return Convert.ToBase64String(randomNumber);
+        }
+
+        // đọc thông tin từ token đã hết hạn
+        private ClaimsPrincipal? GetPrincipalFromExpiredToken(string? token)
+        {
+            var jwtSettings = _configuration.GetSection("JwtSettings");
+            var tokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateAudience = false,
+                ValidateIssuer = false,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["SecretKey"]!)),
+                ValidateLifetime = false // tắt kiểm tra hạn sử dụng để đọc được ruột Token
+            };
+
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out SecurityToken securityToken);
+
+            // Kiểm tra xem token này có đúng là chuẩn HmacSha256 không (chống token giả mạo)
+            if (securityToken is not JwtSecurityToken jwtSecurityToken ||
+                !jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+            {
+                throw new SecurityTokenException("Token không hợp lệ");
+            }
+
+            return principal;
+        }
+
+        // cấp lại cặp Token mới 
+        public async Task<TokenModelDto?> RenewTokenAsync(TokenModelDto request)
+        {
+            // mở Token cũ ra để lấy UserName
+            var principal = GetPrincipalFromExpiredToken(request.AccessToken);
+            if (principal == null) return null;
+
+            var userName = principal.Claims.FirstOrDefault(c =>
+            c.Type == ClaimTypes.NameIdentifier ||
+            c.Type == JwtRegisteredClaimNames.Sub)?.Value;
+
+            // tìm người dùng trong DB
+            var user = await _context.Accounts
+                .Include(a => a.Role)
+                .FirstOrDefaultAsync(a => a.UserName == userName);
+
+            // Test có user không? Refresh Token gửi lên có khớp DB không? Đã quá hạn 7 ngày chưa?
+            if (user == null || user.RefreshToken != request.RefreshToken || user.RefreshTokenExpiryTime <= DateTime.Now)
+            {
+                return null; // Từ chối cấp mới và login lại
+            }
+
+            // ok -> sinh cặp Token mới tinh
+            var newAccessToken = GenerateJwtToken(user);
+            var newRefreshToken = GenerateRefreshToken();
+
+            // ghi đè Refresh Token mới vào DB
+            user.RefreshToken = newRefreshToken;
+            user.RefreshTokenExpiryTime = DateTime.Now.AddDays(7);
+            await _context.SaveChangesAsync();
+
+            // trả về fe
+            return new TokenModelDto
+            {
+                AccessToken = newAccessToken,
+                RefreshToken = newRefreshToken
+            };
         }
     }
 }
