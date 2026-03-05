@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Sentana.API.Models;
-using Sentana.API.Services;
 using System.Text;
 
 
@@ -44,10 +43,14 @@ namespace Sentana.API
             builder.Services.AddScoped<IServiceService, ServiceService>();
             builder.Services.AddScoped<ResidentService>();
             builder.Services.AddScoped<IBuildingService, BuildingService>();
+            builder.Services.AddScoped<ITechnicianService, TechnicianService>();
 			builder.Services.AddScoped<Sentana.API.Services.IApartmentService, Sentana.API.Services.ApartmentService>();
 
-			builder.Services.AddControllers();
-
+            builder.Services.AddControllers();
+            // build ram để lưu otp
+            builder.Services.AddMemoryCache();
+            // đăng ý gửi thư
+            builder.Services.AddScoped<IEmailService, EmailService>();
             // Swagger
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen(c =>

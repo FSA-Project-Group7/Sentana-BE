@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Sentana.API.Models;
+using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Service;
 using Sentana.API.Enums;
 using Sentana.API.Models;
@@ -64,6 +65,8 @@ namespace Sentana.API.Services
             await _context.SaveChangesAsync();
         }
 
+
+        public async Task<bool> UpdateRoomServicePrice(UpdateRoomServicePriceRequestDto request)
         public async Task<bool> AssignServiceToRoom(AssignRoomServiceRequestDto request)
         {
             var exist = await _context.ApartmentServices
@@ -96,7 +99,10 @@ namespace Sentana.API.Services
             if (roomService == null)
                 return false;
 
+
+            roomService.ActualPrice = request.ActualPrice;
             _context.ApartmentServices.Remove(roomService);
+
 
             await _context.SaveChangesAsync();
 

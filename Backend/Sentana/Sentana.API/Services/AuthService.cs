@@ -7,6 +7,7 @@ using Sentana.API.Models;
 using Sentana.API.DTOs.Auth;
 using Sentana.API.Enums;
 using Sentana.API.Services;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Sentana.API.Services
 {
@@ -14,11 +15,15 @@ namespace Sentana.API.Services
     {
         private readonly SentanaContext _context;
         private readonly IConfiguration _configuration;
+        private readonly IMemoryCache _cache; // Thêm Cache
+        private readonly IEmailService _emailService; // Thêm EmailService
 
-        public AuthService(SentanaContext context, IConfiguration configuration)
+        public AuthService(SentanaContext context, IConfiguration configuration, IMemoryCache cache, IEmailService emailService)
         {
             _context = context;
             _configuration = configuration;
+            _cache = cache;
+            _emailService = emailService;
         }
 
         //login
@@ -139,6 +144,52 @@ namespace Sentana.API.Services
             }
 
             return await _context.SaveChangesAsync() > 0;
+        }
+
+        // tạo và gửi OTP
+        public async Task<bool> SendOtpAsync(SendOtpRequestDto request)
+        {
+            // Kiểm tra xem email có tồn tại trong hệ thống không
+            var user = await _context.Accounts.FirstOrDefaultAsync(a => a.Email == request.Email);
+            if (user == null) return false;
+
+            // Sinh mã OTP 6 số ngẫu nhiên
+            var otpCode = new Random().Next(100000, 999999).ToString();
+
+            // Lưu OTP vào Cache với Key là Email, thời hạn ĐÚNG 5 PHÚT
+            _cache.Set($"OTP_{request.Email}", otpCode, TimeSpan.FromMinutes(5));
+
+            // Gửi thư
+            string emailBody = $"<h3>Mã xác nhận của bạn là: <b>{otpCode}</b></h3><p>Mã này sẽ hết hạn trong vòng 5 phút.</p>";
+            await _emailService.SendEmailAsync(request.Email, "Mã OTP Đổi Mật Khẩu SENTANA", emailBody);
+
+            return true;
+        }
+
+        // xác thực OTP và đổi mật khẩu
+        public async Task<bool> ResetPasswordAsync(ResetPasswordRequestDto request)
+        {
+            // Lấy OTP từ RAM ra kiểm tra
+            if (!_cache.TryGetValue($"OTP_{request.Email}", out string? savedOtp))
+                throw new Exception("OTP đã hết hạn hoặc không tồn tại.");
+
+            if (savedOtp != request.OtpCode)
+                throw new Exception("Mã OTP không chính xác.");
+
+            // Nếu OTP đúng, tiến hành tìm user và đổi pass
+            var user = await _context.Accounts.FirstOrDefaultAsync(a => a.Email == request.Email);
+            if (user == null) return false;
+
+            // Băm mật khẩu mới bằng BCrypt
+            user.Password = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+            user.UpdatedAt = DateTime.Now;
+
+            await _context.SaveChangesAsync();
+
+            // Xóa OTP khỏi RAM để tránh dùng lại
+            _cache.Remove($"OTP_{request.Email}");
+
+            return true;
         }
     }
 }
