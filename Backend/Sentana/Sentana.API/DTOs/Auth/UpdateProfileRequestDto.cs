@@ -5,18 +5,26 @@ namespace Sentana.API.DTOs.Auth
 {
     public class UpdateProfileRequestDto
     {
-        public string? FullName { get; set; }
+        [Required(ErrorMessage = "Họ tên không được để trống.", AllowEmptyStrings = false)]
+        public string FullName { get; set; } = string.Empty;
 
-        [RegularExpression(ValidationHelper.PhoneRegex, ErrorMessage = "Số điện thoại không đúng định dạng.")]
-        public string? PhoneNumber { get; set; }
+        [Required(ErrorMessage = "Số điện thoại không được để trống.", AllowEmptyStrings = false)]
+        [RegularExpression(ValidationHelper.PhoneRegex, ErrorMessage = "Số điện thoại không đúng định dạng Việt Nam.")]
+        public string PhoneNumber { get; set; } = string.Empty;
 
+        [Required(ErrorMessage = "Email không được để trống.", AllowEmptyStrings = false)]
         [RegularExpression(ValidationHelper.EmailRegex, ErrorMessage = "Email phải có định dạng @gmail.com.")]
-        public string? Email { get; set; }
+        public string Email { get; set; } = string.Empty;
 
+        [Required(ErrorMessage = "CCCD không được để trống.", AllowEmptyStrings = false)]
         [RegularExpression(ValidationHelper.CccdRegex, ErrorMessage = "CCCD phải bao gồm đúng 12 chữ số.")]
-        public string? CmndCccd { get; set; }
+        public string CmndCccd { get; set; } = string.Empty;
 
-        public string? Address { get; set; }
-        public DateTime? BirthDay { get; set; }
+        [Required(ErrorMessage = "Địa chỉ không được để trống.", AllowEmptyStrings = false)]
+        public string Address { get; set; } = string.Empty;
+
+
+        [Required(ErrorMessage = "Ngày sinh không được để trống.")]
+        public DateTime BirthDay { get; set; }
     }
 }

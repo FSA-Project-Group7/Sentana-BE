@@ -47,7 +47,8 @@ namespace Sentana.API.Services
             {
                 Token = token,
                 Role = user.Role?.RoleName ?? "Resident",
-                UserName = user.UserName
+                UserName = user.UserName,
+                AccountId = user.AccountId
             };
         }
 
