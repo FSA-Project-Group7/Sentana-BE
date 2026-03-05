@@ -8,7 +8,7 @@ using Sentana.API.DTOs.Auth;
 using Sentana.API.Enums;
 using Sentana.API.Services;
 
-namespace ApartmentBuildingManagement.API.Services
+namespace Sentana.API.Services
 {
     public class AuthService : IAuthService
     {
