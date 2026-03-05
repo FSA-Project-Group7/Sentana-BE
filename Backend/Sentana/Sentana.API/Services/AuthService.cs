@@ -115,11 +115,11 @@ namespace Sentana.API.Services
 
             if (user == null) return false;
 
-            // cập nhật bảng Account
-            user.Email = request.Email ?? user.Email;
+            // Cập nhật bảng Account (Gán thẳng vì request.Email không còn null nữa)
+            user.Email = request.Email;
             user.UpdatedAt = DateTime.Now;
 
-            // cập nhật bảng InFo
+            // Cập nhật bảng InFo
             if (user.Info == null)
             {
                 // Nếu chưa có thông tin thì tạo mới bản ghi Info
@@ -135,12 +135,12 @@ namespace Sentana.API.Services
             }
             else
             {
-                // Nếu đã có thì cập nhật 
-                user.Info.FullName = request.FullName ?? user.Info.FullName;
-                user.Info.PhoneNumber = request.PhoneNumber ?? user.Info.PhoneNumber;
-                user.Info.CmndCccd = request.CmndCccd ?? user.Info.CmndCccd;
-                user.Info.Address = request.Address ?? user.Info.Address;
-                user.Info.BirthDay = request.BirthDay ?? user.Info.BirthDay;
+                // Nếu đã có thì cập nhật (Gán thẳng giá trị từ request)
+                user.Info.FullName = request.FullName;
+                user.Info.PhoneNumber = request.PhoneNumber;
+                user.Info.CmndCccd = request.CmndCccd;
+                user.Info.Address = request.Address;
+                user.Info.BirthDay = request.BirthDay;
                 user.Info.UpdatedAt = DateTime.Now;
             }
 
