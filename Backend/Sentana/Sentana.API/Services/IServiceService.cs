@@ -8,6 +8,7 @@ namespace Sentana.API.Services
         Task DeleteServiceAsync(int serviceId);
         Task<Service> CreateServiceAsync(CreateServiceRequestDto request);
         Task<Service> UpdateServiceAsync(UpdateServiceRequestDto request);
+        Task<bool> AssignServiceToRoom(AssignRoomServiceRequestDto request);
         Task<bool> RemoveServiceFromRoom(RemoveRoomServiceRequestDto request);
     }
 }
