@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Sentana.API.DTOs.Building;
 using Sentana.API.Models;
 using Sentana.API.Services;
 
@@ -20,18 +21,11 @@ namespace Sentana.API.Controllers
 
         // US28 - Create Building
         [HttpPost]
-        public async Task<IActionResult> CreateBuilding([FromBody] Building newBuilding)
+        public async Task<IActionResult> CreateBuilding([FromBody] CreateBuildingDto newBuilding)
         {
             try
             {
-                var accountIdClaim = User.FindFirst("AccountId");
-                int? accountId = null;
-                if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
-                {
-                    accountId = parsedAccountId;
-                }
-
-                var createdBuilding = await _buildingService.CreateBuildingAsync(newBuilding, accountId);
+                var createdBuilding = await _buildingService.CreateBuildingAsync(newBuilding, User);
 
                 return CreatedAtAction(nameof(GetBuildingList), new { id = createdBuilding.BuildingId }, createdBuilding);
             }
@@ -42,6 +36,41 @@ namespace Sentana.API.Controllers
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        // US29 - Update Building
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateBuilding(int id, [FromBody] UpdateBuildingDto updatedBuilding)
+        {
+            try
+            {
+                var result = await _buildingService.UpdateBuildingAsync(id, updatedBuilding, User);
+
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        // US30 - Delete Building (soft delete)
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteBuilding(int id)
+        {
+            try
+            {
+                await _buildingService.DeleteBuildingAsync(id, User);
+                return NoContent();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
             }
         }
 
