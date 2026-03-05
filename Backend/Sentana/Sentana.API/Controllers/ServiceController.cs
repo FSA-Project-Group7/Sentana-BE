@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using ApartmentBuildingManagement.API.Services;
+using Sentana.API.Services;
 
-namespace ApartmentBuildingManagement.API.Controllers
+namespace Sentana.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]

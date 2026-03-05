@@ -4,10 +4,10 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Microsoft.OpenApi.Models;
-using ApartmentBuildingManagement.API.Services;
 using Sentana.API.Services;
 
-namespace ApartmentBuildingManagement.API
+
+namespace Sentana.API
 {
     public class Program
     {
@@ -46,7 +46,10 @@ namespace ApartmentBuildingManagement.API
             builder.Services.AddScoped<IBuildingService, BuildingService>();
 
             builder.Services.AddControllers();
-
+            // build ram để lưu otp
+            builder.Services.AddMemoryCache();
+            // đăng ý gửi thư
+            builder.Services.AddScoped<IEmailService, EmailService>();
             // Swagger
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen(c =>

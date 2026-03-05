@@ -1,10 +1,8 @@
 ﻿using Sentana.API.Enums;
 using Sentana.API.Models;
 using Microsoft.EntityFrameworkCore;
-using Sentana.API.Enums;
-using Sentana.API.Models;
 
-namespace ApartmentBuildingManagement.API.Services
+namespace Sentana.API.Services
 {
     public class ServiceService : IServiceService
     {

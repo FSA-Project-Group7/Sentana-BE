@@ -1,6 +1,6 @@
 ﻿using Sentana.API.Models;
 
-namespace ApartmentBuildingManagement.API.Services
+namespace Sentana.API.Services
 {
     public interface IServiceService
     {
