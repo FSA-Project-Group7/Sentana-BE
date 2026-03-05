@@ -41,6 +41,7 @@ namespace Sentana.API.Controllers
                 });
             }
         }
+
         [HttpPost("room")]
         public async Task<IActionResult> AssignServiceToRoom(AssignRoomServiceRequestDto request)
         {
@@ -50,6 +51,15 @@ namespace Sentana.API.Controllers
                 return BadRequest("Service already assigned to room");
 
             return Ok("Service assigned to room successfully");
+        [HttpDelete("room")]
+        public async Task<IActionResult> RemoveServiceFromRoom(RemoveRoomServiceRequestDto request)
+        {
+            var result = await _serviceService.RemoveServiceFromRoom(request);
+
+            if (!result)
+                return NotFound("Service not found in room");
+
+            return Ok("Service removed from room");
         }
     }
 }

@@ -21,18 +21,11 @@ namespace Sentana.API.Controllers
 
         // US28 - Create Building
         [HttpPost]
-        public async Task<IActionResult> CreateBuilding([FromBody] Building newBuilding)
+        public async Task<IActionResult> CreateBuilding([FromBody] CreateBuildingDto newBuilding)
         {
             try
             {
-                var accountIdClaim = User.FindFirst("AccountId");
-                int? accountId = null;
-                if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
-                {
-                    accountId = parsedAccountId;
-                }
-
-                var createdBuilding = await _buildingService.CreateBuildingAsync(newBuilding, accountId);
+                var createdBuilding = await _buildingService.CreateBuildingAsync(newBuilding, User);
 
                 return CreatedAtAction(nameof(GetBuildingList), new { id = createdBuilding.BuildingId }, createdBuilding);
             }
@@ -52,21 +45,28 @@ namespace Sentana.API.Controllers
         {
             try
             {
-                var accountIdClaim = User.FindFirst("AccountId");
-                int? accountId = null;
-
-                if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
-                {
-                    accountId = parsedAccountId;
-                }
-
-                var result = await _buildingService.UpdateBuildingAsync(id, updatedBuilding, accountId);
+                var result = await _buildingService.UpdateBuildingAsync(id, updatedBuilding, User);
 
                 return Ok(result);
             }
             catch (ArgumentException ex)
             {
                 return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        // US30 - Delete Building (soft delete)
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteBuilding(int id)
+        {
+            try
+            {
+                await _buildingService.DeleteBuildingAsync(id, User);
+                return NoContent();
             }
             catch (InvalidOperationException ex)
             {

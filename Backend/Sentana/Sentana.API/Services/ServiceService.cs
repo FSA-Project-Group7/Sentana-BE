@@ -63,9 +63,13 @@ namespace Sentana.API.Services
 
             await _context.SaveChangesAsync();
         }
+
         public async Task<bool> AssignServiceToRoom(AssignRoomServiceRequestDto request)
         {
             var exist = await _context.ApartmentServices
+        public async Task<bool> RemoveServiceFromRoom(RemoveRoomServiceRequestDto request)
+        {
+            var roomService = await _context.ApartmentServices
                 .FirstOrDefaultAsync(x =>
                     x.ApartmentId == request.ApartmentId &&
                     x.ServiceId == request.ServiceId);
@@ -80,6 +84,11 @@ namespace Sentana.API.Services
             };
 
             _context.ApartmentServices.Add(roomService);
+
+            if (roomService == null)
+                return false;
+
+            _context.ApartmentServices.Remove(roomService);
 
             await _context.SaveChangesAsync();
 
