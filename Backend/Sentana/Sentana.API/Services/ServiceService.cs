@@ -63,5 +63,17 @@ namespace Sentana.API.Services
 
             await _context.SaveChangesAsync();
         }
+        public async Task<List<RoomServiceResponseDto>> GetRoomServices(int apartmentId)
+        {
+            return await _context.ApartmentServices
+                .Where(x => x.ApartmentId == apartmentId)
+                .Select(x => new RoomServiceResponseDto
+                {
+                    ServiceId = x.Service.ServiceId,
+                    ServiceName = x.Service.ServiceName,
+                    ServiceFee = x.Service.ServiceFee ?? 0
+                })
+                .ToListAsync();
+        }
     }
 }
