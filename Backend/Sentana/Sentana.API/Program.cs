@@ -44,8 +44,9 @@ namespace Sentana.API
             builder.Services.AddScoped<IServiceService, ServiceService>();
             builder.Services.AddScoped<ResidentService>();
             builder.Services.AddScoped<IBuildingService, BuildingService>();
+			builder.Services.AddScoped<Sentana.API.Services.IApartmentService, Sentana.API.Services.ApartmentService>();
 
-            builder.Services.AddControllers();
+			builder.Services.AddControllers();
 
             // Swagger
             builder.Services.AddEndpointsApiExplorer();
