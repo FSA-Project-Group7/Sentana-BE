@@ -13,6 +13,9 @@ namespace Sentana.API.Services
 
         // change and reset password
         Task<bool> SendOtpAsync(SendOtpRequestDto request);
+
+        Task<bool> RequestChangePasswordOtpAsync(int accountId);
+        Task<bool> ChangePasswordAsync(int accountId, ChangePasswordRequestDto request);
         Task<bool> ResetPasswordAsync(ResetPasswordRequestDto request);
     }
 }

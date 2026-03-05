@@ -15,8 +15,8 @@ namespace Sentana.API.Services
     {
         private readonly SentanaContext _context;
         private readonly IConfiguration _configuration;
-        private readonly IMemoryCache _cache; // Thêm Cache
-        private readonly IEmailService _emailService; // Thêm EmailService
+        private readonly IMemoryCache _cache; 
+        private readonly IEmailService _emailService; 
 
         public AuthService(SentanaContext context, IConfiguration configuration, IMemoryCache cache, IEmailService emailService)
         {
@@ -114,11 +114,11 @@ namespace Sentana.API.Services
 
             if (user == null) return false;
 
-            // 1. Cập nhật bảng Account
+            // cập nhật bảng Account
             user.Email = request.Email ?? user.Email;
             user.UpdatedAt = DateTime.Now;
 
-            // 2. Cập nhật bảng InFo
+            // cập nhật bảng InFo
             if (user.Info == null)
             {
                 // Nếu chưa có thông tin thì tạo mới bản ghi Info
@@ -146,6 +146,7 @@ namespace Sentana.API.Services
             return await _context.SaveChangesAsync() > 0;
         }
 
+        // Reset Password
         // tạo và gửi OTP
         public async Task<bool> SendOtpAsync(SendOtpRequestDto request)
         {
@@ -188,6 +189,54 @@ namespace Sentana.API.Services
 
             // Xóa OTP khỏi RAM để tránh dùng lại
             _cache.Remove($"OTP_{request.Email}");
+
+            return true;
+        }
+        // Change Password
+        // tạo và gửi OTP cho người đang đăng nhập
+        public async Task<bool> RequestChangePasswordOtpAsync(int accountId)
+        {
+            var user = await _context.Accounts.FindAsync(accountId);
+
+            // Đảm bảo user tồn tại và có email
+            if (user == null || string.IsNullOrEmpty(user.Email)) return false;
+
+            var otpCode = new Random().Next(100000, 999999).ToString();
+
+            // Lưu Cache với Key chứa ID để không bị nhầm lẫn giữa các user
+            _cache.Set($"ChangePassOTP_{accountId}", otpCode, TimeSpan.FromMinutes(5));
+
+            string emailBody = $"<h3>Mã xác nhận để đổi mật khẩu bảo mật của bạn là: <b style='color:green;'>{otpCode}</b></h3><p>Mã này có hiệu lực 5 phút. Nếu bạn không thực hiện yêu cầu này, hãy phớt lờ email này.</p>";
+            await _emailService.SendEmailAsync(user.Email, "[SENTANA] Xác nhận Đổi Mật Khẩu", emailBody);
+
+            return true;
+        }
+
+        // kiểm tra OTP và đổi mật khẩu
+        public async Task<bool> ChangePasswordAsync(int accountId, ChangePasswordRequestDto request)
+        {
+            // Kiểm tra OTP trước
+            if (!_cache.TryGetValue($"ChangePassOTP_{accountId}", out string? savedOtp))
+                throw new Exception("Mã OTP đã hết hạn hoặc không tồn tại.");
+
+            if (savedOtp != request.OtpCode)
+                throw new Exception("Mã OTP không chính xác.");
+
+            var user = await _context.Accounts.FindAsync(accountId);
+            if (user == null) return false;
+
+            // Kiểm tra mật khẩu cũ
+            if (!BCrypt.Net.BCrypt.Verify(request.OldPassword, user.Password))
+                throw new Exception("Mật khẩu cũ không chính xác.");
+
+            // Cập nhật mật khẩu mới
+            user.Password = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+            user.UpdatedAt = DateTime.Now;
+
+            await _context.SaveChangesAsync();
+
+            // Xóa OTP ngay sau khi dùng thành công
+            _cache.Remove($"ChangePassOTP_{accountId}");
 
             return true;
         }

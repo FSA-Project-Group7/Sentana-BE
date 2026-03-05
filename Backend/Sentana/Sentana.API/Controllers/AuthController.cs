@@ -113,5 +113,42 @@ namespace Sentana.API.Controllers
                 return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
             }
         }
+
+        [HttpPost("request-change-password-otp")]
+        [Authorize]
+        public async Task<IActionResult> RequestChangePasswordOtp()
+        {
+            var accountIdClaim = User.FindFirstValue("AccountId");
+            if (!int.TryParse(accountIdClaim, out int accountId))
+                return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ."));
+
+            var result = await _authService.RequestChangePasswordOtpAsync(accountId);
+
+            if (!result) return BadRequest(ApiResponse<string>.Fail(400, "Không thể gửi OTP. Tài khoản có thể chưa cập nhật Email."));
+
+            return Ok(ApiResponse<string>.Success(null, "Đã gửi mã OTP xác nhận về Email của bạn."));
+        }
+
+        [HttpPut("change-password")]
+        [Authorize]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequestDto request)
+        {
+            try
+            {
+                var accountIdClaim = User.FindFirstValue("AccountId");
+                if (!int.TryParse(accountIdClaim, out int accountId))
+                    return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ."));
+
+                var result = await _authService.ChangePasswordAsync(accountId, request);
+
+                if (!result) return BadRequest(ApiResponse<string>.Fail(400, "Đổi mật khẩu thất bại."));
+
+                return Ok(ApiResponse<string>.Success(null, "Đổi mật khẩu thành công!"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
+            }
+        }
     }
 }
