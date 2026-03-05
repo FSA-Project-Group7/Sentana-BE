@@ -1,8 +1,8 @@
-﻿using ApartmentBuildingManagement.API.Services;
+﻿using Sentana.API.Services;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Service;
 
-namespace ApartmentBuildingManagement.API.Controllers
+namespace Sentana.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]

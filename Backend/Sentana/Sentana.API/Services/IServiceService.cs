@@ -1,11 +1,12 @@
 ﻿using Sentana.API.DTOs.Service;
 using Sentana.API.Models;
 
-namespace ApartmentBuildingManagement.API.Services
+namespace Sentana.API.Services
 {
     public interface IServiceService
     {
         Task DeleteServiceAsync(int serviceId);
         Task<Service> CreateServiceAsync(CreateServiceRequestDto request);
+        Task<Service> UpdateServiceAsync(UpdateServiceRequestDto request);
     }
 }
