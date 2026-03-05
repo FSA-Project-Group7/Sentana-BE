@@ -6,6 +6,8 @@ namespace Sentana.API.Services
     {
         Task<IEnumerable<TechnicianResponseDto>> GetAllTechnician();
 
-        Task<TechnicianResponseDto> CreateTechnician(TechnicianRequestDto technicianRequest);
+        Task<TechnicianResponseDto> CreateTechnician(CreateTechnicianRequestDto technicianRequest);
+
+        Task<TechnicianResponseDto> UpdateTechnician(int technicianId, UpdateTechnicianRequestDto technicianRequest);
     }
 }

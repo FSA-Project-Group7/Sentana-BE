@@ -24,7 +24,12 @@ namespace Sentana.API.Services
             return await _context.Accounts.AnyAsync(a => a.UserName.ToLower() == username.ToLower());
         }
 
-        public async Task<TechnicianResponseDto> CreateTechnician(TechnicianRequestDto technicianRequest)
+        private async Task<Account?> GetTechinicianById(int accountId)
+        {
+            return await _context.Accounts.Include(a => a.Info).FirstOrDefaultAsync(a => a.AccountId == accountId && a.RoleId == 3);
+        }
+
+        public async Task<TechnicianResponseDto> CreateTechnician(CreateTechnicianRequestDto technicianRequest)
         {
             if (await CheckEmailExist(technicianRequest.Email))
             {
@@ -80,6 +85,39 @@ namespace Sentana.API.Services
             });
         }
 
+        public async Task<TechnicianResponseDto> UpdateTechnician(int technicianId, UpdateTechnicianRequestDto technicianRequest)
+        {
+            var technician =  await GetTechinicianById(technicianId);
+            if (technician == null)
+            {
+                throw new Exception("Kỹ thuật viên không tồn tại.");
+            };
+            var emailExist = await _context.Accounts.AnyAsync(a => a.Email.ToLower() == technicianRequest.Email.ToLower() && a.AccountId != technicianId);
+            if (emailExist)
+            {
+                throw new Exception("Email này đã được sử dụng trong hệ thống.");
+            };
+            technician.Email = technicianRequest.Email;
+            technician.Status = technicianRequest.Status;
+            if(technician.Info == null)
+            {
+                technician.Info = new InFo();
+            }
+            technician.Info.FullName = technicianRequest.FullName;
+            technician.Info.PhoneNumber = technicianRequest.PhoneNumber;
+            _context.Accounts.Update(technician);
+            await _context.SaveChangesAsync();
+            return new TechnicianResponseDto
+            {
+                AccountId = technician.AccountId,
+                UserName = technician.UserName,
+                Email = technician.Email,
+                FullName = technician.Info?.FullName,
+                PhoneNumber = technician.Info?.PhoneNumber,
+                Status = technician.Status,
+                TechAvailability = technician.TechAvailability
+            };
+        }
 
     }
 }
