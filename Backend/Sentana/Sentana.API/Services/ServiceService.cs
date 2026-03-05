@@ -63,7 +63,9 @@ namespace Sentana.API.Services
 
             await _context.SaveChangesAsync();
         }
+
         public async Task<bool> UpdateRoomServicePrice(UpdateRoomServicePriceRequestDto request)
+        public async Task<bool> RemoveServiceFromRoom(RemoveRoomServiceRequestDto request)
         {
             var roomService = await _context.ApartmentServices
                 .FirstOrDefaultAsync(x =>
@@ -73,7 +75,10 @@ namespace Sentana.API.Services
             if (roomService == null)
                 return false;
 
+
             roomService.ActualPrice = request.ActualPrice;
+            _context.ApartmentServices.Remove(roomService);
+
 
             await _context.SaveChangesAsync();
 

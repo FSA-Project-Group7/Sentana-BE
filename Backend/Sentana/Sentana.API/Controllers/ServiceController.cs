@@ -41,15 +41,25 @@ namespace Sentana.API.Controllers
                 });
             }
         }
+
         [HttpPut("room/price")]
         public async Task<IActionResult> UpdateRoomServicePrice(UpdateRoomServicePriceRequestDto request)
         {
             var result = await _serviceService.UpdateRoomServicePrice(request);
 
+        [HttpDelete("room")]
+        public async Task<IActionResult> RemoveServiceFromRoom(RemoveRoomServiceRequestDto request)
+        {
+            var result = await _serviceService.RemoveServiceFromRoom(request);
+
+
             if (!result)
                 return NotFound("Service not found in room");
 
+
             return Ok("Room service price updated successfully");
+            return Ok("Service removed from room");
+
         }
     }
 }
