@@ -10,5 +10,8 @@
 
         // CCCD 12 chữ số
         public const string CccdRegex = @"^[0-9]{12}$";
+
+        // Mật khẩu it nhất 8 ký tự, 1 chữ cái, 1 chữ số, 1 ký tự đặc biệt
+        public const string PasswordRegex = @"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$";
     }
 }

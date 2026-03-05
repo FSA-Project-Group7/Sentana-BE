@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Sentana.API.Models;
+using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Service;
 using Sentana.API.Enums;
 using Sentana.API.Models;
