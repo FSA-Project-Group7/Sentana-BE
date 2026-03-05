@@ -23,8 +23,8 @@ namespace Sentana.API.DTOs.Auth
         [Required(ErrorMessage = "Địa chỉ không được để trống.", AllowEmptyStrings = false)]
         public string Address { get; set; } = string.Empty;
 
-
         [Required(ErrorMessage = "Ngày sinh không được để trống.")]
+        [PastDate(ErrorMessage = "Bạn chưa thể sinh ra ở tương lai được! Vui lòng chọn ngày hợp lệ.")]
         public DateTime BirthDay { get; set; }
     }
 }
