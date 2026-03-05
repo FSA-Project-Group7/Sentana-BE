@@ -41,5 +41,11 @@ namespace Sentana.API.Controllers
                 });
             }
         }
+        [HttpGet("room/{apartmentId}")]
+        public async Task<IActionResult> GetRoomServices(int apartmentId)
+        {
+            var result = await _serviceService.GetRoomServices(apartmentId);
+            return Ok(result);
+        }
     }
 }
