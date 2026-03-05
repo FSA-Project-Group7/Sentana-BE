@@ -1,7 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Sentana.API.Models;
+using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Service;
 using Sentana.API.Enums;
-using Sentana.API.Models;
 
 namespace Sentana.API.Services
 {
@@ -62,6 +62,61 @@ namespace Sentana.API.Services
             service.Status = GeneralStatus.Inactive;
 
             await _context.SaveChangesAsync();
+        }
+
+
+        public async Task<bool> UpdateRoomServicePrice(UpdateRoomServicePriceRequestDto request)
+        {
+            var roomService = await _context.ApartmentServices
+                .FirstOrDefaultAsync(x =>
+                    x.ApartmentId == request.ApartmentId &&
+                    x.ServiceId == request.ServiceId);
+
+            if (roomService == null)
+                return false;
+
+            roomService.ActualPrice = request.ActualPrice;
+
+            await _context.SaveChangesAsync();
+
+            return true;
+        }
+        public async Task<bool> AssignServiceToRoom(AssignRoomServiceRequestDto request)
+        {
+            var exist = await _context.ApartmentServices
+                .FirstOrDefaultAsync(x =>
+                    x.ApartmentId == request.ApartmentId &&
+                    x.ServiceId == request.ServiceId);
+
+            if (exist != null)
+                return false;
+
+            var roomService = new Models.ApartmentService
+            {
+                ApartmentId = request.ApartmentId,
+                ServiceId = request.ServiceId
+            };
+
+            _context.ApartmentServices.Add(roomService);
+
+            await _context.SaveChangesAsync();
+
+            return true;
+        }
+        public async Task<bool> RemoveServiceFromRoom(RemoveRoomServiceRequestDto request)
+        {
+            var roomService = await _context.ApartmentServices
+                .FirstOrDefaultAsync(x =>
+                    x.ApartmentId == request.ApartmentId &&
+                    x.ServiceId == request.ServiceId);
+
+            if (roomService == null)
+                return false;
+            _context.ApartmentServices.Remove(roomService);
+
+            await _context.SaveChangesAsync();
+
+            return true;
         }
     }
 }

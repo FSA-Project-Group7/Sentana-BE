@@ -33,7 +33,6 @@ namespace Sentana.API.Services
 
 		public async Task<ApartmentDto> CreateApartmentAsync(CreateApartmentDto dto)
 		{
-			// Bước 1: Map DTO sang Entity để lưu vào DB
 			var newApartment = new Apartment
 			{
 				BuildingId = dto.BuildingId,
@@ -50,7 +49,6 @@ namespace Sentana.API.Services
 			_context.Apartments.Add(newApartment);
 			await _context.SaveChangesAsync();
 
-			// Bước 2: Map ngược lại Entity sang DTO để trả về cho người dùng
 			return new ApartmentDto
 			{
 				ApartmentId = newApartment.ApartmentId,
