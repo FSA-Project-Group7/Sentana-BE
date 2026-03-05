@@ -41,11 +41,15 @@ namespace Sentana.API.Controllers
                 });
             }
         }
-        [HttpGet("room/{apartmentId}")]
-        public async Task<IActionResult> GetRoomServices(int apartmentId)
+        [HttpDelete("room")]
+        public async Task<IActionResult> RemoveServiceFromRoom(RemoveRoomServiceRequestDto request)
         {
-            var result = await _serviceService.GetRoomServices(apartmentId);
-            return Ok(result);
+            var result = await _serviceService.RemoveServiceFromRoom(request);
+
+            if (!result)
+                return NotFound("Service not found in room");
+
+            return Ok("Service removed from room");
         }
     }
 }
