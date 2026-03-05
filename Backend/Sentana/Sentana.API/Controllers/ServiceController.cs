@@ -47,6 +47,16 @@ namespace Sentana.API.Controllers
         {
             var result = await _serviceService.UpdateRoomServicePrice(request);
 
+
+        [HttpPost("room")]
+        public async Task<IActionResult> AssignServiceToRoom(AssignRoomServiceRequestDto request)
+        {
+            var result = await _serviceService.AssignServiceToRoom(request);
+
+            if (!result)
+                return BadRequest("Service already assigned to room");
+
+            return Ok("Service assigned to room successfully");
         [HttpDelete("room")]
         public async Task<IActionResult> RemoveServiceFromRoom(RemoveRoomServiceRequestDto request)
         {
