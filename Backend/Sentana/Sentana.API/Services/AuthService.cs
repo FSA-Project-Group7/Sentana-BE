@@ -323,5 +323,18 @@ namespace Sentana.API.Services
                 RefreshToken = newRefreshToken
             };
         }
+
+        // logout 
+        public async Task<bool> LogoutAsync(int accountId)
+        {
+            var user = await _context.Accounts.FindAsync(accountId);
+            if (user == null) return false;
+
+            // Xóa Refresh Token để chặn việc xin cấp lại Token mới
+            user.RefreshToken = null;
+            user.RefreshTokenExpiryTime = null;
+
+            return await _context.SaveChangesAsync() > 0;
+        }
     }
 }

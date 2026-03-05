@@ -175,5 +175,25 @@ namespace Sentana.API.Controllers
                 return BadRequest(ApiResponse<string>.Fail(400, "Token sai định dạng: " + ex.Message));
             }
         }
+
+        [HttpPost("logout")]
+        [Authorize]
+        public async Task<IActionResult> Logout()
+        {
+            var accountIdClaim = User.FindFirstValue("AccountId");
+            if (!int.TryParse(accountIdClaim, out int accountId))
+            {
+                return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ."));
+            }
+
+            var result = await _authService.LogoutAsync(accountId);
+
+            if (!result)
+            {
+                return BadRequest(ApiResponse<string>.Fail(400, "Đăng xuất thất bại."));
+            }
+
+            return Ok(ApiResponse<string>.Success(null, "Đăng xuất thành công!"));
+        }
     }
 }
