@@ -1,4 +1,4 @@
-using ApartmentBuildingManagement.API.Services;
+using Sentana.API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
