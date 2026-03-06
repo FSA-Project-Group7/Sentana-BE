@@ -1,4 +1,4 @@
-using Sentana.API.Services;
+﻿using Sentana.API.Services;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Service;
 
@@ -21,8 +21,31 @@ namespace Sentana.API.Controllers
             var result = await _serviceService.CreateServiceAsync(request);
             return Ok(result);
         }
+		[HttpPut("{id}")]
+		public async Task<IActionResult> UpdateService(int id, [FromBody] UpdateServiceRequestDto request)
+		{
+			try
+			{
+				request.ServiceId = id;
 
-        [HttpGet]
+				var result = await _serviceService.UpdateServiceAsync(request);
+
+				return Ok(new
+				{
+					message = "Cập nhật dịch vụ thành công",
+					data = result
+				});
+			}
+			catch (Exception ex)
+			{
+				return BadRequest(new
+				{
+					message = ex.Message
+				});
+			}
+		}
+
+		[HttpGet]
         public async Task<IActionResult> GetServiceList()
         {
             var services = await _serviceService.GetServiceListAsync();
