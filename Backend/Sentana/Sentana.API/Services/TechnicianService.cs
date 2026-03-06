@@ -24,7 +24,7 @@ namespace Sentana.API.Services
             return await _context.Accounts.AnyAsync(a => a.UserName.ToLower() == username.ToLower());
         }
 
-        private async Task<Account?> GetTechinicianById(int accountId)
+        private async Task<Account?> GetTechnicianById(int accountId)
         {
             return await _context.Accounts.Include(a => a.Info).FirstOrDefaultAsync(a => a.AccountId == accountId && a.RoleId == 3);
         }
@@ -49,7 +49,6 @@ namespace Sentana.API.Services
                 RoleId = 3, 
                 Status = GeneralStatus.Active,
                 TechAvailability = 1,
-
                 Info = new InFo
                 {
                     FullName = technicianRequest.FullName,
@@ -87,7 +86,7 @@ namespace Sentana.API.Services
 
         public async Task<TechnicianResponseDto> UpdateTechnician(int technicianId, UpdateTechnicianRequestDto technicianRequest)
         {
-            var technician =  await GetTechinicianById(technicianId);
+            var technician =  await GetTechnicianById(technicianId);
             if (technician == null)
             {
                 throw new Exception("Kỹ thuật viên không tồn tại.");
@@ -119,5 +118,34 @@ namespace Sentana.API.Services
             };
         }
 
+        public async Task<string> ToggleTechnicianStatus(int technicianId)
+        {
+            var technician = await GetTechnicianById(technicianId);
+            if (technician == null)
+            {
+                throw new Exception("Kỹ thuật viên không tồn tại.");
+            }
+            string message = "";
+
+            if (technician.Status == GeneralStatus.Active)
+            {
+                var hasProcessingTask = await _context.MaintenanceRequests
+                    .AnyAsync(m => m.AssignedTo == technicianId && m.Status == MaintenanceRequestStatus.Processing);
+                if (hasProcessingTask)
+                {
+                    throw new Exception("Không thể vô hiệu hóa kỹ thuật viên này vì họ đang có nhiệm vụ đang xử lý.");
+                }
+                technician.Status = GeneralStatus.Inactive;
+                message = "Khóa tài khoản Kỹ thuật viên thành công!";
+            }
+            else
+            {
+                technician.Status = GeneralStatus.Active;
+                message = "Mở khóa tài khoản Kỹ thuật viên thành công!";
+            }
+            _context.Accounts.Update(technician);
+            await _context.SaveChangesAsync();
+            return message;
+        }
     }
 }

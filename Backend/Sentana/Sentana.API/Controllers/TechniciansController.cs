@@ -81,5 +81,20 @@ namespace Sentana.API.Controllers
                 return BadRequest(ApiResponse<object>.Fail(400, $"Cập nhật tài khoản kĩ thuật viên thất bại. {ex.Message}"));
             }
         }
+
+        [HttpPut("toggleStatus/{id}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> ToggleTechnicianStatus(int id)
+        {
+            try
+            {
+                string message = await _technicianService.ToggleTechnicianStatus(id);
+                return Ok(ApiResponse<object>.Success(null, message));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
+            }
+        }
     }
 }
