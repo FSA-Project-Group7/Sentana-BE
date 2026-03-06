@@ -22,6 +22,13 @@ namespace Sentana.API.Controllers
             return Ok(result);
         }
 
+        [HttpGet]
+        public async Task<IActionResult> GetServiceList()
+        {
+            var services = await _serviceService.GetServiceListAsync();
+            return Ok(services);
+        }
+
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteService(int id)
         {
@@ -41,6 +48,13 @@ namespace Sentana.API.Controllers
                     message = ex.Message
                 });
             }
+        }
+
+        [HttpGet("room/{roomId}")]
+        public async Task<IActionResult> GetRoomServiceList(int roomId)
+        {
+            var services = await _serviceService.GetRoomServiceListAsync(roomId);
+            return Ok(services);
         }
 
         [HttpPost("room")]
