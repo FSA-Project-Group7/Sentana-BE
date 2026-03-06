@@ -45,6 +45,16 @@ namespace Sentana.API
             builder.Services.AddScoped<IBuildingService, BuildingService>();
             builder.Services.AddScoped<ITechnicianService, TechnicianService>();
 			builder.Services.AddScoped<Sentana.API.Services.IApartmentService, Sentana.API.Services.ApartmentService>();
+			builder.Services.AddCors(options =>
+			{
+				options.AddPolicy("AllowReactApp", policy =>
+				{
+					policy.WithOrigins("http://localhost:5173")
+						  .AllowAnyHeader()
+						  .AllowAnyMethod()
+						  .AllowCredentials();
+				});
+			});
 
             builder.Services.AddControllers();
             // build ram để lưu otp
@@ -89,9 +99,10 @@ namespace Sentana.API
             }
 
             app.UseHttpsRedirection();
+			app.UseCors("AllowReactApp");
 
-            // cho đăng nhập
-            app.UseAuthentication();
+			// cho đăng nhập
+			app.UseAuthentication();
             app.UseAuthorization();
 
             app.MapControllers();
