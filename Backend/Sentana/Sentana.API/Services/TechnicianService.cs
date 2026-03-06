@@ -29,34 +29,53 @@ namespace Sentana.API.Services
             return await _context.Accounts.Include(a => a.Info).FirstOrDefaultAsync(a => a.AccountId == accountId && a.RoleId == 3);
         }
 
+        private async Task<bool> CheckIdentityCardExist(string identityCard)
+        {
+            return await _context.InFos.AnyAsync(i => i.CmndCccd == identityCard);
+        }
+
         public async Task<TechnicianResponseDto> CreateTechnician(CreateTechnicianRequestDto technicianRequest)
         {
             if (await CheckEmailExist(technicianRequest.Email))
             {
-                throw new Exception("Email này đã được sử dụng trong hệ thống.");
-
+                throw new Exception("Email này đã tồn tại trong hệ thống.");
             }
-            if (await CheckUserNameExist(technicianRequest.UserName)) 
+
+            if (await CheckUserNameExist(technicianRequest.UserName))
             {
                 throw new Exception("Tên đăng nhập này đã tồn tại.");
             }
+
+            if(await CheckIdentityCardExist(technicianRequest.IdentityCard))
+            {
+                throw new Exception("Số CMND/CCCD này đã tồn tại trong hệ thống.");
+            }
+
             string hashedPassword = BCrypt.Net.BCrypt.HashPassword(technicianRequest.Password);
+
+            string generatedCode = "TECH-" + DateTimeOffset.Now.ToUnixTimeSeconds().ToString().Substring(5);
+
             var newAccount = new Account
             {
+                Code = generatedCode,
                 Email = technicianRequest.Email,
                 UserName = technicianRequest.UserName,
                 Password = hashedPassword,
-                RoleId = 3, 
-                Status = GeneralStatus.Active,
-                TechAvailability = 1,
+                RoleId = 3,
+                Status = Sentana.API.Enums.GeneralStatus.Active,
+                TechAvailability = (byte)Sentana.API.Enums.TechAvailability.Free,
+                CreatedAt = DateTime.Now,
                 Info = new InFo
                 {
                     FullName = technicianRequest.FullName,
-                    PhoneNumber = technicianRequest.PhoneNumber
+                    PhoneNumber = technicianRequest.PhoneNumber,
+                    CmndCccd = technicianRequest.IdentityCard
                 }
             };
+
             _context.Accounts.Add(newAccount);
             await _context.SaveChangesAsync();
+
             return new TechnicianResponseDto
             {
                 AccountId = newAccount.AccountId,
@@ -68,6 +87,7 @@ namespace Sentana.API.Services
                 TechAvailability = newAccount.TechAvailability
             };
         }
+
 
         public async Task<IEnumerable<TechnicianResponseDto>> GetAllTechnician()
         {
