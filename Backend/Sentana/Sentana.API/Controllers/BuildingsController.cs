@@ -21,7 +21,7 @@ namespace Sentana.API.Controllers
 
         // US28 - Create Building
         [HttpPost]
-        public async Task<IActionResult> CreateBuilding([FromBody] CreateBuildingDto newBuilding)
+        public async Task<IActionResult> CreateBuilding([FromBody] BuildingRequestDto newBuilding)
         {
             try
             {
@@ -41,7 +41,7 @@ namespace Sentana.API.Controllers
 
         // US29 - Update Building
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateBuilding(int id, [FromBody] UpdateBuildingDto updatedBuilding)
+        public async Task<IActionResult> UpdateBuilding(int id, [FromBody] BuildingRequestDto updatedBuilding)
         {
             try
             {
@@ -80,18 +80,16 @@ namespace Sentana.API.Controllers
         {
             var buildings = await _context.Buildings
                 .Where(b => b.IsDeleted == false)
-                .Select(b => new
+                .Select(b => new BuildingResponseDto
                 {
-                    b.BuildingId,
-                    b.BuildingName,
-                    b.BuildingCode,
-                    b.Address,
-                    b.City,
-                    b.FloorNumber,
-                    b.ApartmentNumber,
-                    b.Status,
-                    b.CreatedAt,
-                    b.CreatedBy
+                    BuildingId = b.BuildingId,
+                    BuildingName = b.BuildingName,
+                    BuildingCode = b.BuildingCode,
+                    Address = b.Address,
+                    City = b.City,
+                    FloorNumber = b.FloorNumber,
+                    ApartmentNumber = b.ApartmentNumber,
+                    StatusName = b.Status.ToString() ?? string.Empty
                 })
                 .ToListAsync();
 
