@@ -55,7 +55,7 @@ namespace Sentana.API.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(ApiResponse<object>.Fail(400, $"Tạo tài khoản kĩ thuật viên thất bại. {ex.Message}"));
+                return BadRequest(ApiResponse<object>.Fail(400, $"Tạo tài khoản Kỹ thuật viên thất bại.{ex.Message}"));
             }
         }
 
