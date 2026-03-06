@@ -150,5 +150,50 @@ namespace Sentana.API.Controllers
                 return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
             }
         }
+
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshToken([FromBody] TokenModelDto request)
+        {
+            if (request == null || string.IsNullOrEmpty(request.AccessToken) || string.IsNullOrEmpty(request.RefreshToken))
+            {
+                return BadRequest(ApiResponse<string>.Fail(400, "Vui lòng cung cấp đầy đủ Access Token và Refresh Token."));
+            }
+
+            try
+            {
+                var result = await _authService.RenewTokenAsync(request);
+
+                if (result == null)
+                {
+                    return BadRequest(ApiResponse<string>.Fail(400, "Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại."));
+                }
+
+                return Ok(ApiResponse<TokenModelDto>.Success(result, "Làm mới phiên đăng nhập thành công!"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<string>.Fail(400, "Token sai định dạng: " + ex.Message));
+            }
+        }
+
+        [HttpPost("logout")]
+        [Authorize]
+        public async Task<IActionResult> Logout()
+        {
+            var accountIdClaim = User.FindFirstValue("AccountId");
+            if (!int.TryParse(accountIdClaim, out int accountId))
+            {
+                return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ."));
+            }
+
+            var result = await _authService.LogoutAsync(accountId);
+
+            if (!result)
+            {
+                return BadRequest(ApiResponse<string>.Fail(400, "Đăng xuất thất bại."));
+            }
+
+            return Ok(ApiResponse<string>.Success(null, "Đăng xuất thành công!"));
+        }
     }
 }

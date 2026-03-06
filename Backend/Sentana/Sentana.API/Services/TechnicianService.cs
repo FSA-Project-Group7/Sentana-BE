@@ -24,7 +24,12 @@ namespace Sentana.API.Services
             return await _context.Accounts.AnyAsync(a => a.UserName.ToLower() == username.ToLower());
         }
 
-        public async Task<TechnicianResponseDto> CreateTechnician(TechnicianRequestDto technicianRequest)
+        private async Task<Account?> GetTechnicianById(int accountId)
+        {
+            return await _context.Accounts.Include(a => a.Info).FirstOrDefaultAsync(a => a.AccountId == accountId && a.RoleId == 3);
+        }
+
+        public async Task<TechnicianResponseDto> CreateTechnician(CreateTechnicianRequestDto technicianRequest)
         {
             if (await CheckEmailExist(technicianRequest.Email))
             {
@@ -44,7 +49,6 @@ namespace Sentana.API.Services
                 RoleId = 3, 
                 Status = GeneralStatus.Active,
                 TechAvailability = 1,
-
                 Info = new InFo
                 {
                     FullName = technicianRequest.FullName,
@@ -80,6 +84,68 @@ namespace Sentana.API.Services
             });
         }
 
+        public async Task<TechnicianResponseDto> UpdateTechnician(int technicianId, UpdateTechnicianRequestDto technicianRequest)
+        {
+            var technician =  await GetTechnicianById(technicianId);
+            if (technician == null)
+            {
+                throw new Exception("Kỹ thuật viên không tồn tại.");
+            };
+            var emailExist = await _context.Accounts.AnyAsync(a => a.Email.ToLower() == technicianRequest.Email.ToLower() && a.AccountId != technicianId);
+            if (emailExist)
+            {
+                throw new Exception("Email này đã được sử dụng trong hệ thống.");
+            };
+            technician.Email = technicianRequest.Email;
+            technician.Status = technicianRequest.Status;
+            if(technician.Info == null)
+            {
+                technician.Info = new InFo();
+            }
+            technician.Info.FullName = technicianRequest.FullName;
+            technician.Info.PhoneNumber = technicianRequest.PhoneNumber;
+            _context.Accounts.Update(technician);
+            await _context.SaveChangesAsync();
+            return new TechnicianResponseDto
+            {
+                AccountId = technician.AccountId,
+                UserName = technician.UserName,
+                Email = technician.Email,
+                FullName = technician.Info?.FullName,
+                PhoneNumber = technician.Info?.PhoneNumber,
+                Status = technician.Status,
+                TechAvailability = technician.TechAvailability
+            };
+        }
 
+        public async Task<string> ToggleTechnicianStatus(int technicianId)
+        {
+            var technician = await GetTechnicianById(technicianId);
+            if (technician == null)
+            {
+                throw new Exception("Kỹ thuật viên không tồn tại.");
+            }
+            string message = "";
+
+            if (technician.Status == GeneralStatus.Active)
+            {
+                var hasProcessingTask = await _context.MaintenanceRequests
+                    .AnyAsync(m => m.AssignedTo == technicianId && m.Status == MaintenanceRequestStatus.Processing);
+                if (hasProcessingTask)
+                {
+                    throw new Exception("Không thể vô hiệu hóa kỹ thuật viên này vì họ đang có nhiệm vụ đang xử lý.");
+                }
+                technician.Status = GeneralStatus.Inactive;
+                message = "Khóa tài khoản Kỹ thuật viên thành công!";
+            }
+            else
+            {
+                technician.Status = GeneralStatus.Active;
+                message = "Mở khóa tài khoản Kỹ thuật viên thành công!";
+            }
+            _context.Accounts.Update(technician);
+            await _context.SaveChangesAsync();
+            return message;
+        }
     }
 }
