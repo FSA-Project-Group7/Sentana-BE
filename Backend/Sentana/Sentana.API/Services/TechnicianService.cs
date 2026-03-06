@@ -29,6 +29,11 @@ namespace Sentana.API.Services
             return await _context.Accounts.Include(a => a.Info).FirstOrDefaultAsync(a => a.AccountId == accountId && a.RoleId == 3);
         }
 
+        private async Task<bool> CheckIdentityCardExist(string identityCard)
+        {
+            return await _context.InFos.AnyAsync(i => i.CmndCccd == identityCard);
+        }
+
         public async Task<TechnicianResponseDto> CreateTechnician(CreateTechnicianRequestDto technicianRequest)
         {
             if (await CheckEmailExist(technicianRequest.Email))
@@ -39,6 +44,11 @@ namespace Sentana.API.Services
             if (await CheckUserNameExist(technicianRequest.UserName))
             {
                 throw new Exception("Tên đăng nhập này đã tồn tại.");
+            }
+
+            if(await CheckIdentityCardExist(technicianRequest.IdentityCard))
+            {
+                throw new Exception("Số CMND/CCCD này đã tồn tại trong hệ thống.");
             }
 
             string hashedPassword = BCrypt.Net.BCrypt.HashPassword(technicianRequest.Password);
