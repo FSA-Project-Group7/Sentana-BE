@@ -5,7 +5,9 @@ namespace Sentana.API.DTOs.Auth
 {
     public class ResetPasswordRequestDto
     {
+        [Required(ErrorMessage = "Email không được để trống.", AllowEmptyStrings = false)]
         public string Email { get; set; } = string.Empty;
+        [Required(ErrorMessage = "Otp không được để trống.", AllowEmptyStrings = false)]
         public string OtpCode { get; set; } = string.Empty;
 
         [Required(ErrorMessage =" Mật khẩu không được để trống", AllowEmptyStrings = false)]
