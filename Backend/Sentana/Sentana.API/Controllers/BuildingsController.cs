@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 using Sentana.API.DTOs.Building;
 using Sentana.API.Models;
 using Sentana.API.Services;
@@ -21,6 +22,7 @@ namespace Sentana.API.Controllers
 
         // US28 - Create Building
         [HttpPost]
+        [Authorize(Roles = "Manager")]
         public async Task<IActionResult> CreateBuilding([FromBody] BuildingRequestDto newBuilding)
         {
             try
@@ -41,6 +43,7 @@ namespace Sentana.API.Controllers
 
         // US29 - Update Building
         [HttpPut("{id}")]
+        [Authorize(Roles = "Manager")]
         public async Task<IActionResult> UpdateBuilding(int id, [FromBody] BuildingRequestDto updatedBuilding)
         {
             try
@@ -61,6 +64,7 @@ namespace Sentana.API.Controllers
 
         // US30 - Delete Building (soft delete)
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Manager")]
         public async Task<IActionResult> DeleteBuilding(int id)
         {
             try
@@ -76,6 +80,7 @@ namespace Sentana.API.Controllers
 
         // View Building List - để kiểm tra building mới tạo
         [HttpGet]
+        [Authorize(Roles = "Manager")]
         public async Task<IActionResult> GetBuildingList()
         {
             var buildings = await _context.Buildings
