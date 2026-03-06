@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Building;
+using Sentana.API.Enums;
 using Sentana.API.Models;
 
 namespace Sentana.API.Services
@@ -14,7 +15,7 @@ namespace Sentana.API.Services
             _context = context;
         }
 
-        public async Task<Building> CreateBuildingAsync(CreateBuildingDto dto, ClaimsPrincipal user)
+        public async Task<BuildingResponseDto> CreateBuildingAsync(BuildingRequestDto dto, ClaimsPrincipal user)
         {
             if (dto == null || string.IsNullOrWhiteSpace(dto.BuildingName))
             {
@@ -44,7 +45,7 @@ namespace Sentana.API.Services
                 City = dto.City,
                 FloorNumber = dto.FloorNumber,
                 ApartmentNumber = dto.ApartmentNumber,
-                Status = dto.Status,
+                Status = GeneralStatus.Active,
                 CreatedAt = DateTime.Now,
                 IsDeleted = false
             };
@@ -57,10 +58,10 @@ namespace Sentana.API.Services
             _context.Buildings.Add(newBuilding);
             await _context.SaveChangesAsync();
 
-            return newBuilding;
+            return MapToResponseDto(newBuilding);
         }
 
-        public async Task<Building> UpdateBuildingAsync(int id, UpdateBuildingDto dto, ClaimsPrincipal user)
+        public async Task<BuildingResponseDto> UpdateBuildingAsync(int id, BuildingRequestDto dto, ClaimsPrincipal user)
         {
             int? accountId = null;
             var accountIdClaim = user?.FindFirst("AccountId");
@@ -113,17 +114,12 @@ namespace Sentana.API.Services
                 existingBuilding.ApartmentNumber = dto.ApartmentNumber.Value;
             }
 
-            if (dto.Status.HasValue)
-            {
-                existingBuilding.Status = dto.Status.Value;
-            }
-
             existingBuilding.UpdatedAt = DateTime.UtcNow;
             existingBuilding.UpdatedBy = accountId;
 
             await _context.SaveChangesAsync();
 
-            return existingBuilding;
+            return MapToResponseDto(existingBuilding);
         }
 
         public async Task<bool> DeleteBuildingAsync(int id, ClaimsPrincipal user)
@@ -149,6 +145,20 @@ namespace Sentana.API.Services
 
             return true;
         }
+
+        private static BuildingResponseDto MapToResponseDto(Building building)
+        {
+            return new BuildingResponseDto
+            {
+                BuildingId = building.BuildingId,
+                BuildingName = building.BuildingName,
+                BuildingCode = building.BuildingCode,
+                Address = building.Address,
+                City = building.City,
+                FloorNumber = building.FloorNumber,
+                ApartmentNumber = building.ApartmentNumber,
+                StatusName = building.Status?.ToString() ?? string.Empty
+            };
+        }
     }
 }
-
