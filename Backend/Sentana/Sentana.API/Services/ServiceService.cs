@@ -78,8 +78,9 @@ namespace Sentana.API.Services
                 ServiceName = s.ServiceName,
                 Description = s.Description,
                 ServiceFee = s.ServiceFee ?? 0,
-                Status = (int)s.Status
-            });
+                Status = (int)s.Status,
+				CreatedAt = s.CreatedAt
+			});
         }
 
         // US58 - Assign Service to Apartment
