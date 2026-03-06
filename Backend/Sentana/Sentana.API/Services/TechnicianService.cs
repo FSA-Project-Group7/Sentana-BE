@@ -97,7 +97,6 @@ namespace Sentana.API.Services
                 throw new Exception("Email này đã được sử dụng trong hệ thống.");
             };
             technician.Email = technicianRequest.Email;
-            technician.Status = technicianRequest.Status;
             if(technician.Info == null)
             {
                 technician.Info = new InFo();
