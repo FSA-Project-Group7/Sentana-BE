@@ -15,7 +15,5 @@ namespace Sentana.API.DTOs.Technician
 
         [RegularExpression(ValidationHelper.PhoneRegex, ErrorMessage = "Số điện thoại không hợp lệ. Phải là định dạng VN 10 số")]
         public string? PhoneNumber { get; set; }
-
-        public GeneralStatus Status { get; set; }
     }
 }
