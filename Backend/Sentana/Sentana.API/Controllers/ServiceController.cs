@@ -103,7 +103,26 @@ namespace Sentana.API.Controllers
         [HttpGet("room/{roomId}")]
         public async Task<IActionResult> GetRoomServiceList(int roomId)
         {
+            if (roomId <= 0)
+            {
+                return BadRequest(new
+                {
+                    message = "Invalid room id."
+                });
+            }
+
+            var apartmentExists = await _serviceService.ApartmentExistsAsync(roomId);
+
+            if (!apartmentExists)
+            {
+                return NotFound(new
+                {
+                    message = "Apartment not found."
+                });
+            }
+
             var services = await _serviceService.GetRoomServiceListAsync(roomId);
+
             return Ok(services);
         }
 
