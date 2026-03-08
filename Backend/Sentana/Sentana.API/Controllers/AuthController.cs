@@ -72,22 +72,31 @@ namespace Sentana.API.Controllers
         [Authorize]
         public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequestDto request)
         {
+            // lấy id của người dùng đang đăng nhập từ trong Token
             var accountIdClaim = User.FindFirstValue("AccountId");
             if (!int.TryParse(accountIdClaim, out int accountId))
             {
-                return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ."));
+                return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ hoặc đã hết hạn."));
             }
 
-            var result = await _authService.UpdateUserProfileAsync(accountId, request);
-
-            if (!result)
+            try
             {
-                return BadRequest(ApiResponse<string>.Fail(400, "Cập nhật thông tin thất bại hoặc không có thay đổi."));
-            }
+                var result = await _authService.UpdateUserProfileAsync(accountId, request);
 
-            return Ok(ApiResponse<string>.Success(null, "Cập nhật thông tin thành công!"));
+                if (!result)
+                {
+                    return BadRequest(ApiResponse<string>.Fail(400, "Cập nhật thông tin thất bại. Không tìm thấy tài khoản."));
+                }
+
+                return Ok(ApiResponse<string>.Success(null, "Cập nhật thông tin cá nhân thành công!"));
+            }
+            catch (Exception ex)
+            {
+              // bắt lỗi 
+                return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
+            }
         }
-        
+
         //Reset and change password
         [HttpPost("send-otp")]
         public async Task<IActionResult> SendOtp([FromBody] SendOtpRequestDto request)
