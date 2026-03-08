@@ -16,7 +16,6 @@ namespace Sentana.API.Services
 
 		public async Task<IEnumerable<ApartmentDto>> GetApartmentListAsync()
 		{
-			// Map từ Entity Apartment sang ApartmentDto
 			return await _context.Apartments
 				.Where(a => a.IsDeleted == false)
 				.Select(a => new ApartmentDto
@@ -28,11 +27,18 @@ namespace Sentana.API.Services
 					Area = a.Area,
 					Status = (byte?)a.Status
 				})
+				.OrderByDescending(a => a.ApartmentId) // Ưu tiên phòng mới tạo lên đầu
 				.ToListAsync();
 		}
 
 		public async Task<ApartmentDto> CreateApartmentAsync(CreateApartmentDto dto)
 		{
+			bool isCodeExist = await _context.Apartments
+				.AnyAsync(a => a.ApartmentCode!.ToLower() == dto.ApartmentCode!.ToLower() && a.IsDeleted == false);
+
+			if (isCodeExist)
+				throw new ArgumentException("Mã phòng này đã tồn tại trong hệ thống.");
+
 			var newApartment = new Apartment
 			{
 				BuildingId = dto.BuildingId,
@@ -41,7 +47,7 @@ namespace Sentana.API.Services
 				ApartmentNumber = dto.ApartmentNumber,
 				FloorNumber = dto.FloorNumber,
 				Area = dto.Area,
-				Status = (ApartmentStatus?)dto.Status,
+				Status = ApartmentStatus.Vacant,
 				CreatedAt = DateTime.Now,
 				IsDeleted = false
 			};
@@ -67,10 +73,17 @@ namespace Sentana.API.Services
 
 			if (apartment == null) return false;
 
-			// Map dữ liệu từ DTO sang Entity hiện tại
+			bool isCodeExist = await _context.Apartments
+				.AnyAsync(a => a.ApartmentId != id && a.ApartmentCode!.ToLower() == dto.ApartmentCode!.ToLower() && a.IsDeleted == false);
+
+			if (isCodeExist)
+				throw new ArgumentException("Mã phòng này đã được sử dụng cho phòng khác.");
+
+			// Map dữ liệu
 			apartment.ApartmentName = dto.ApartmentName;
 			apartment.ApartmentCode = dto.ApartmentCode;
-			apartment.Area = dto.Area;
+			if (dto.Area.HasValue) apartment.Area = dto.Area.Value;
+			if (dto.FloorNumber.HasValue) apartment.FloorNumber = dto.FloorNumber.Value;
 			apartment.UpdatedAt = DateTime.Now;
 
 			await _context.SaveChangesAsync();
@@ -79,6 +92,10 @@ namespace Sentana.API.Services
 
 		public async Task<bool> UpdateStatusAsync(int id, byte newStatus)
 		{
+			// Kiểm tra trạng thái gửi lên có hợp lệ không
+			if (!Enum.IsDefined(typeof(ApartmentStatus), (ApartmentStatus)newStatus))
+				throw new ArgumentException("Trạng thái phòng không hợp lệ.");
+
 			var apartment = await _context.Apartments
 				.FirstOrDefaultAsync(a => a.ApartmentId == id && a.IsDeleted == false);
 
