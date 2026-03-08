@@ -20,6 +20,15 @@ namespace Sentana.API.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateService(CreateServiceRequestDto request)
         {
+            if (string.IsNullOrWhiteSpace(request.ServiceName))
+                return BadRequest(new { message = "Service name cannot be empty." });
+
+            if (request.ServiceName.Length > 100)
+                return BadRequest(new { message = "Service name is too long." });
+
+            if (request.ServiceFee < 0)
+                return BadRequest(new { message = "Service fee must be >= 0." });
+
             var result = await _serviceService.CreateServiceAsync(request);
             return Ok(result);
         }
