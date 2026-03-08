@@ -6,8 +6,8 @@
 
         public int ServiceId { get; set; }
 
-        public string ServiceName { get; set; }
+        public string ServiceName { get; set; } = string.Empty;
 
-        public decimal? ActualPrice { get; set; }
+        public decimal ActualPrice { get; set; }
     }
 }
