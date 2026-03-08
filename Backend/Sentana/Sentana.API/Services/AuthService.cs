@@ -117,13 +117,30 @@ namespace Sentana.API.Services
         //update profile
         public async Task<bool> UpdateUserProfileAsync(int accountId, UpdateProfileRequestDto request)
         {
+            // kiểm tra Email
+            if (await _context.Accounts.AnyAsync(a => a.Email == request.Email && a.AccountId != accountId))
+            {
+                throw new Exception("Email này đã được sử dụng bởi một tài khoản khác.");
+            }
+
+            // kiểm tra số điện thoại
+            if (await _context.Accounts.AnyAsync(a => a.Info != null && a.Info.PhoneNumber == request.PhoneNumber && a.AccountId != accountId))
+            {
+                throw new Exception("Số điện thoại này đã được sử dụng bởi một người khác.");
+            }
+
+            // kiểm tra CCCD
+            if (await _context.Accounts.AnyAsync(a => a.Info != null && a.Info.CmndCccd == request.CmndCccd && a.AccountId != accountId))
+            {
+                throw new Exception("Số CMND/CCCD này đã được sử dụng bởi một người khác.");
+            }
             var user = await _context.Accounts
                 .Include(a => a.Info)
                 .FirstOrDefaultAsync(a => a.AccountId == accountId);
 
             if (user == null) return false;
 
-            // Cập nhật bảng Account (Gán thẳng vì request.Email không còn null nữa)
+            // Cập nhật bảng Account 
             user.Email = request.Email;
             user.UpdatedAt = DateTime.Now;
 
@@ -143,7 +160,7 @@ namespace Sentana.API.Services
             }
             else
             {
-                // Nếu đã có thì cập nhật (Gán thẳng giá trị từ request)
+                // Nếu đã có thì cập nhật 
                 user.Info.FullName = request.FullName;
                 user.Info.PhoneNumber = request.PhoneNumber;
                 user.Info.CmndCccd = request.CmndCccd;
