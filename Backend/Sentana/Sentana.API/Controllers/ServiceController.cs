@@ -8,14 +8,9 @@ namespace Sentana.API.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Authorize] 
-    public class ServiceController : ControllerBase
+    public class ServiceController(IServiceService serviceService) : ControllerBase
     {
-        private readonly IServiceService _serviceService;
-
-        public ServiceController(IServiceService serviceService)
-        {
-            _serviceService = serviceService;
-        }
+        private readonly IServiceService _serviceService = serviceService;
 
         [HttpPost]
         public async Task<IActionResult> CreateService(CreateServiceRequestDto request)
@@ -103,6 +98,23 @@ namespace Sentana.API.Controllers
         [HttpGet("room/{roomId}")]
         public async Task<IActionResult> GetRoomServiceList(int roomId)
         {
+            if (roomId <= 0)
+            {
+                return BadRequest(new
+                {
+                    message = "Invalid room ID. Room ID must be greater than 0."
+                });
+            }
+
+            var roomExists = await _serviceService.ApartmentExistsAsync(roomId);
+            if (!roomExists)
+            {
+                return NotFound(new
+                {
+                    message = "Room not found."
+                });
+            }
+
             var services = await _serviceService.GetRoomServiceListAsync(roomId);
             return Ok(services);
         }
@@ -110,7 +122,6 @@ namespace Sentana.API.Controllers
         [HttpPost("room")]
         public async Task<IActionResult> AssignServiceToRoom(AssignRoomServiceRequestDto request)
         {
-            // Validate if the apartment exists
             var apartmentExists = await _serviceService.ApartmentExistsAsync(request.ApartmentId);
             if (!apartmentExists)
             {
@@ -119,8 +130,6 @@ namespace Sentana.API.Controllers
                     message = "Apartment not found."
                 });
             }
-
-            // Validate if the service exists
             var serviceExists = await _serviceService.ServiceExistsAsync(request.ServiceId);
             if (!serviceExists)
             {
@@ -130,7 +139,6 @@ namespace Sentana.API.Controllers
                 });
             }
 
-            // Proceed with assigning the service to the room
             var result = await _serviceService.AssignServiceToRoom(request);
 
             if (!result)
@@ -148,10 +156,9 @@ namespace Sentana.API.Controllers
         }
 
         [HttpDelete("room")]
-        [Authorize] // Ensure authentication is required
+        [Authorize] 
         public async Task<IActionResult> RemoveServiceFromRoom([FromBody] RemoveRoomServiceRequestDto request)
         {
-            // Check if the service is assigned to the room
             var relationExists = await _serviceService.CheckRoomServiceRelationAsync(request.ApartmentId, request.ServiceId);
             if (!relationExists)
             {
@@ -161,14 +168,12 @@ namespace Sentana.API.Controllers
                 });
             }
 
-            // Check if the user is authorized to remove the service
             var isAuthorized = await _serviceService.IsUserAuthorizedToModifyRoomService(User, request.ApartmentId);
             if (!isAuthorized)
             {
-                return Forbid(); // Return 403 Forbidden if the user is not authorized
+                return Forbid(); 
             }
 
-            // Proceed with removing the service from the room
             var result = await _serviceService.RemoveServiceFromRoom(request);
 
             if (!result)
@@ -188,7 +193,7 @@ namespace Sentana.API.Controllers
         [HttpPut("room/price")]
         public async Task<IActionResult> UpdateRoomServicePrice(UpdateRoomServicePriceRequestDto request)
         {
-            // Validate if the actual price is non-negative
+
             if (request.ActualPrice < 0)
             {
                 return BadRequest(new
@@ -197,7 +202,6 @@ namespace Sentana.API.Controllers
                 });
             }
 
-            // Check if the service is assigned to the room
             var isServiceAssigned = await _serviceService.CheckRoomServiceRelationAsync(request.ApartmentId, request.ServiceId);
             if (!isServiceAssigned)
             {
@@ -207,7 +211,6 @@ namespace Sentana.API.Controllers
                 });
             }
 
-            // Proceed with updating the room service price
             var result = await _serviceService.UpdateRoomServicePrice(request);
 
             if (!result)
