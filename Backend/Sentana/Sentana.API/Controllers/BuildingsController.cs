@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Sentana.API.DTOs.Building;
 using Sentana.API.Models;
 using Sentana.API.Services;
@@ -21,7 +23,12 @@ namespace Sentana.API.Controllers
 
         // US28 - Create Building
         [HttpPost]
-        public async Task<IActionResult> CreateBuilding([FromBody] CreateBuildingDto newBuilding)
+        [Authorize(Roles = "Manager")]
+        [ProducesResponseType(StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> CreateBuilding([FromBody] BuildingRequestDto newBuilding)
         {
             try
             {
@@ -41,7 +48,13 @@ namespace Sentana.API.Controllers
 
         // US29 - Update Building
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateBuilding(int id, [FromBody] UpdateBuildingDto updatedBuilding)
+        [Authorize(Roles = "Manager")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> UpdateBuilding(int id, [FromBody] BuildingRequestDto updatedBuilding)
         {
             try
             {
@@ -61,6 +74,12 @@ namespace Sentana.API.Controllers
 
         // US30 - Delete Building (soft delete)
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Manager")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> DeleteBuilding(int id)
         {
             try
@@ -76,22 +95,22 @@ namespace Sentana.API.Controllers
 
         // View Building List - để kiểm tra building mới tạo
         [HttpGet]
+        [Authorize(Roles = "Manager")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
         public async Task<IActionResult> GetBuildingList()
         {
             var buildings = await _context.Buildings
                 .Where(b => b.IsDeleted == false)
-                .Select(b => new
+                .Select(b => new BuildingResponseDto
                 {
-                    b.BuildingId,
-                    b.BuildingName,
-                    b.BuildingCode,
-                    b.Address,
-                    b.City,
-                    b.FloorNumber,
-                    b.ApartmentNumber,
-                    b.Status,
-                    b.CreatedAt,
-                    b.CreatedBy
+                    BuildingId = b.BuildingId,
+                    BuildingName = b.BuildingName,
+                    BuildingCode = b.BuildingCode,
+                    Address = b.Address,
+                    City = b.City,
+                    FloorNumber = b.FloorNumber,
+                    ApartmentNumber = b.ApartmentNumber,
+                    StatusName = b.Status.ToString() ?? string.Empty
                 })
                 .ToListAsync();
 

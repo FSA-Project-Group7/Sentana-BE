@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Building;
+using Sentana.API.Enums;
 using Sentana.API.Models;
 
 namespace Sentana.API.Services
@@ -14,11 +15,16 @@ namespace Sentana.API.Services
             _context = context;
         }
 
-        public async Task<Building> CreateBuildingAsync(CreateBuildingDto dto, ClaimsPrincipal user)
+        public async Task<BuildingResponseDto> CreateBuildingAsync(BuildingRequestDto dto, ClaimsPrincipal user)
         {
             if (dto == null || string.IsNullOrWhiteSpace(dto.BuildingName))
             {
                 throw new ArgumentException("Tên tòa nhà là bắt buộc.");
+            }
+
+            if (string.IsNullOrWhiteSpace(dto.BuildingCode))
+            {
+                throw new ArgumentException("Mã tòa nhà là bắt buộc.");
             }
 
             int? accountId = null;
@@ -36,6 +42,14 @@ namespace Sentana.API.Services
                 throw new InvalidOperationException("Tên tòa nhà đã tồn tại.");
             }
 
+            var isCodeExists = await _context.Buildings
+                .AnyAsync(b => b.BuildingCode == dto.BuildingCode && b.IsDeleted == false);
+
+            if (isCodeExists)
+            {
+                throw new InvalidOperationException("Mã tòa nhà đã tồn tại.");
+            }
+
             var newBuilding = new Building
             {
                 BuildingName = dto.BuildingName,
@@ -44,7 +58,7 @@ namespace Sentana.API.Services
                 City = dto.City,
                 FloorNumber = dto.FloorNumber,
                 ApartmentNumber = dto.ApartmentNumber,
-                Status = dto.Status,
+                Status = GeneralStatus.Active,
                 CreatedAt = DateTime.Now,
                 IsDeleted = false
             };
@@ -57,10 +71,10 @@ namespace Sentana.API.Services
             _context.Buildings.Add(newBuilding);
             await _context.SaveChangesAsync();
 
-            return newBuilding;
+            return MapToResponseDto(newBuilding);
         }
 
-        public async Task<Building> UpdateBuildingAsync(int id, UpdateBuildingDto dto, ClaimsPrincipal user)
+        public async Task<BuildingResponseDto> UpdateBuildingAsync(int id, BuildingRequestDto dto, ClaimsPrincipal user)
         {
             int? accountId = null;
             var accountIdClaim = user?.FindFirst("AccountId");
@@ -90,6 +104,17 @@ namespace Sentana.API.Services
 
             if (dto.BuildingCode != null)
             {
+                if (string.IsNullOrWhiteSpace(dto.BuildingCode))
+                    throw new ArgumentException("Mã tòa nhà không được để trống.");
+
+                var isCodeExists = await _context.Buildings
+                    .AnyAsync(b => b.BuildingCode == dto.BuildingCode
+                                   && b.BuildingId != id
+                                   && b.IsDeleted == false);
+
+                if (isCodeExists)
+                    throw new InvalidOperationException("Mã tòa nhà đã tồn tại.");
+
                 existingBuilding.BuildingCode = dto.BuildingCode;
             }
 
@@ -113,17 +138,12 @@ namespace Sentana.API.Services
                 existingBuilding.ApartmentNumber = dto.ApartmentNumber.Value;
             }
 
-            if (dto.Status.HasValue)
-            {
-                existingBuilding.Status = dto.Status.Value;
-            }
-
             existingBuilding.UpdatedAt = DateTime.UtcNow;
             existingBuilding.UpdatedBy = accountId;
 
             await _context.SaveChangesAsync();
 
-            return existingBuilding;
+            return MapToResponseDto(existingBuilding);
         }
 
         public async Task<bool> DeleteBuildingAsync(int id, ClaimsPrincipal user)
@@ -141,6 +161,13 @@ namespace Sentana.API.Services
             if (existingBuilding == null)
                 throw new InvalidOperationException("Không tìm thấy tòa nhà.");
 
+            // không cho xóa nếu tòa nhà còn căn hộ
+            var hasApartments = await _context.Apartments
+                .AnyAsync(a => a.BuildingId == id && a.IsDeleted == false);
+
+            if (hasApartments)
+                throw new InvalidOperationException("Tòa nhà đang chứa căn hộ, không thể xóa.");
+
             existingBuilding.IsDeleted = true;
             existingBuilding.UpdatedAt = DateTime.UtcNow;
             existingBuilding.UpdatedBy = accountId;
@@ -149,6 +176,20 @@ namespace Sentana.API.Services
 
             return true;
         }
+
+        private static BuildingResponseDto MapToResponseDto(Building building)
+        {
+            return new BuildingResponseDto
+            {
+                BuildingId = building.BuildingId,
+                BuildingName = building.BuildingName,
+                BuildingCode = building.BuildingCode,
+                Address = building.Address,
+                City = building.City,
+                FloorNumber = building.FloorNumber,
+                ApartmentNumber = building.ApartmentNumber,
+                StatusName = building.Status?.ToString() ?? string.Empty
+            };
+        }
     }
 }
-
