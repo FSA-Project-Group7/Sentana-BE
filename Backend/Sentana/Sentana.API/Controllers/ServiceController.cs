@@ -8,14 +8,9 @@ namespace Sentana.API.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Authorize] 
-    public class ServiceController : ControllerBase
+    public class ServiceController(IServiceService serviceService) : ControllerBase
     {
-        private readonly IServiceService _serviceService;
-
-        public ServiceController(IServiceService serviceService)
-        {
-            _serviceService = serviceService;
-        }
+        private readonly IServiceService _serviceService = serviceService;
 
         [HttpPost]
         public async Task<IActionResult> CreateService(CreateServiceRequestDto request)

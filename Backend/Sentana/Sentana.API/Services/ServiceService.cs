@@ -47,10 +47,8 @@ namespace Sentana.API.Services
         public async Task DeleteServiceAsync(int serviceId)
         {
             var service = await _context.Services
-                .FirstOrDefaultAsync(x => x.ServiceId == serviceId);
-
-            if (service == null)
-                throw new Exception("Service not found.");
+                .FirstOrDefaultAsync(x => x.ServiceId == serviceId)
+                ?? throw new Exception("Service not found.");
 
             if (service.Status == GeneralStatus.Inactive)
                 throw new Exception("Service already inactive.");
@@ -66,12 +64,12 @@ namespace Sentana.API.Services
 
             return services.Select(static s =>
             {
-                int status = (int)s.Status;
+                int status = (int)(s.Status ?? GeneralStatus.Inactive); // Ensure non-null value
                 return new ServiceResponseDto
                 {
                     ServiceId = s.ServiceId,
-                    ServiceName = s.ServiceName,
-                    Description = s.Description,
+                    ServiceName = s.ServiceName ?? string.Empty, // Ensure non-null value
+                    Description = s.Description ?? string.Empty, // Ensure non-null value
                     ServiceFee = s.ServiceFee ?? 0,
                     Status = status,
                     CreatedAt = s.CreatedAt
@@ -138,6 +136,7 @@ namespace Sentana.API.Services
                 return false;
 
             roomService.ActualPrice = request.ActualPrice;
+            roomService.EndDay = DateOnly.FromDateTime(DateTime.Now);
 
             await _context.SaveChangesAsync();
             return true;
