@@ -418,3 +418,6 @@ FodyWeavers.xsd
 *.msp
 # Bỏ qua file cấu hình local của từng thành viên
 appsettings.Development.json
+
+# Bỏ qua file chứa biến môi trường nhạy cảm
+.env
