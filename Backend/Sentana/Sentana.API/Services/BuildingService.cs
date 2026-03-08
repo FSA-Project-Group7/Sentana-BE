@@ -22,6 +22,11 @@ namespace Sentana.API.Services
                 throw new ArgumentException("Tên tòa nhà là bắt buộc.");
             }
 
+            if (string.IsNullOrWhiteSpace(dto.BuildingCode))
+            {
+                throw new ArgumentException("Mã tòa nhà là bắt buộc.");
+            }
+
             int? accountId = null;
             var accountIdClaim = user?.FindFirst("AccountId");
             if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
@@ -35,6 +40,14 @@ namespace Sentana.API.Services
             if (isNameExists)
             {
                 throw new InvalidOperationException("Tên tòa nhà đã tồn tại.");
+            }
+
+            var isCodeExists = await _context.Buildings
+                .AnyAsync(b => b.BuildingCode == dto.BuildingCode && b.IsDeleted == false);
+
+            if (isCodeExists)
+            {
+                throw new InvalidOperationException("Mã tòa nhà đã tồn tại.");
             }
 
             var newBuilding = new Building
@@ -91,6 +104,17 @@ namespace Sentana.API.Services
 
             if (dto.BuildingCode != null)
             {
+                if (string.IsNullOrWhiteSpace(dto.BuildingCode))
+                    throw new ArgumentException("Mã tòa nhà không được để trống.");
+
+                var isCodeExists = await _context.Buildings
+                    .AnyAsync(b => b.BuildingCode == dto.BuildingCode
+                                   && b.BuildingId != id
+                                   && b.IsDeleted == false);
+
+                if (isCodeExists)
+                    throw new InvalidOperationException("Mã tòa nhà đã tồn tại.");
+
                 existingBuilding.BuildingCode = dto.BuildingCode;
             }
 
@@ -136,6 +160,13 @@ namespace Sentana.API.Services
 
             if (existingBuilding == null)
                 throw new InvalidOperationException("Không tìm thấy tòa nhà.");
+
+            // không cho xóa nếu tòa nhà còn căn hộ
+            var hasApartments = await _context.Apartments
+                .AnyAsync(a => a.BuildingId == id && a.IsDeleted == false);
+
+            if (hasApartments)
+                throw new InvalidOperationException("Tòa nhà đang chứa căn hộ, không thể xóa.");
 
             existingBuilding.IsDeleted = true;
             existingBuilding.UpdatedAt = DateTime.UtcNow;

@@ -8,6 +8,7 @@ namespace Sentana.API.DTOs.Building
         [StringLength(100, MinimumLength = 2, ErrorMessage = "Tên tòa nhà phải từ 2 đến 100 ký tự.")]
         public string BuildingName { get; set; } = string.Empty;
 
+        [Required(ErrorMessage = "Mã tòa nhà là bắt buộc.")]
         [StringLength(50, ErrorMessage = "Mã tòa nhà tối đa 50 ký tự.")]
         public string BuildingCode { get; set; } = string.Empty;
 
