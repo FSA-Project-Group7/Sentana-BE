@@ -27,17 +27,29 @@ namespace Sentana.API.Services
 					Area = a.Area,
 					Status = (byte?)a.Status
 				})
-				.OrderByDescending(a => a.ApartmentId) // Ưu tiên phòng mới tạo lên đầu
+				.OrderByDescending(a => a.ApartmentId) 
 				.ToListAsync();
 		}
 
 		public async Task<ApartmentDto> CreateApartmentAsync(CreateApartmentDto dto)
 		{
-			bool isCodeExist = await _context.Apartments
-				.AnyAsync(a => a.ApartmentCode!.ToLower() == dto.ApartmentCode!.ToLower() && a.IsDeleted == false);
+			var building = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == dto.BuildingId && b.IsDeleted == false);
+			if (building == null) throw new ArgumentException("Tòa nhà này không tồn tại hoặc đã bị xóa.");
 
-			if (isCodeExist)
-				throw new ArgumentException("Mã phòng này đã tồn tại trong hệ thống.");
+			if (dto.FloorNumber > building.FloorNumber)
+				throw new ArgumentException($"Tầng của căn hộ ({dto.FloorNumber}) không được vượt quá số tầng của tòa nhà ({building.FloorNumber}).");
+
+			bool isCodeExist = await _context.Apartments.AnyAsync(a => a.ApartmentCode!.ToLower() == dto.ApartmentCode!.ToLower() && a.IsDeleted == false);
+			if (isCodeExist) throw new ArgumentException("Mã căn hộ này đã tồn tại trong hệ thống.");
+
+			bool isNameExist = await _context.Apartments.AnyAsync(a => a.BuildingId == dto.BuildingId && a.ApartmentName!.ToLower() == dto.ApartmentName!.ToLower() && a.IsDeleted == false);
+			if (isNameExist) throw new ArgumentException("Tên căn hộ này đã tồn tại trong tòa nhà này.");
+
+			bool isAppNumberExist = await _context.Apartments.AnyAsync(a => a.BuildingId == dto.BuildingId && a.ApartmentNumber == dto.ApartmentNumber && a.IsDeleted == false);
+			if (isAppNumberExist) throw new ArgumentException("Số căn hộ (Apartment Number) này đã tồn tại trong tòa nhà này.");
+
+			if (!Enum.IsDefined(typeof(ApartmentStatus), (ApartmentStatus)dto.Status))
+				throw new ArgumentException("Trạng thái căn hộ không hợp lệ.");
 
 			var newApartment = new Apartment
 			{
@@ -47,7 +59,7 @@ namespace Sentana.API.Services
 				ApartmentNumber = dto.ApartmentNumber,
 				FloorNumber = dto.FloorNumber,
 				Area = dto.Area,
-				Status = ApartmentStatus.Vacant,
+				Status = (ApartmentStatus)dto.Status,
 				CreatedAt = DateTime.Now,
 				IsDeleted = false
 			};
@@ -68,18 +80,34 @@ namespace Sentana.API.Services
 
 		public async Task<bool> UpdateApartmentAsync(int id, UpdateApartmentDto dto)
 		{
-			var apartment = await _context.Apartments
-				.FirstOrDefaultAsync(a => a.ApartmentId == id && a.IsDeleted == false);
-
+			var apartment = await _context.Apartments.FirstOrDefaultAsync(a => a.ApartmentId == id && a.IsDeleted == false);
 			if (apartment == null) return false;
 
-			bool isCodeExist = await _context.Apartments
-				.AnyAsync(a => a.ApartmentId != id && a.ApartmentCode!.ToLower() == dto.ApartmentCode!.ToLower() && a.IsDeleted == false);
+			var building = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == apartment.BuildingId && b.IsDeleted == false);
 
-			if (isCodeExist)
-				throw new ArgumentException("Mã phòng này đã được sử dụng cho phòng khác.");
+			if (dto.FloorNumber.HasValue && building != null && dto.FloorNumber.Value > building.FloorNumber)
+				throw new ArgumentException($"Tầng của căn hộ ({dto.FloorNumber.Value}) không được vượt quá số tầng của tòa nhà ({building.FloorNumber}).");
 
-			// Map dữ liệu
+			bool isCodeExist = await _context.Apartments.AnyAsync(a => a.ApartmentId != id && a.ApartmentCode!.ToLower() == dto.ApartmentCode!.ToLower() && a.IsDeleted == false);
+			if (isCodeExist) throw new ArgumentException("Mã căn hộ này đã được sử dụng cho phòng khác.");
+
+			bool isNameExist = await _context.Apartments.AnyAsync(a => a.ApartmentId != id && a.BuildingId == apartment.BuildingId && a.ApartmentName!.ToLower() == dto.ApartmentName!.ToLower() && a.IsDeleted == false);
+			if (isNameExist) throw new ArgumentException("Tên căn hộ này đã tồn tại trong tòa nhà này.");
+
+			if (dto.ApartmentNumber.HasValue)
+			{
+				bool isAppNumberExist = await _context.Apartments.AnyAsync(a => a.ApartmentId != id && a.BuildingId == apartment.BuildingId && a.ApartmentNumber == dto.ApartmentNumber.Value && a.IsDeleted == false);
+				if (isAppNumberExist) throw new ArgumentException("Số căn hộ (Apartment Number) này đã tồn tại trong tòa nhà này.");
+				apartment.ApartmentNumber = dto.ApartmentNumber.Value;
+			}
+
+			if (dto.Status.HasValue)
+			{
+				if (!Enum.IsDefined(typeof(ApartmentStatus), (ApartmentStatus)dto.Status.Value))
+					throw new ArgumentException("Trạng thái căn hộ không hợp lệ.");
+				apartment.Status = (ApartmentStatus)dto.Status.Value;
+			}
+
 			apartment.ApartmentName = dto.ApartmentName;
 			apartment.ApartmentCode = dto.ApartmentCode;
 			if (dto.Area.HasValue) apartment.Area = dto.Area.Value;
@@ -92,7 +120,7 @@ namespace Sentana.API.Services
 
 		public async Task<bool> UpdateStatusAsync(int id, byte newStatus)
 		{
-			// Kiểm tra trạng thái gửi lên có hợp lệ không
+
 			if (!Enum.IsDefined(typeof(ApartmentStatus), (ApartmentStatus)newStatus))
 				throw new ArgumentException("Trạng thái phòng không hợp lệ.");
 
