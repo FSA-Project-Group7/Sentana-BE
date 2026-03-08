@@ -21,7 +21,7 @@ namespace Sentana.API.Services
             {
                 throw new ArgumentException("Tên tòa nhà là bắt buộc.");
             }
-            if (user == null) {
+
             if (string.IsNullOrWhiteSpace(dto.BuildingCode))
             {
                 throw new ArgumentException("Mã tòa nhà là bắt buộc.");
@@ -161,7 +161,7 @@ namespace Sentana.API.Services
             if (existingBuilding == null)
                 throw new InvalidOperationException("Không tìm thấy tòa nhà.");
 
-            // BUG20: không cho xóa nếu tòa nhà còn căn hộ
+            // không cho xóa nếu tòa nhà còn căn hộ
             var hasApartments = await _context.Apartments
                 .AnyAsync(a => a.BuildingId == id && a.IsDeleted == false);
 
