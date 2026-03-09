@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Apartment;
 using Sentana.API.Services;
 
@@ -6,6 +7,7 @@ namespace Sentana.API.Controllers
 {
 	[Route("api/[controller]")]
 	[ApiController]
+	[Authorize] // Yêu cầu phải đăng nhập
 	public class ApartmentsController : ControllerBase
 	{
 		private readonly IApartmentService _apartmentService;
@@ -23,6 +25,7 @@ namespace Sentana.API.Controllers
 		}
 
 		[HttpPost]
+		[Authorize(Roles = "Manager, Admin")] // Phân quyền
 		public async Task<IActionResult> CreateApartment([FromBody] CreateApartmentDto newApartmentDto)
 		{
 			try
@@ -37,6 +40,7 @@ namespace Sentana.API.Controllers
 		}
 
 		[HttpPut("{id}")]
+		[Authorize(Roles = "Manager, Admin")] // Phân quyền
 		public async Task<IActionResult> UpdateApartment(int id, [FromBody] UpdateApartmentDto updatedDataDto)
 		{
 			try
@@ -53,6 +57,7 @@ namespace Sentana.API.Controllers
 		}
 
 		[HttpPatch("{id}/status")]
+		[Authorize(Roles = "Manager, Admin")] // Phân quyền
 		public async Task<IActionResult> UpdateStatus(int id, [FromBody] byte newStatus)
 		{
 			try
@@ -69,12 +74,20 @@ namespace Sentana.API.Controllers
 		}
 
 		[HttpDelete("{id}")]
+		[Authorize(Roles = "Manager, Admin")] // Phân quyền
 		public async Task<IActionResult> DeleteApartment(int id)
 		{
-			var success = await _apartmentService.DeleteApartmentAsync(id);
-			if (!success) return NotFound(new { message = "Không tìm thấy phòng này." });
+			try
+			{
+				var success = await _apartmentService.DeleteApartmentAsync(id);
+				if (!success) return NotFound(new { message = "Không tìm thấy phòng này." });
 
-			return Ok(new { message = "Đã xóa phòng khỏi danh sách thành công!" });
+				return Ok(new { message = "Đã xóa phòng khỏi danh sách thành công!" });
+			}
+			catch (ArgumentException ex)
+			{
+				return BadRequest(new { message = ex.Message });
+			}
 		}
 	}
 }
