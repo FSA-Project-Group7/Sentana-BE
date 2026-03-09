@@ -68,7 +68,7 @@ namespace Sentana.API.Controllers
         }
 
 
-        [[HttpPut("profile")]
+        [HttpPut("profile")]
         [Authorize]
         public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequestDto request)
         {
