@@ -77,9 +77,14 @@ namespace Sentana.API.Controllers
                                               .FirstOrDefault() ?? "Dữ liệu đầu vào không hợp lệ.";
                 return BadRequest(ApiResponse<object>.Fail(400, firstError));
             }
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Không thể xác định danh tính người quản lý. Vui lòng đăng nhập lại."));
+            }
             try
             {
-                var updatedTechnician = await _technicianService.UpdateTechnician(id, technicianRequest);
+                var updatedTechnician = await _technicianService.UpdateTechnician(id, technicianRequest, managerId);
                 return Ok(ApiResponse<TechnicianResponseDto>.Success(updatedTechnician, "Cập nhật tài khoản Kỹ thuật viên thành công!"));
             }
             catch (Exception ex)

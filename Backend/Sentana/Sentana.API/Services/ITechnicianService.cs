@@ -8,7 +8,7 @@ namespace Sentana.API.Services
 
         Task<TechnicianResponseDto> CreateTechnician(CreateTechnicianRequestDto technicianRequest, int managerId);
 
-        Task<TechnicianResponseDto> UpdateTechnician(int technicianId, UpdateTechnicianRequestDto technicianRequest);
+        Task<TechnicianResponseDto> UpdateTechnician(int technicianId, UpdateTechnicianRequestDto technicianRequest, int managerId);
 
         Task<string> ToggleTechnicianStatus(int technicianId);
     }

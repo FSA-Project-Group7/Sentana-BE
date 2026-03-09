@@ -11,5 +11,6 @@ namespace Sentana.API.DTOs.Technician
         public string? PhoneNumber { get; set; }
         public GeneralStatus? Status { get; set; }
         public byte? TechAvailability { get; set; }
+        public bool? IsDeleted { get; set; }
     }
 }
