@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-using Sentana.API.Services;
 using Sentana.API.DTOs.Contracts;
+using Sentana.API.Services;
 
 namespace Sentana.API.Controllers
 {
@@ -22,6 +22,7 @@ namespace Sentana.API.Controllers
                     message = "Invalid contract ID."
                 });
             }
+
             if (request == null)
             {
                 return BadRequest(new
@@ -30,31 +31,14 @@ namespace Sentana.API.Controllers
                 });
             }
 
-            try
+            if (!ModelState.IsValid)
             {
-                var result = await _contractService.TerminateContractAsync(id, request);
-
-                if (result.StatusCode != 200)
-                {
-                    return StatusCode(result.StatusCode, new
-                    {
-                        message = result.Message
-                    });
-                }
-
-                return Ok(new
-                {
-                    message = "Contract terminated successfully.",
-                    data = result.Data
-                });
+                return BadRequest(ModelState);
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new
-                {
-                    message = ex.Message
-                });
-            }
+
+            var result = await _contractService.TerminateContractAsync(id, request);
+
+            return StatusCode(result.StatusCode, result);
         }
     }
 }
