@@ -25,26 +25,47 @@ namespace Sentana.API.Controllers
 		[HttpPost]
 		public async Task<IActionResult> CreateApartment([FromBody] CreateApartmentDto newApartmentDto)
 		{
-			var result = await _apartmentService.CreateApartmentAsync(newApartmentDto);
-			return CreatedAtAction(nameof(GetApartmentList), new { id = result.ApartmentId }, result);
+			try
+			{
+				var result = await _apartmentService.CreateApartmentAsync(newApartmentDto);
+				return CreatedAtAction(nameof(GetApartmentList), new { id = result.ApartmentId }, new { message = "Tạo phòng mới thành công!", data = result });
+			}
+			catch (ArgumentException ex)
+			{
+				return BadRequest(new { message = ex.Message });
+			}
 		}
 
 		[HttpPut("{id}")]
 		public async Task<IActionResult> UpdateApartment(int id, [FromBody] UpdateApartmentDto updatedDataDto)
 		{
-			var success = await _apartmentService.UpdateApartmentAsync(id, updatedDataDto);
-			if (!success) return NotFound(new { message = "Không tìm thấy phòng này." });
+			try
+			{
+				var success = await _apartmentService.UpdateApartmentAsync(id, updatedDataDto);
+				if (!success) return NotFound(new { message = "Không tìm thấy phòng này." });
 
-			return Ok(new { message = "Cập nhật thông tin phòng thành công!" });
+				return Ok(new { message = "Cập nhật thông tin phòng thành công!" });
+			}
+			catch (ArgumentException ex)
+			{
+				return BadRequest(new { message = ex.Message });
+			}
 		}
 
 		[HttpPatch("{id}/status")]
 		public async Task<IActionResult> UpdateStatus(int id, [FromBody] byte newStatus)
 		{
-			var success = await _apartmentService.UpdateStatusAsync(id, newStatus);
-			if (!success) return NotFound(new { message = "Không tìm thấy phòng này." });
+			try
+			{
+				var success = await _apartmentService.UpdateStatusAsync(id, newStatus);
+				if (!success) return NotFound(new { message = "Không tìm thấy phòng này." });
 
-			return Ok(new { message = "Cập nhật trạng thái thành công!" });
+				return Ok(new { message = "Cập nhật trạng thái thành công!" });
+			}
+			catch (ArgumentException ex)
+			{
+				return BadRequest(new { message = ex.Message });
+			}
 		}
 
 		[HttpDelete("{id}")]

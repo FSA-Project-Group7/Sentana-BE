@@ -1,7 +1,8 @@
-using Sentana.API.Models;
 using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Service;
 using Sentana.API.Enums;
+using Sentana.API.Models;
+using System.Security.Claims;
 
 namespace Sentana.API.Services
 {
@@ -9,12 +10,8 @@ namespace Sentana.API.Services
     {
         private readonly SentanaContext _context;
 
-        public ServiceService(SentanaContext context)
-        {
-            _context = context;
-        }
+        public ServiceService(SentanaContext context) => _context = context;
 
-        // US54 - Create Service
         public async Task<Service> CreateServiceAsync(CreateServiceRequestDto request)
         {
             var service = new Service
@@ -31,14 +28,11 @@ namespace Sentana.API.Services
             return service;
         }
 
-        // US55 - Update Service
         public async Task<Service> UpdateServiceAsync(UpdateServiceRequestDto request)
         {
             var service = await _context.Services
-                .FirstOrDefaultAsync(x => x.ServiceId == request.ServiceId);
-
-            if (service == null)
-                throw new Exception("Service not found.");
+                .FirstOrDefaultAsync(x => x.ServiceId == request.ServiceId)
+                ?? throw new Exception("Service not found.");
 
             service.ServiceName = request.ServiceName;
             service.Description = request.Description;
@@ -50,14 +44,11 @@ namespace Sentana.API.Services
             return service;
         }
 
-        // US56 - Delete Service
         public async Task DeleteServiceAsync(int serviceId)
         {
             var service = await _context.Services
-                .FirstOrDefaultAsync(x => x.ServiceId == serviceId);
-
-            if (service == null)
-                throw new Exception("Service not found.");
+                .FirstOrDefaultAsync(x => x.ServiceId == serviceId)
+                ?? throw new Exception("Service not found.");
 
             if (service.Status == GeneralStatus.Inactive)
                 throw new Exception("Service already inactive.");
@@ -67,32 +58,34 @@ namespace Sentana.API.Services
             await _context.SaveChangesAsync();
         }
 
-        // US57 - View Service List
         public async Task<IEnumerable<ServiceResponseDto>> GetServiceListAsync()
         {
             var services = await _context.Services.ToListAsync();
 
-            return services.Select(s => new ServiceResponseDto
+            return services.Select(static s =>
             {
-                ServiceId = s.ServiceId,
-                ServiceName = s.ServiceName,
-                Description = s.Description,
-                ServiceFee = s.ServiceFee ?? 0,
-                Status = (int)s.Status,
-				CreatedAt = s.CreatedAt
-			});
+                int status = (int)(s.Status ?? GeneralStatus.Inactive); // Ensure non-null value
+                return new ServiceResponseDto
+                {
+                    ServiceId = s.ServiceId,
+                    ServiceName = s.ServiceName ?? string.Empty, // Ensure non-null value
+                    Description = s.Description ?? string.Empty, // Ensure non-null value
+                    ServiceFee = s.ServiceFee ?? 0,
+                    Status = status,
+                    CreatedAt = s.CreatedAt
+                };
+            });
         }
 
-        // US58 - Assign Service to Apartment
         public async Task<bool> AssignServiceToRoom(AssignRoomServiceRequestDto request)
         {
             var exist = await _context.ApartmentServices
-                .FirstOrDefaultAsync(x =>
+                .AnyAsync(x =>
                     x.ApartmentId == request.ApartmentId &&
                     x.ServiceId == request.ServiceId &&
                     x.IsDeleted == false);
 
-            if (exist != null)
+            if (exist)
                 return false;
 
             var roomService = new Models.ApartmentService
@@ -100,6 +93,7 @@ namespace Sentana.API.Services
                 ApartmentId = request.ApartmentId,
                 ServiceId = request.ServiceId,
                 Status = GeneralStatus.Active,
+                StartDay = DateOnly.FromDateTime(DateTime.Now),
                 CreatedAt = DateTime.Now,
                 IsDeleted = false
             };
@@ -110,7 +104,6 @@ namespace Sentana.API.Services
             return true;
         }
 
-        // US59 - Remove Service from Apartment
         public async Task<bool> RemoveServiceFromRoom(RemoveRoomServiceRequestDto request)
         {
             var roomService = await _context.ApartmentServices
@@ -122,13 +115,15 @@ namespace Sentana.API.Services
             if (roomService == null)
                 return false;
 
-            
+            roomService.IsDeleted = true;
+            roomService.Status = GeneralStatus.Inactive;
+            roomService.EndDay = DateOnly.FromDateTime(DateTime.Now);
 
             await _context.SaveChangesAsync();
+
             return true;
         }
 
-        // US60 - Update Room Service Price
         public async Task<bool> UpdateRoomServicePrice(UpdateRoomServicePriceRequestDto request)
         {
             var roomService = await _context.ApartmentServices
@@ -140,13 +135,13 @@ namespace Sentana.API.Services
             if (roomService == null)
                 return false;
 
-            roomService.ActualPrice = (decimal?)request.ActualPrice;
+            roomService.ActualPrice = request.ActualPrice;
+            roomService.EndDay = DateOnly.FromDateTime(DateTime.Now);
 
             await _context.SaveChangesAsync();
             return true;
         }
 
-        // US61 - View Room Service List
         public async Task<IEnumerable<RoomServiceResponseDto>> GetRoomServiceListAsync(int roomId)
         {
             var roomServices = await _context.ApartmentServices
@@ -158,9 +153,34 @@ namespace Sentana.API.Services
             {
                 ApartmentId = rs.ApartmentId ?? 0,
                 ServiceId = rs.ServiceId ?? 0,
-                ServiceName = rs.Service.ServiceName,
-                ActualPrice = rs.ActualPrice
+                ServiceName = rs.Service?.ServiceName ?? string.Empty,
+                ActualPrice = rs.ActualPrice ?? 0
             });
+        }
+        public async Task<bool> ApartmentExistsAsync(int apartmentId)
+        {
+            return await _context.Apartments
+                .AnyAsync(a => a.ApartmentId == apartmentId);
+        }
+
+        public async Task<bool> ServiceExistsAsync(int serviceId)
+        {
+            return await _context.Services
+                .AnyAsync(s => s.ServiceId == serviceId);
+        }
+
+        public async Task<bool> CheckRoomServiceRelationAsync(int apartmentId, int serviceId)
+        {
+            return await _context.ApartmentServices
+                .AnyAsync(x =>
+                    x.ApartmentId == apartmentId &&
+                    x.ServiceId == serviceId &&
+                    x.IsDeleted == false);
+        }
+
+        public Task<bool> IsUserAuthorizedToModifyRoomService(ClaimsPrincipal user, int apartmentId)
+        {
+            return Task.FromResult(user?.Identity?.IsAuthenticated ?? false);
         }
     }
 }

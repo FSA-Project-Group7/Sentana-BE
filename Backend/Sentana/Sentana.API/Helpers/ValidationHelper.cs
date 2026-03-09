@@ -13,5 +13,8 @@
 
         // Mật khẩu it nhất 8 ký tự, 1 chữ cái, 1 chữ số, 1 ký tự đặc biệt
         public const string PasswordRegex = @"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$";
+
+        // Họ và tên chỉ chữ cái
+        public const string FullNameRegex = @"^[\p{L}\s]+$";
     }
 }

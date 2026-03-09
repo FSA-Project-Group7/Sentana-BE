@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Sentana.API.Models;
 using System.Text;
+using DotNetEnv;
 
 
 namespace Sentana.API
@@ -13,6 +14,7 @@ namespace Sentana.API
     {
         public static void Main(string[] args)
         {
+            Env.Load();
             var builder = WebApplication.CreateBuilder(args);
 
             // cấu hình database
