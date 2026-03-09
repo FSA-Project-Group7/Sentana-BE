@@ -13,7 +13,12 @@ namespace Sentana.API.DTOs.Apartment
 		[Range(0.1, double.MaxValue, ErrorMessage = "Diện tích phòng phải lớn hơn 0.")]
 		public double? Area { get; set; }
 
-		[Range(0, int.MaxValue, ErrorMessage = "Số tầng không hợp lệ.")]
+		[Range(1, int.MaxValue, ErrorMessage = "Số tầng (Floor Number) phải lớn hơn 0.")]
 		public int? FloorNumber { get; set; }
+
+		[Range(1, int.MaxValue, ErrorMessage = "Số phòng (Apartment Number) phải lớn hơn 0.")]
+		public int? ApartmentNumber { get; set; }
+
+		public byte? Status { get; set; }
 	}
 }

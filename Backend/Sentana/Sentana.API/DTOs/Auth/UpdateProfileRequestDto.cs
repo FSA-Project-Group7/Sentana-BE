@@ -6,6 +6,7 @@ namespace Sentana.API.DTOs.Auth
     public class UpdateProfileRequestDto
     {
         [Required(ErrorMessage = "Họ tên không được để trống.", AllowEmptyStrings = false)]
+        [RegularExpression(ValidationHelper.FullNameRegex, ErrorMessage = "Họ tên không hợp lệ. Chỉ được phép nhập chữ cái và khoảng trắng, không chứa số hoặc ký tự đặc biệt.")]
         public string FullName { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Số điện thoại không được để trống.", AllowEmptyStrings = false)]
