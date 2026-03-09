@@ -102,7 +102,6 @@ namespace Sentana.API.Controllers
             {
                 return BadRequest(new
                 {
-
                     message = "Invalid room id."
                 });
             }
@@ -114,8 +113,6 @@ namespace Sentana.API.Controllers
                 return NotFound(new
                 {
                     message = "Apartment not found."
-
-                    message = "Invalid room ID. Room ID must be greater than 0."
                 });
             }
 
