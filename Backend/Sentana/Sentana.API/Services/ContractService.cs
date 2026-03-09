@@ -21,59 +21,72 @@ namespace Sentana.API.Services
                 .Include(c => c.Apartment)
                 .FirstOrDefaultAsync(c => c.ContractId == contractId && c.IsDeleted == false);
 
+            // 1️⃣ Contract tồn tại
             if (contract == null)
             {
                 return ApiResponse<object>.Fail(404, "Contract not found.");
             }
 
+            // 2️⃣ Contract đã terminate chưa
             if (contract.Status != GeneralStatus.Active)
             {
-                return ApiResponse<object>.Fail(400, "Only active contracts can be terminated.");
+                return ApiResponse<object>.Fail(400, "Contract is not active.");
             }
 
+            // 3️⃣ Validate contract date
             if (contract.StartDay == null || contract.EndDay == null)
             {
-                return ApiResponse<object>.Fail(400, "Contract date information is invalid.");
+                return ApiResponse<object>.Fail(400, "Contract date is invalid.");
             }
 
-            DateOnly startDate = contract.StartDay.Value;
-            DateOnly endDate = contract.EndDay.Value;
+            var startDate = contract.StartDay.Value;
+            var endDate = contract.EndDay.Value;
 
+            // 4️⃣ terminationDate < start
             if (request.TerminationDate < startDate)
             {
                 return ApiResponse<object>.Fail(400, "Termination date cannot be before contract start date.");
             }
 
+            // 5️⃣ terminationDate > end
             if (request.TerminationDate > endDate)
             {
                 return ApiResponse<object>.Fail(400, "Termination date cannot be after contract end date.");
             }
 
+            // 6️⃣ deposit validate
+            decimal deposit = contract.Deposit ?? 0;
+
+            if (deposit <= 0)
+            {
+                return ApiResponse<object>.Fail(400, "Deposit value is invalid.");
+            }
+
+            if (request.AdditionalCost < 0)
+            {
+                return ApiResponse<object>.Fail(400, "Additional cost cannot be negative.");
+            }
+
+            if (request.AdditionalCost > deposit)
+            {
+                return ApiResponse<object>.Fail(400, "Additional cost cannot exceed deposit.");
+            }
+
             if (contract.Apartment == null)
             {
-                return ApiResponse<object>.Fail(400, "Apartment not found for this contract.");
+                return ApiResponse<object>.Fail(400, "Apartment not found.");
             }
 
-            int totalDays = endDate.DayNumber - startDate.DayNumber;
-            int usedDays = request.TerminationDate.DayNumber - startDate.DayNumber;
-            int remainingDays = totalDays - usedDays;
+            decimal refund = deposit - request.AdditionalCost;
 
-            decimal refundAmount = 0;
-
-            if (totalDays > 0 && contract.Deposit.HasValue)
+            if (refund < 0)
             {
-                refundAmount = contract.Deposit.Value * remainingDays / totalDays;
+                refund = 0;
             }
-
-            if (refundAmount < 0)
-            {
-                refundAmount = 0;
-            }
-
+            contract.AdditionalCost = request.AdditionalCost;
+            contract.RefundAmount = refund;
             contract.Status = GeneralStatus.Inactive;
-            contract.RefundAmount = refundAmount;
             contract.UpdatedAt = DateTime.Now;
-
             contract.Apartment.Status = ApartmentStatus.Vacant;
 
             await _context.SaveChangesAsync();
@@ -81,7 +94,9 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(new
             {
                 contractId = contract.ContractId,
-                refundAmount = refundAmount
+                deposit = deposit,
+                additionalCost = request.AdditionalCost,
+                refundAmount = refund
             }, "Contract terminated successfully.");
         }
     }
