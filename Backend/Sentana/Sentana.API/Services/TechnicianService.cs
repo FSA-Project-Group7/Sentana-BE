@@ -34,27 +34,36 @@ namespace Sentana.API.Services
             return await _context.InFos.AnyAsync(i => i.CmndCccd == identityCard);
         }
 
-        public async Task<TechnicianResponseDto> CreateTechnician(CreateTechnicianRequestDto technicianRequest)
+        public async Task<TechnicianResponseDto> CreateTechnician(CreateTechnicianRequestDto technicianRequest, int managerId)
         {
             if (await CheckEmailExist(technicianRequest.Email))
             {
                 throw new Exception("Email này đã tồn tại trong hệ thống.");
             }
-
             if (await CheckUserNameExist(technicianRequest.UserName))
             {
                 throw new Exception("Tên đăng nhập này đã tồn tại.");
             }
-
-            if(await CheckIdentityCardExist(technicianRequest.IdentityCard))
+            if (await CheckIdentityCardExist(technicianRequest.IdentityCard))
             {
-                throw new Exception("Số CMND/CCCD này đã tồn tại trong hệ thống.");
+                throw new Exception("Căn cước công dân này đã tồn tại trong hệ thống.");
             }
-
             string hashedPassword = BCrypt.Net.BCrypt.HashPassword(technicianRequest.Password);
-
-            string generatedCode = "TECH-" + DateTimeOffset.Now.ToUnixTimeSeconds().ToString().Substring(5);
-
+            var lastTech = await _context.Accounts
+                .Where(a => a.RoleId == 3 && a.Code != null && a.Code.StartsWith("TECH-"))
+                .OrderByDescending(a => a.AccountId)
+                .FirstOrDefaultAsync();
+            int nextNumber = 1;
+            if (lastTech != null && lastTech.Code.Length > 5)
+            {
+                string lastNumberStr = lastTech.Code.Substring(5);
+                if (int.TryParse(lastNumberStr, out int lastNumber))
+                {
+                    nextNumber = lastNumber + 1;
+                }
+            }
+            string generatedCode = $"TECH-{nextNumber:D3}";
+            DateTime currentTime = DateTime.Now;
             var newAccount = new Account
             {
                 Code = generatedCode,
@@ -64,18 +73,21 @@ namespace Sentana.API.Services
                 RoleId = 3,
                 Status = Sentana.API.Enums.GeneralStatus.Active,
                 TechAvailability = (byte)Sentana.API.Enums.TechAvailability.Free,
-                CreatedAt = DateTime.Now,
+                CreatedAt = currentTime,
+                CreatedBy = managerId,
                 Info = new InFo
                 {
                     FullName = technicianRequest.FullName,
                     PhoneNumber = technicianRequest.PhoneNumber,
-                    CmndCccd = technicianRequest.IdentityCard
+                    CmndCccd = technicianRequest.IdentityCard,
+                    Country = technicianRequest.Country,
+                    City = technicianRequest.City,
+                    Address = technicianRequest.Address,
+                    CreatedAt = currentTime
                 }
             };
-
             _context.Accounts.Add(newAccount);
             await _context.SaveChangesAsync();
-
             return new TechnicianResponseDto
             {
                 AccountId = newAccount.AccountId,

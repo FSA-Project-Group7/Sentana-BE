@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Technician;
 using Sentana.API.Helpers;
 using Sentana.API.Services;
+using System.Security.Claims;
 
 namespace Sentana.API.Controllers
 {
@@ -42,16 +43,21 @@ namespace Sentana.API.Controllers
         {
             if (!ModelState.IsValid)
             {
-                var allErrors = ModelState.Values
+                string firstError = ModelState.Values
                                   .SelectMany(v => v.Errors)
-                                  .Select(e => e.ErrorMessage);
-                string errorMessage = string.Join(" | ", allErrors);
-                return BadRequest(ApiResponse<object>.Fail(400, errorMessage));
+                                  .Select(e => e.ErrorMessage)
+                                  .FirstOrDefault() ?? "Dữ liệu đầu vào không hợp lệ.";
+                return BadRequest(ApiResponse<object>.Fail(400, firstError));
+            }
+             var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Không thể xác định danh tính người quản lý. Vui lòng đăng nhập lại."));
             }
             try
             {
-                var newTechnician = await _technicianService.CreateTechnician(technicianRequest);
-                return Ok(ApiResponse<TechnicianResponseDto>.Success(newTechnician, "Tạo tài khoản Kỹ thuật viên thành công!"));
+                var newTechnician = await _technicianService.CreateTechnician(technicianRequest, managerId);
+                return Ok(ApiResponse<TechnicianResponseDto>.Success(newTechnician, "Tạo tài khoản kĩ thuật viên thành công!"));
             }
             catch (Exception ex)
             {
@@ -65,11 +71,11 @@ namespace Sentana.API.Controllers
         {
             if (!ModelState.IsValid)
             {
-                var allErrors = ModelState.Values
-                                  .SelectMany(v => v.Errors)
-                                  .Select(e => e.ErrorMessage);
-                string errorMessage = string.Join(" | ", allErrors);
-                return BadRequest(ApiResponse<object>.Fail(400, errorMessage));
+                string firstError = ModelState.Values
+                                              .SelectMany(v => v.Errors)
+                                              .Select(e => e.ErrorMessage)
+                                              .FirstOrDefault() ?? "Dữ liệu đầu vào không hợp lệ.";
+                return BadRequest(ApiResponse<object>.Fail(400, firstError));
             }
             try
             {
