@@ -19,7 +19,7 @@ namespace Sentana.API.Controllers
             {
                 return BadRequest(new
                 {
-                    message = "Invalid contract ID."
+                    message = "Mã hợp đồng không hợp lệ."
                 });
             }
 
@@ -27,7 +27,7 @@ namespace Sentana.API.Controllers
             {
                 return BadRequest(new
                 {
-                    message = "Request body is required."
+                    message = "Nội dung yêu cầu là bắt buộc."
                 });
             }
 

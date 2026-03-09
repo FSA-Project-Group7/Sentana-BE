@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Service;
 using Sentana.API.Enums;
 using Sentana.API.Models;
@@ -32,7 +32,7 @@ namespace Sentana.API.Services
         {
             var service = await _context.Services
                 .FirstOrDefaultAsync(x => x.ServiceId == request.ServiceId)
-                ?? throw new Exception("Service not found.");
+                ?? throw new Exception("Không tìm thấy dịch vụ.");
 
             service.ServiceName = request.ServiceName;
             service.Description = request.Description;
@@ -48,10 +48,10 @@ namespace Sentana.API.Services
         {
             var service = await _context.Services
                 .FirstOrDefaultAsync(x => x.ServiceId == serviceId)
-                ?? throw new Exception("Service not found.");
+                ?? throw new Exception("Không tìm thấy dịch vụ.");
 
             if (service.Status == GeneralStatus.Inactive)
-                throw new Exception("Service already inactive.");
+                throw new Exception("Dịch vụ hiện đã không hoạt động.");
 
             service.Status = GeneralStatus.Inactive;
 
