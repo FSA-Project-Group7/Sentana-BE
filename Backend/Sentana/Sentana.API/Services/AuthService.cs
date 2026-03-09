@@ -105,7 +105,6 @@ namespace Sentana.API.Services
                 UserName = user.UserName,
                 Email = user.Email, 
                 Role = user.Role?.RoleName ?? "Resident",
-
                 FullName = user.Info?.FullName,
                 PhoneNumber = user.Info?.PhoneNumber,
                 BirthDay = user.Info?.BirthDay,
@@ -127,11 +126,6 @@ namespace Sentana.API.Services
                 return (false, "Số điện thoại này đã được sử dụng bởi một người khác.");
             }
 
-            if (await _context.Accounts.AnyAsync(a => a.Info != null && a.Info.CmndCccd == request.CmndCccd && a.AccountId != accountId))
-            {
-                return (false, "Số CMND/CCCD này đã được sử dụng bởi một người khác.");
-            }
-
             // không trùng thì update
             var user = await _context.Accounts
                 .Include(a => a.Info)
@@ -148,8 +142,6 @@ namespace Sentana.API.Services
                 {
                     FullName = request.FullName,
                     PhoneNumber = request.PhoneNumber,
-                    CmndCccd = request.CmndCccd,
-                    Address = request.Address,
                     BirthDay = request.BirthDay,
                     CreatedAt = DateTime.Now
                 };
@@ -158,8 +150,6 @@ namespace Sentana.API.Services
             {
                 user.Info.FullName = request.FullName;
                 user.Info.PhoneNumber = request.PhoneNumber;
-                user.Info.CmndCccd = request.CmndCccd;
-                user.Info.Address = request.Address;
                 user.Info.BirthDay = request.BirthDay;
                 user.Info.UpdatedAt = DateTime.Now;
             }
