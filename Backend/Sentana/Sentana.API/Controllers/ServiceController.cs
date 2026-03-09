@@ -102,6 +102,19 @@ namespace Sentana.API.Controllers
             {
                 return BadRequest(new
                 {
+
+                    message = "Invalid room id."
+                });
+            }
+
+            var apartmentExists = await _serviceService.ApartmentExistsAsync(roomId);
+
+            if (!apartmentExists)
+            {
+                return NotFound(new
+                {
+                    message = "Apartment not found."
+
                     message = "Invalid room ID. Room ID must be greater than 0."
                 });
             }
@@ -116,6 +129,7 @@ namespace Sentana.API.Controllers
             }
 
             var services = await _serviceService.GetRoomServiceListAsync(roomId);
+
             return Ok(services);
         }
 
