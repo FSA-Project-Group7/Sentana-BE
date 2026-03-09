@@ -115,39 +115,35 @@ namespace Sentana.API.Services
         }
 
         //update profile
-        public async Task<bool> UpdateUserProfileAsync(int accountId, UpdateProfileRequestDto request)
+        public async Task<(bool IsSuccess, string Message)> UpdateUserProfileAsync(int accountId, UpdateProfileRequestDto request)
         {
-            // kiểm tra Email
             if (await _context.Accounts.AnyAsync(a => a.Email == request.Email && a.AccountId != accountId))
             {
-                throw new Exception("Email này đã được sử dụng bởi một tài khoản khác.");
+                return (false, "Email này đã được sử dụng bởi một tài khoản khác.");
             }
 
-            // kiểm tra số điện thoại
             if (await _context.Accounts.AnyAsync(a => a.Info != null && a.Info.PhoneNumber == request.PhoneNumber && a.AccountId != accountId))
             {
-                throw new Exception("Số điện thoại này đã được sử dụng bởi một người khác.");
+                return (false, "Số điện thoại này đã được sử dụng bởi một người khác.");
             }
 
-            // kiểm tra CCCD
             if (await _context.Accounts.AnyAsync(a => a.Info != null && a.Info.CmndCccd == request.CmndCccd && a.AccountId != accountId))
             {
-                throw new Exception("Số CMND/CCCD này đã được sử dụng bởi một người khác.");
+                return (false, "Số CMND/CCCD này đã được sử dụng bởi một người khác.");
             }
+
+            // không trùng thì update
             var user = await _context.Accounts
                 .Include(a => a.Info)
                 .FirstOrDefaultAsync(a => a.AccountId == accountId);
 
-            if (user == null) return false;
+            if (user == null) return (false, "Không tìm thấy tài khoản để cập nhật.");
 
-            // Cập nhật bảng Account 
             user.Email = request.Email;
             user.UpdatedAt = DateTime.Now;
 
-            // Cập nhật bảng InFo
             if (user.Info == null)
             {
-                // Nếu chưa có thông tin thì tạo mới bản ghi Info
                 user.Info = new InFo
                 {
                     FullName = request.FullName,
@@ -160,7 +156,6 @@ namespace Sentana.API.Services
             }
             else
             {
-                // Nếu đã có thì cập nhật 
                 user.Info.FullName = request.FullName;
                 user.Info.PhoneNumber = request.PhoneNumber;
                 user.Info.CmndCccd = request.CmndCccd;
@@ -169,7 +164,8 @@ namespace Sentana.API.Services
                 user.Info.UpdatedAt = DateTime.Now;
             }
 
-            return await _context.SaveChangesAsync() > 0;
+            bool isSaved = await _context.SaveChangesAsync() > 0;
+            return isSaved ? (true, "Thành công") : (false, "Lỗi khi lưu dữ liệu.");
         }
 
         // Reset Password

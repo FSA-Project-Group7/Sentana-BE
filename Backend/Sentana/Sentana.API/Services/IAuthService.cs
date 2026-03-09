@@ -9,7 +9,7 @@ namespace Sentana.API.Services
         //get profile
         Task<UserProfileResponseDto?> GetUserProfileAsync(int accountId);
         //update profile
-        Task<bool> UpdateUserProfileAsync(int accountId, UpdateProfileRequestDto request);
+        Task<(bool IsSuccess, string Message)> UpdateUserProfileAsync(int accountId, UpdateProfileRequestDto request);
 
         // change and reset password
         Task<bool> SendOtpAsync(SendOtpRequestDto request);
