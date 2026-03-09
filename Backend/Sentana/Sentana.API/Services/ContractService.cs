@@ -24,19 +24,19 @@ namespace Sentana.API.Services
             // 1️⃣ Contract tồn tại
             if (contract == null)
             {
-                return ApiResponse<object>.Fail(404, "Contract not found.");
+                return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng.");
             }
 
             // 2️⃣ Contract đã terminate chưa
             if (contract.Status != GeneralStatus.Active)
             {
-                return ApiResponse<object>.Fail(400, "Contract is not active.");
+                return ApiResponse<object>.Fail(400, "Hợp đồng không còn hiệu lực.");
             }
 
             // 3️⃣ Validate contract date
             if (contract.StartDay == null || contract.EndDay == null)
             {
-                return ApiResponse<object>.Fail(400, "Contract date is invalid.");
+                return ApiResponse<object>.Fail(400, "Ngày hợp đồng không hợp lệ.");
             }
 
             var startDate = contract.StartDay.Value;
@@ -45,13 +45,13 @@ namespace Sentana.API.Services
             // 4️⃣ terminationDate < start
             if (request.TerminationDate < startDate)
             {
-                return ApiResponse<object>.Fail(400, "Termination date cannot be before contract start date.");
+                return ApiResponse<object>.Fail(400, "Ngày kết thúc không được nhỏ hơn ngày bắt đầu hợp đồng.");
             }
 
             // 5️⃣ terminationDate > end
             if (request.TerminationDate > endDate)
             {
-                return ApiResponse<object>.Fail(400, "Termination date cannot be after contract end date.");
+                return ApiResponse<object>.Fail(400, "Ngày kết thúc không được lớn hơn ngày kết thúc hợp đồng.");
             }
 
             // 6️⃣ deposit validate
@@ -59,22 +59,22 @@ namespace Sentana.API.Services
 
             if (deposit <= 0)
             {
-                return ApiResponse<object>.Fail(400, "Deposit value is invalid.");
+                return ApiResponse<object>.Fail(400, "Giá trị đặt cọc không hợp lệ.");
             }
 
             if (request.AdditionalCost < 0)
             {
-                return ApiResponse<object>.Fail(400, "Additional cost cannot be negative.");
+                return ApiResponse<object>.Fail(400, "Chi phí thêm không được âm.");
             }
 
             if (request.AdditionalCost > deposit)
             {
-                return ApiResponse<object>.Fail(400, "Additional cost cannot exceed deposit.");
+                return ApiResponse<object>.Fail(400, "Chi phí thêm không được vượt quá số tiền đặt cọc.");
             }
 
             if (contract.Apartment == null)
             {
-                return ApiResponse<object>.Fail(400, "Apartment not found.");
+                return ApiResponse<object>.Fail(400, "Không tìm thấy căn hộ.");
             }
 
             decimal refund = deposit - request.AdditionalCost;
@@ -97,7 +97,7 @@ namespace Sentana.API.Services
                 deposit = deposit,
                 additionalCost = request.AdditionalCost,
                 refundAmount = refund
-            }, "Contract terminated successfully.");
+            }, "Hợp đồng đã được chấm dứt thành công.");
         }
     }
 }

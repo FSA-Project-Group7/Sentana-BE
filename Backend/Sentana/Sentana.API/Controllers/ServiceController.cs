@@ -16,13 +16,13 @@ namespace Sentana.API.Controllers
         public async Task<IActionResult> CreateService(CreateServiceRequestDto request)
         {
             if (string.IsNullOrWhiteSpace(request.ServiceName))
-                return BadRequest(new { message = "Service name cannot be empty." });
+                return BadRequest(new { message = "Tên dịch vụ không thể để trống." });
 
             if (request.ServiceName.Length > 100)
-                return BadRequest(new { message = "Service name is too long." });
+                return BadRequest(new { message = "Tên dịch vụ quá dài " });
 
             if (request.ServiceFee < 0)
-                return BadRequest(new { message = "Service fee must be >= 0." });
+                return BadRequest(new { message = "Phí dịch vụ phải lớn hơn hoặc bằng 0.." });
 
             var result = await _serviceService.CreateServiceAsync(request);
             return Ok(result);
@@ -66,7 +66,7 @@ namespace Sentana.API.Controllers
             {
                 return BadRequest(new
                 {
-                    message = "Invalid service ID. ID must be greater than 0."
+                    message = "Mã định danh dịch vụ không hợp lệ. Mã định danh phải lớn hơn 0."
                 });
             }
 
@@ -76,14 +76,14 @@ namespace Sentana.API.Controllers
 
                 return Ok(new
                 {
-                    message = "Service deleted successfully"
+                    message = "Đã xóa dịch vụ thành công"
                 });
             }
             catch (KeyNotFoundException) 
             {
                 return NotFound(new
                 {
-                    message = "Service not found."
+                    message = "Không tìm thấy dịch vụ."
                 });
             }
             catch (Exception ex)
@@ -102,7 +102,7 @@ namespace Sentana.API.Controllers
             {
                 return BadRequest(new
                 {
-                    message = "Invalid room id."
+                    message = "Mã phòng không hợp lệ."
                 });
             }
 
@@ -112,7 +112,7 @@ namespace Sentana.API.Controllers
             {
                 return NotFound(new
                 {
-                    message = "Apartment not found."
+                    message = "Không tìm thấy căn hộ."
                 });
             }
 
@@ -121,7 +121,7 @@ namespace Sentana.API.Controllers
             {
                 return NotFound(new
                 {
-                    message = "Room not found."
+                    message = "Không tìm thấy phòng."
                 });
             }
 
@@ -138,7 +138,7 @@ namespace Sentana.API.Controllers
             {
                 return NotFound(new
                 {
-                    message = "Apartment not found."
+                    message = "Không tìm thấy căn hộ."
                 });
             }
             var serviceExists = await _serviceService.ServiceExistsAsync(request.ServiceId);
@@ -146,7 +146,7 @@ namespace Sentana.API.Controllers
             {
                 return NotFound(new
                 {
-                    message = "Service not found."
+                    message = "Không tìm thấy dịch vụ."
                 });
             }
 
@@ -156,13 +156,13 @@ namespace Sentana.API.Controllers
             {
                 return BadRequest(new
                 {
-                    message = "Service already assigned to room."
+                    message = "Dịch vụ đã được chỉ định cho phòng."
                 });
             }
 
             return Ok(new
             {
-                message = "Service assigned to room successfully."
+                message = "Dịch vụ được chỉ định cho phòng đã thành công."
             });
         }
 
@@ -175,7 +175,7 @@ namespace Sentana.API.Controllers
             {
                 return NotFound(new
                 {
-                    message = "Service not found in room."
+                    message = "Không tìm thấy dịch vụ trong phòng."
                 });
             }
 
@@ -191,13 +191,13 @@ namespace Sentana.API.Controllers
             {
                 return NotFound(new
                 {
-                    message = "Service not found in room."
+                    message = "Không tìm thấy dịch vụ trong phòng."
                 });
             }
 
             return Ok(new
             {
-                message = "Service removed from room successfully."
+                message = "Dịch vụ đã được gỡ bỏ khỏi phòng thành công."
             });
         }
 
@@ -209,7 +209,7 @@ namespace Sentana.API.Controllers
             {
                 return BadRequest(new
                 {
-                    message = "Actual price must be greater than or equal to 0."
+                    message = "Giá thực tế phải lớn hơn hoặc bằng 0."
                 });
             }
 
@@ -218,7 +218,7 @@ namespace Sentana.API.Controllers
             {
                 return NotFound(new
                 {
-                    message = "Service not found in room."
+                    message = "Không tìm thấy dịch vụ trong phòng."
                 });
             }
 
@@ -228,13 +228,13 @@ namespace Sentana.API.Controllers
             {
                 return NotFound(new
                 {
-                    message = "Service not found in room."
+                    message = "Không tìm thấy dịch vụ trong phòng."
                 });
             }
 
             return Ok(new
             {
-                message = "Room service price updated successfully."
+                message = "Giá dịch vụ phòng đã được cập nhật thành công."
             });
         }
     }
