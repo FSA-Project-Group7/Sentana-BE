@@ -15,7 +15,7 @@ namespace Sentana.API.Services
             _context = context;
         }
 
-        public async Task<ApiResponse<object>> TerminateContractAsync(int contractId, TerminateContractDto dto)
+        public async Task<ApiResponse<object>> TerminateContractAsync(int contractId, TerminateContractDto request)
         {
             var contract = await _context.Contracts
                 .Include(c => c.Apartment)
@@ -23,37 +23,39 @@ namespace Sentana.API.Services
 
             if (contract == null)
             {
-                return ApiResponse<object>.Fail(404, "Contract not found");
+                return ApiResponse<object>.Fail(404, "Contract not found.");
             }
 
             if (contract.Status != GeneralStatus.Active)
             {
-                return ApiResponse<object>.Fail(400, "Only active contracts can be terminated");
+                return ApiResponse<object>.Fail(400, "Only active contracts can be terminated.");
             }
 
             if (contract.StartDay == null || contract.EndDay == null)
             {
-                return ApiResponse<object>.Fail(400, "Contract date information is invalid");
+                return ApiResponse<object>.Fail(400, "Contract date information is invalid.");
             }
 
             DateOnly startDate = contract.StartDay.Value;
             DateOnly endDate = contract.EndDay.Value;
 
-            if (dto.TerminationDate < startDate)
+            if (request.TerminationDate < startDate)
             {
-                return ApiResponse<object>.Fail(400, "Termination date cannot be before contract start date");
+                return ApiResponse<object>.Fail(400, "Termination date cannot be before contract start date.");
             }
 
-            if (dto.TerminationDate > endDate)
+            if (request.TerminationDate > endDate)
             {
-                return ApiResponse<object>.Fail(400, "Termination date cannot be after contract end date");
+                return ApiResponse<object>.Fail(400, "Termination date cannot be after contract end date.");
             }
+
             if (contract.Apartment == null)
             {
-                return ApiResponse<object>.Fail(400, "Apartment not found for this contract");
+                return ApiResponse<object>.Fail(400, "Apartment not found for this contract.");
             }
+
             int totalDays = endDate.DayNumber - startDate.DayNumber;
-            int usedDays = dto.TerminationDate.DayNumber - startDate.DayNumber;
+            int usedDays = request.TerminationDate.DayNumber - startDate.DayNumber;
             int remainingDays = totalDays - usedDays;
 
             decimal refundAmount = 0;
@@ -67,6 +69,7 @@ namespace Sentana.API.Services
             {
                 refundAmount = 0;
             }
+
             contract.Status = GeneralStatus.Inactive;
             contract.RefundAmount = refundAmount;
             contract.UpdatedAt = DateTime.Now;
@@ -77,9 +80,9 @@ namespace Sentana.API.Services
 
             return ApiResponse<object>.Success(new
             {
-                ContractId = contract.ContractId,
-                RefundAmount = refundAmount
-            }, "Contract terminated successfully");
+                contractId = contract.ContractId,
+                refundAmount = refundAmount
+            }, "Contract terminated successfully.");
         }
     }
 }
