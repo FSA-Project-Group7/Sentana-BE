@@ -68,33 +68,24 @@ namespace Sentana.API.Controllers
         }
 
 
-        [HttpPut("profile")]
+        [[HttpPut("profile")]
         [Authorize]
         public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequestDto request)
         {
-            // lấy id của người dùng đang đăng nhập từ trong Token
             var accountIdClaim = User.FindFirstValue("AccountId");
             if (!int.TryParse(accountIdClaim, out int accountId))
             {
                 return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ hoặc đã hết hạn."));
             }
 
-            try
-            {
-                var result = await _authService.UpdateUserProfileAsync(accountId, request);
+            var result = await _authService.UpdateUserProfileAsync(accountId, request);
 
-                if (!result)
-                {
-                    return BadRequest(ApiResponse<string>.Fail(400, "Cập nhật thông tin thất bại. Không tìm thấy tài khoản."));
-                }
-
-                return Ok(ApiResponse<string>.Success(null, "Cập nhật thông tin cá nhân thành công!"));
-            }
-            catch (Exception ex)
+            if (!result.IsSuccess)
             {
-              // bắt lỗi 
-                return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
+                return BadRequest(ApiResponse<string>.Fail(400, result.Message));
             }
+
+            return Ok(ApiResponse<string>.Success(null, "Cập nhật thông tin cá nhân thành công!"));
         }
 
         //Reset and change password
