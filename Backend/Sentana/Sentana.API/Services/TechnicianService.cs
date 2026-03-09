@@ -71,10 +71,11 @@ namespace Sentana.API.Services
                 UserName = technicianRequest.UserName,
                 Password = hashedPassword,
                 RoleId = 3,
-                Status = Sentana.API.Enums.GeneralStatus.Active,
-                TechAvailability = (byte)Sentana.API.Enums.TechAvailability.Free,
+                Status = GeneralStatus.Active,
+                TechAvailability = (byte)TechAvailability.Free,
                 CreatedAt = currentTime,
                 CreatedBy = managerId,
+                IsDeleted = false,
                 Info = new InFo
                 {
                     FullName = technicianRequest.FullName,
@@ -95,8 +96,13 @@ namespace Sentana.API.Services
                 Email = newAccount.Email,
                 FullName = newAccount.Info?.FullName,
                 PhoneNumber = newAccount.Info?.PhoneNumber,
+                IdentityCard = newAccount.Info?.CmndCccd,
                 Status = newAccount.Status,
-                TechAvailability = newAccount.TechAvailability
+                TechAvailability = newAccount.TechAvailability,
+                Country = newAccount.Info?.Country,
+                City = newAccount.Info?.City,
+                Address = newAccount.Info?.Address,
+                IsDeleted = newAccount.IsDeleted
             };
         }
 
@@ -112,8 +118,12 @@ namespace Sentana.API.Services
                     FullName = a.Info != null ? a.Info.FullName : null,
                     Email = a.Email,
                     PhoneNumber = a.Info != null ? a.Info.PhoneNumber : null,
+                    IdentityCard = a.Info != null ? a.Info.CmndCccd : null,
                     Status = a.Status,
                     TechAvailability = a.TechAvailability,
+                    Country = a.Info != null ? a.Info.Country : null,
+                    City = a.Info != null ? a.Info.City : null,
+                    Address = a.Info != null ? a.Info.Address : null,
                     IsDeleted = a.IsDeleted
                 })
                 .ToListAsync();
@@ -134,17 +144,26 @@ namespace Sentana.API.Services
             {
                 throw new Exception("Email này đã được sử dụng cho một tài khoản khác.");
             }
+
+            var identityCardExist = await _context.Accounts.AnyAsync(a => a.Info != null &&
+            a.Info.CmndCccd == technicianRequest.IdentityCard &&
+            a.AccountId != technicianId);
+            if (identityCardExist)
+            {
+                throw new Exception("Số CCCD này đã tồn tại trên một tài khoản khác.");
+            }
             DateTime currentTime = DateTime.Now;
             technician.Email = technicianRequest.Email;
-            technician.IsDeleted = technicianRequest.IsDeleted; 
+            technician.IsDeleted = technicianRequest.IsDeleted;
             technician.UpdatedAt = currentTime;
-            technician.UpdatedBy = managerId;            
+            technician.UpdatedBy = managerId;
             if (technician.Info == null)
             {
                 technician.Info = new InFo { CreatedAt = currentTime };
             }
             technician.Info.FullName = technicianRequest.FullName;
             technician.Info.PhoneNumber = technicianRequest.PhoneNumber;
+            technician.Info.CmndCccd = technicianRequest.IdentityCard;
             technician.Info.Country = technicianRequest.Country;
             technician.Info.City = technicianRequest.City;
             technician.Info.Address = technicianRequest.Address;
@@ -158,9 +177,13 @@ namespace Sentana.API.Services
                 Email = technician.Email,
                 FullName = technician.Info.FullName,
                 PhoneNumber = technician.Info.PhoneNumber,
+                IdentityCard = technician.Info.CmndCccd,
                 Status = technician.Status,
                 TechAvailability = technician.TechAvailability,
-                IsDeleted = technician.IsDeleted              
+                Country = technician.Info.Country,
+                City = technician.Info.City,
+                Address = technician.Info.Address,
+                IsDeleted = technician.IsDeleted
             };
         }
 

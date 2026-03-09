@@ -33,7 +33,7 @@ namespace Sentana.API.Controllers
             catch (Exception ex)
             {
                 var errorResponse = ApiResponse<IEnumerable<TechnicianResponseDto>>.Fail(500, $"Đã xảy ra lỗi khi lấy danh sách kĩ thuật viên: {ex.Message}");
-                return StatusCode(500, errorResponse);
+                return BadRequest(errorResponse);
             }
         }
 
