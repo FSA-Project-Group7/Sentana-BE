@@ -83,5 +83,33 @@ namespace Sentana.API.Controllers
 
             return StatusCode(result.StatusCode, result);
         }
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateContract(int id, [FromBody] UpdateContractDto request)
+        {
+            if (id <= 0)
+            {
+                return BadRequest(new
+                {
+                    message = "Invalid contract ID."
+                });
+            }
+
+            if (request == null)
+            {
+                return BadRequest(new
+                {
+                    message = "Request body không được để trống."
+                });
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var result = await _contractService.UpdateContractAsync(id, request);
+
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }
