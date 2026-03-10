@@ -9,5 +9,8 @@ namespace Sentana.API.Services
 
         // nhập chỉ số nước
         Task<(bool IsSuccess, string Message)> InputWaterIndexAsync(InputWaterIndexDto request, int currentUserId);
+        // Utility history
+        Task<List<UtilityHistoryDto>> GetUtilityHistoryAsync(int apartmentId, int? month, int? year);
+
     }
 }
