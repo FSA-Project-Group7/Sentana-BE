@@ -19,7 +19,7 @@ namespace Sentana.API.Controllers
 
         // US13 - View Payment History
         [HttpGet("/api/invoices/history")]
-        [Authorize]
+        [Authorize(Roles = "Resident")]
         public async Task<IActionResult> GetPaymentHistory([FromQuery] int? apartmentId = null, [FromQuery] int? accountId = null)
         {
             try
