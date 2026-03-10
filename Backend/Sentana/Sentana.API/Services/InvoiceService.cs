@@ -5,7 +5,7 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Invoice;
 using Sentana.API.Models;
-using Sentana.API.Enums; // ĐÃ GỌI FILE ENUMS CỦA CHÚNG TA VÀO ĐÂY
+using Sentana.API.Enums; 
 
 namespace Sentana.API.Services
 {
@@ -19,94 +19,127 @@ namespace Sentana.API.Services
         }
 
         // view monthly invoice
-        public async Task<InvoiceResponseDto?> GetCurrentInvoiceAsync(ClaimsPrincipal user, int? apartmentId = null, int? accountId = null)
+        public async Task<List<InvoiceResponseDto>> GetCurrentInvoicesAsync(ClaimsPrincipal user, int? month = null, int? year = null, int? apartmentId = null, int? accountId = null)
         {
-            if (user == null)
-                throw new UnauthorizedAccessException("User is null.");
-
             var accountIdClaim = user.FindFirst("AccountId")?.Value;
             if (!int.TryParse(accountIdClaim, out var callerAccountId))
-                throw new UnauthorizedAccessException("Invalid token or AccountId claim missing.");
+                throw new UnauthorizedAccessException("Token không hợp lệ.");
 
-            var role = user.FindFirst(ClaimTypes.Role)?.Value
-                       ?? user.FindFirst("role")?.Value
-                       ?? string.Empty;
+            var role = user.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
             var isManager = string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase);
 
-            int? targetApartmentId = null;
+            var targetApartmentIds = new List<int>();
 
+            // xác định danh sách phòng cần xem
             if (isManager)
             {
-                if (apartmentId.HasValue)
-                {
-                    targetApartmentId = apartmentId.Value;
-                }
+                if (apartmentId.HasValue) targetApartmentIds.Add(apartmentId.Value);
                 else if (accountId.HasValue)
                 {
-                    var contract = await _context.Contracts
+                    // manager truyền vào account id
+                    var aptIds = await _context.Contracts
                         .Where(c => c.AccountId == accountId.Value && c.Status == GeneralStatus.Active && c.IsDeleted == false)
-                        .OrderByDescending(c => c.CreatedAt)
-                        .FirstOrDefaultAsync();
-
-                    if (contract == null || contract.ApartmentId == null) return null;
-                    targetApartmentId = contract.ApartmentId;
-                }
-                else
-                {
-                    var ownContract = await _context.Contracts
-                        .Where(c => c.AccountId == callerAccountId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
-                        .OrderByDescending(c => c.CreatedAt)
-                        .FirstOrDefaultAsync();
-
-                    if (ownContract != null && ownContract.ApartmentId != null)
-                        targetApartmentId = ownContract.ApartmentId;
+                        .Select(c => c.ApartmentId)
+                        .Where(id => id.HasValue).Select(id => id!.Value).ToListAsync();
+                    targetApartmentIds.AddRange(aptIds);
                 }
             }
-            else
+            else // nếu là resident thì tự ra invoice luôn
             {
-                var contract = await _context.Contracts
+                var aptIds = await _context.Contracts
                     .Where(c => c.AccountId == callerAccountId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
-                    .OrderByDescending(c => c.CreatedAt)
-                    .FirstOrDefaultAsync();
-
-                if (contract == null || contract.ApartmentId == null) return null;
-                targetApartmentId = contract.ApartmentId;
+                    .Select(c => c.ApartmentId)
+                    .Where(id => id.HasValue).Select(id => id!.Value).ToListAsync();
+                targetApartmentIds.AddRange(aptIds);
             }
 
-            if (!targetApartmentId.HasValue) return null;
+            if (!targetApartmentIds.Any()) return new List<InvoiceResponseDto>();
 
-            var now = DateTime.Now;
-            var invoice = await _context.Invoices
+            // tạo hóa đơn chi tiết
+            var query = _context.Invoices
                 .Include(i => i.Apartment)
                 .Include(i => i.Contract)
-                .Where(i => i.ApartmentId == targetApartmentId.Value
-                            && i.BillingMonth == now.Month
-                            && i.BillingYear == now.Year
-                            && (i.IsDeleted == false || i.IsDeleted == null))
-                .OrderByDescending(i => i.CreatedAt)
-                .FirstOrDefaultAsync();
+                .Include(i => i.ElectricMeter)
+                .Include(i => i.WaterMeter)
+                .Where(i => targetApartmentIds.Contains(i.ApartmentId.Value) && i.IsDeleted == false);
 
-            if (invoice == null) return null;
-
-            return new InvoiceResponseDto
+            if (month.HasValue && year.HasValue)
             {
-                InvoiceId = invoice.InvoiceId,
-                ApartmentId = invoice.ApartmentId,
-                ApartmentCode = invoice.Apartment?.ApartmentCode,
-                ContractId = invoice.ContractId,
-                BillingMonth = invoice.BillingMonth,
-                BillingYear = invoice.BillingYear,
-                TotalMoney = invoice.TotalMoney,
-                ServiceFee = invoice.ServiceFee,
-                Pay = invoice.Pay,
-                Debt = invoice.Debt,
-                WaterNumber = invoice.WaterNumber,
-                ElectricNumber = invoice.ElectricNumber,
-                DayCreat = invoice.DayCreat?.ToString("yyyy-MM-dd"), 
-                DayPay = invoice.DayPay?.ToString("yyyy-MM-dd"),
-                StatusName = invoice.Status?.ToString() ?? string.Empty,
-                Payments = invoice.Payments
-            };
+                query = query.Where(i => i.BillingMonth == month.Value && i.BillingYear == year.Value);
+            }
+
+            var rawInvoices = await query.OrderByDescending(i => i.CreatedAt).ToListAsync();
+
+            // nếu không truyền thời gian thì lấy hóa đơn mới nhất
+            var invoicesToProcess = (month.HasValue && year.HasValue)
+                ? rawInvoices
+                : rawInvoices.GroupBy(i => i.ApartmentId).Select(g => g.First()).ToList();
+
+            var result = new List<InvoiceResponseDto>();
+
+            // ráp hóa đơn
+            foreach (var invoice in invoicesToProcess)
+            {
+                var dto = new InvoiceResponseDto
+                {
+                    InvoiceId = invoice.InvoiceId,
+                    ApartmentId = invoice.ApartmentId,
+                    ApartmentCode = invoice.Apartment?.ApartmentCode,
+                    ContractId = invoice.ContractId,
+                    BillingMonth = invoice.BillingMonth,
+                    BillingYear = invoice.BillingYear,
+                    TotalMoney = invoice.TotalMoney,
+                    ServiceFee = invoice.ServiceFee,
+                    Pay = invoice.Pay,
+                    Debt = invoice.Debt,
+                    WaterNumber = invoice.WaterNumber,
+                    ElectricNumber = invoice.ElectricNumber,
+                    DayCreat = invoice.DayCreat?.ToString("yyyy-MM-dd"),
+                    DayPay = invoice.DayPay?.ToString("yyyy-MM-dd"),
+                    StatusName = invoice.Status?.ToString() ?? string.Empty,
+                    Payments = invoice.Payments,
+                    Details = new List<InvoiceDetailItemDto>() // khởi tạo list chi tiết
+                };
+
+                // tiền phòng
+                if (invoice.Contract != null)
+                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = "Tiền thuê phòng", Amount = invoice.Contract.MonthlyRent ?? 0 });
+
+                // tiền điện
+                if (invoice.ElectricMeter != null)
+                {
+                    var usage = (invoice.ElectricMeter.NewIndex ?? 0) - (invoice.ElectricMeter.OldIndex ?? 0);
+                    var price = invoice.ElectricMeter.Price ?? 0;
+                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền điện ({usage} kWh)", Amount = usage * price });
+                }
+
+                // tiền nước
+                if (invoice.WaterMeter != null)
+                {
+                    var usage = (invoice.WaterMeter.NewIndex ?? 0) - (invoice.WaterMeter.OldIndex ?? 0);
+                    var price = invoice.WaterMeter.Price ?? 0;
+                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền nước ({usage} khối)", Amount = usage * price });
+                }
+
+                // tiền dịch vụ 
+                var services = await _context.ApartmentServices
+                    .Include(s => s.Service)
+                    .Where(s => s.ApartmentId == invoice.ApartmentId && s.Status == GeneralStatus.Active && s.IsDeleted == false)
+                    .ToListAsync();
+
+                foreach (var svc in services)
+                {
+                    dto.Details.Add(new InvoiceDetailItemDto
+                    {
+                        FeeName = svc.Service?.ServiceName ?? "Phí dịch vụ",
+                        Amount = svc.ActualPrice ?? 0
+                    });
+                }
+
+                result.Add(dto);
+            }
+
+            return result;
         }
 
         // generate monthly invoices 

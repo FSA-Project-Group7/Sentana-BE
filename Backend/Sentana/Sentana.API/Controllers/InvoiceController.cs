@@ -17,23 +17,40 @@ namespace Sentana.API.Controllers
             _invoiceService = invoiceService;
         }
 
-        // US12
-        [HttpGet("current")]
-        [Authorize]
-        public async Task<IActionResult> GetCurrentInvoice([FromQuery] int? apartmentId = null, [FromQuery] int? accountId = null)
+        // us12
+        [HttpGet("my-invoices")]
+        [Authorize(Roles = "Resident")]
+        public async Task<IActionResult> GetMyInvoices([FromQuery] int? month = null, [FromQuery] int? year = null)
         {
             try
             {
-                var dto = await _invoiceService.GetCurrentInvoiceAsync(User, apartmentId, accountId);
+                // Truyền null cho cả apartmentId và accountId. Service sẽ tự bóc Token lấy tài khoản.
+                var dtos = await _invoiceService.GetCurrentInvoicesAsync(User, month, year, null, null);
 
-                if (dto == null)
-                    return NotFound(ApiResponse<string>.Fail(404, "Không tìm thấy hóa đơn cho tháng hiện tại."));
+                if (dtos == null || !dtos.Any())
+                    return NotFound(ApiResponse<string>.Fail(404, "Bạn không có hóa đơn nào trong khoảng thời gian này."));
 
-                return Ok(ApiResponse<InvoiceResponseDto>.Success(dto, "Lấy hóa đơn thành công."));
+                return Ok(ApiResponse<List<InvoiceResponseDto>>.Success(dtos, "Lấy hóa đơn thành công."));
             }
-            catch (UnauthorizedAccessException)
+            catch (Exception ex)
             {
-                return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ hoặc thiếu quyền truy cập."));
+                return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
+            }
+        }
+
+       // us68
+        [HttpGet("apartment/{apartmentId}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetInvoiceByApartment(int apartmentId, [FromQuery] int? month = null, [FromQuery] int? year = null)
+        {
+            try
+            {
+                var dtos = await _invoiceService.GetCurrentInvoicesAsync(User, month, year, apartmentId, null);
+
+                if (dtos == null || !dtos.Any())
+                    return NotFound(ApiResponse<string>.Fail(404, $"Không tìm thấy hóa đơn cho căn hộ ID: {apartmentId}."));
+
+                return Ok(ApiResponse<List<InvoiceResponseDto>>.Success(dtos, "Lấy hóa đơn thành công."));
             }
             catch (Exception ex)
             {

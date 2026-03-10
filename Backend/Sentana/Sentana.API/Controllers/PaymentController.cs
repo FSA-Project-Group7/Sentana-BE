@@ -1,19 +1,77 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Payment;
+using Sentana.API.DTOs.Invoice;
+using Sentana.API.Helpers;
 using Sentana.API.Services;
 
 namespace Sentana.API.Controllers
 {
-    [Route("api/payment")]
+    [Route("api/[controller]")]
     [ApiController]
-    [Authorize]
-    public class PaymentController(IPaymentService paymentService) : ControllerBase
+    public class PaymentController : ControllerBase
     {
-        [HttpPost("{invoiceId}/upload-proof")]
-        public async Task<IActionResult> UploadPaymentProof(int invoiceId, [FromForm] UploadPaymentProofDto request)
+        private readonly IPaymentService _paymentService;
+
+        public PaymentController(IPaymentService paymentService)
         {
-            var result = await paymentService.UploadPaymentProofAsync(invoiceId, request);
+            _paymentService = paymentService;
+        }
+
+        [HttpGet("/api/invoices/history")]
+        [Authorize(Roles = "Resident")]
+        public async Task<IActionResult> GetPaymentHistory(
+            [FromQuery] int? apartmentId = null,
+            [FromQuery] int? accountId = null)
+        {
+            try
+            {
+                var history = await _paymentService.GetPaymentHistoryAsync(User, apartmentId, accountId);
+
+                return Ok(ApiResponse<List<PaymentHistoryItemDto>>.Success(
+                    history,
+                    "Lấy lịch sử thanh toán thành công."
+                ));
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Unauthorized(ApiResponse<string>.Fail(
+                    401,
+                    "Token không hợp lệ hoặc thiếu quyền truy cập."
+                ));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<string>.Fail(
+                    400,
+                    ex.Message
+                ));
+            }
+        }
+
+        [HttpPost("{invoiceId}/upload-proof")]
+        [Authorize(Roles = "Resident")]
+        public async Task<IActionResult> UploadPaymentProof(
+            int invoiceId,
+            [FromForm] UploadPaymentProofDto request)
+        {
+            if (invoiceId <= 0)
+            {
+                return BadRequest(ApiResponse<string>.Fail(
+                    400,
+                    "Invoice ID không hợp lệ."
+                ));
+            }
+
+            if (request == null)
+            {
+                return BadRequest(ApiResponse<string>.Fail(
+                    400,
+                    "Request body không được để trống."
+                ));
+            }
+
+            var result = await _paymentService.UploadPaymentProofAsync(invoiceId, request);
 
             return StatusCode(result.StatusCode, result);
         }
