@@ -61,6 +61,7 @@ namespace Sentana.API
 						  .AllowCredentials();
 				});
 			});
+            builder.Services.AddScoped<IInvoiceService, InvoiceService>();
 
             builder.Services.AddControllers();
             // build ram để lưu otp
