@@ -9,7 +9,6 @@ namespace Sentana.API.Services
     public class TechnicianService : ITechnicianService
     {
         private readonly SentanaContext _context;
-
         public TechnicianService(SentanaContext context)
         {
             _context = context;
@@ -18,41 +17,30 @@ namespace Sentana.API.Services
         {
             return await _context.Accounts.AnyAsync(a => a.Email.ToLower() == email.ToLower());
         }
-
         private async Task<bool> CheckUserNameExist(string username)
         {
             return await _context.Accounts.AnyAsync(a => a.UserName.ToLower() == username.ToLower());
         }
-
         private async Task<Account?> GetTechnicianById(int accountId)
         {
-            return await _context.Accounts.Include(a => a.Info).FirstOrDefaultAsync(a => a.AccountId == accountId && a.RoleId == 3);
+            return await _context.Accounts
+                .Include(a => a.Info)
+                .FirstOrDefaultAsync(a => a.AccountId == accountId && a.RoleId == 3);
         }
-
-        private async Task<bool> CheckIdentityCardExist(string identityCard)
+        private async Task<bool> CheckDuplicateRoleByIdentityCard(string identityCard, int roleId)
         {
-            return await _context.InFos.AnyAsync(i => i.CmndCccd == identityCard);
+            return await _context.Accounts.AnyAsync(a =>
+                a.RoleId == roleId &&
+                a.Info != null &&
+                a.Info.CmndCccd == identityCard);
         }
-
-        public async Task<TechnicianResponseDto> CreateTechnician(CreateTechnicianRequestDto technicianRequest, int managerId)
+        private async Task<string> GenerateTechnicianCode()
         {
-            if (await CheckEmailExist(technicianRequest.Email))
-            {
-                throw new Exception("Email này đã tồn tại trong hệ thống.");
-            }
-            if (await CheckUserNameExist(technicianRequest.UserName))
-            {
-                throw new Exception("Tên đăng nhập này đã tồn tại.");
-            }
-            if (await CheckIdentityCardExist(technicianRequest.IdentityCard))
-            {
-                throw new Exception("Căn cước công dân này đã tồn tại trong hệ thống.");
-            }
-            string hashedPassword = BCrypt.Net.BCrypt.HashPassword(technicianRequest.Password);
             var lastTech = await _context.Accounts
                 .Where(a => a.RoleId == 3 && a.Code != null && a.Code.StartsWith("TECH-"))
                 .OrderByDescending(a => a.AccountId)
                 .FirstOrDefaultAsync();
+
             int nextNumber = 1;
             if (lastTech != null && lastTech.Code.Length > 5)
             {
@@ -62,8 +50,40 @@ namespace Sentana.API.Services
                     nextNumber = lastNumber + 1;
                 }
             }
-            string generatedCode = $"TECH-{nextNumber:D3}";
+            return $"TECH-{nextNumber:D3}";
+        }
+        private TechnicianResponseDto MapToResponseDto(Account account, InFo? existingInfo = null)
+        {
+            var info = account.Info ?? existingInfo;
+            return new TechnicianResponseDto
+            {
+                AccountId = account.AccountId,
+                UserName = account.UserName,
+                Email = account.Email,
+                FullName = info?.FullName,
+                PhoneNumber = info?.PhoneNumber,
+                IdentityCard = info?.CmndCccd,
+                Status = account.Status,
+                TechAvailability = account.TechAvailability,
+                Country = info?.Country,
+                City = info?.City,
+                Address = info?.Address,
+                IsDeleted = account.IsDeleted
+            };
+        }
+        public async Task<TechnicianResponseDto> CreateTechnician(CreateTechnicianRequestDto technicianRequest, int managerId)
+        {
+            if (await CheckEmailExist(technicianRequest.Email)) throw new Exception("Email này đã tồn tại trong hệ thống.");
+            if (await CheckUserNameExist(technicianRequest.UserName)) throw new Exception("Tên đăng nhập này đã tồn tại.");
+            if (await CheckDuplicateRoleByIdentityCard(technicianRequest.IdentityCard, 3))
+            {
+                throw new Exception("Người sở hữu CCCD này đã có tài khoản Kỹ thuật viên có thể đã bị xóa. Vui lòng khôi phục thay vì tạo mới.");
+            }
+            string hashedPassword = BCrypt.Net.BCrypt.HashPassword(technicianRequest.Password);
+            string generatedCode = await GenerateTechnicianCode();
             DateTime currentTime = DateTime.Now;
+            var existingInfo = await _context.InFos
+                .FirstOrDefaultAsync(i => i.CmndCccd == technicianRequest.IdentityCard);
             var newAccount = new Account
             {
                 Code = generatedCode,
@@ -74,9 +94,16 @@ namespace Sentana.API.Services
                 Status = GeneralStatus.Active,
                 TechAvailability = (byte)TechAvailability.Free,
                 CreatedAt = currentTime,
-                CreatedBy = managerId,
-                IsDeleted = false,
-                Info = new InFo
+                CreatedBy = managerId, 
+                IsDeleted = false
+            };
+            if (existingInfo != null)
+            {
+                newAccount.InfoId = existingInfo.InfoId; 
+            }
+            else
+            {
+                newAccount.Info = new InFo
                 {
                     FullName = technicianRequest.FullName,
                     PhoneNumber = technicianRequest.PhoneNumber,
@@ -85,31 +112,17 @@ namespace Sentana.API.Services
                     City = technicianRequest.City,
                     Address = technicianRequest.Address,
                     CreatedAt = currentTime
-                }
-            };
+                };
+            }
+
             _context.Accounts.Add(newAccount);
             await _context.SaveChangesAsync();
-            return new TechnicianResponseDto
-            {
-                AccountId = newAccount.AccountId,
-                UserName = newAccount.UserName,
-                Email = newAccount.Email,
-                FullName = newAccount.Info?.FullName,
-                PhoneNumber = newAccount.Info?.PhoneNumber,
-                IdentityCard = newAccount.Info?.CmndCccd,
-                Status = newAccount.Status,
-                TechAvailability = newAccount.TechAvailability,
-                Country = newAccount.Info?.Country,
-                City = newAccount.Info?.City,
-                Address = newAccount.Info?.Address,
-                IsDeleted = newAccount.IsDeleted
-            };
+            return MapToResponseDto(newAccount, existingInfo);
         }
-
 
         public async Task<IEnumerable<TechnicianResponseDto>> GetAllTechnician()
         {
-            var technicians = await _context.Accounts
+            return await _context.Accounts
                 .Where(a => a.RoleId == 3)
                 .Select(a => new TechnicianResponseDto
                 {
@@ -127,83 +140,48 @@ namespace Sentana.API.Services
                     IsDeleted = a.IsDeleted
                 })
                 .ToListAsync();
-            return technicians;
         }
 
         public async Task<TechnicianResponseDto> UpdateTechnician(int technicianId, UpdateTechnicianRequestDto technicianRequest, int managerId)
         {
             var technician = await GetTechnicianById(technicianId);
-            if (technician == null)
-            {
-                throw new Exception("Kỹ thuật viên không tồn tại trong hệ thống.");
-            }
+            if (technician == null) throw new Exception("Kỹ thuật viên không tồn tại trong hệ thống.");
             var emailExist = await _context.Accounts.AnyAsync(a =>
-                a.Email.ToLower() == technicianRequest.Email.ToLower() &&
-                a.AccountId != technicianId);
-            if (emailExist)
-            {
-                throw new Exception("Email này đã được sử dụng cho một tài khoản khác.");
-            }
-
-            var identityCardExist = await _context.Accounts.AnyAsync(a => a.Info != null &&
-            a.Info.CmndCccd == technicianRequest.IdentityCard &&
-            a.AccountId != technicianId);
-            if (identityCardExist)
-            {
-                throw new Exception("Số CCCD này đã tồn tại trên một tài khoản khác.");
-            }
+                a.Email.ToLower() == technicianRequest.Email.ToLower() && a.AccountId != technicianId);
+            if (emailExist) throw new Exception("Email này đã được sử dụng cho một tài khoản khác.");
+            var identityCardExist = await _context.InFos.AnyAsync(i =>
+                i.CmndCccd == technicianRequest.IdentityCard && i.InfoId != technician.InfoId);
+            if (identityCardExist) throw new Exception("Số CCCD này đã tồn tại ở một hồ sơ khác.");
             DateTime currentTime = DateTime.Now;
             technician.Email = technicianRequest.Email;
             technician.IsDeleted = technicianRequest.IsDeleted;
             technician.UpdatedAt = currentTime;
             technician.UpdatedBy = managerId;
-            if (technician.Info == null)
+            if (technician.Info != null)
             {
-                technician.Info = new InFo { CreatedAt = currentTime };
+                technician.Info.FullName = technicianRequest.FullName;
+                technician.Info.PhoneNumber = technicianRequest.PhoneNumber;
+                technician.Info.CmndCccd = technicianRequest.IdentityCard;
+                technician.Info.Country = technicianRequest.Country;
+                technician.Info.City = technicianRequest.City;
+                technician.Info.Address = technicianRequest.Address;
+                technician.Info.UpdatedAt = currentTime;
             }
-            technician.Info.FullName = technicianRequest.FullName;
-            technician.Info.PhoneNumber = technicianRequest.PhoneNumber;
-            technician.Info.CmndCccd = technicianRequest.IdentityCard;
-            technician.Info.Country = technicianRequest.Country;
-            technician.Info.City = technicianRequest.City;
-            technician.Info.Address = technicianRequest.Address;
-            technician.Info.UpdatedAt = currentTime;
             _context.Accounts.Update(technician);
             await _context.SaveChangesAsync();
-            return new TechnicianResponseDto
-            {
-                AccountId = technician.AccountId,
-                UserName = technician.UserName,
-                Email = technician.Email,
-                FullName = technician.Info.FullName,
-                PhoneNumber = technician.Info.PhoneNumber,
-                IdentityCard = technician.Info.CmndCccd,
-                Status = technician.Status,
-                TechAvailability = technician.TechAvailability,
-                Country = technician.Info.Country,
-                City = technician.Info.City,
-                Address = technician.Info.Address,
-                IsDeleted = technician.IsDeleted
-            };
+            return MapToResponseDto(technician);
         }
 
         public async Task<string> ToggleTechnicianStatus(int technicianId)
         {
             var technician = await GetTechnicianById(technicianId);
-            if (technician == null)
-            {
-                throw new Exception("Kỹ thuật viên không tồn tại.");
-            }
+            if (technician == null) throw new Exception("Kỹ thuật viên không tồn tại.");
             string message = "";
-
             if (technician.Status == GeneralStatus.Active)
             {
                 var hasProcessingTask = await _context.MaintenanceRequests
                     .AnyAsync(m => m.AssignedTo == technicianId && m.Status == MaintenanceRequestStatus.Processing);
-                if (hasProcessingTask)
-                {
-                    throw new Exception("Không thể vô hiệu hóa kỹ thuật viên này vì họ đang có nhiệm vụ đang xử lý.");
-                }
+                if (hasProcessingTask) throw new Exception("Không thể vô hiệu hóa kỹ thuật viên đang xử lý nhiệm vụ.");
                 technician.Status = GeneralStatus.Inactive;
                 message = "Khóa tài khoản Kỹ thuật viên thành công!";
             }
