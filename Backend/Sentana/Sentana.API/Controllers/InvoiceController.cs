@@ -17,19 +17,22 @@ namespace Sentana.API.Controllers
             _invoiceService = invoiceService;
         }
 
-        // US12
         [HttpGet("current")]
         [Authorize]
-        public async Task<IActionResult> GetCurrentInvoice([FromQuery] int? apartmentId = null, [FromQuery] int? accountId = null)
+        public async Task<IActionResult> GetCurrentInvoice(
+            [FromQuery] int? month = null,
+            [FromQuery] int? year = null,
+            [FromQuery] int? apartmentId = null,
+            [FromQuery] int? accountId = null)
         {
             try
             {
-                var dto = await _invoiceService.GetCurrentInvoiceAsync(User, apartmentId, accountId);
+                var dtos = await _invoiceService.GetCurrentInvoicesAsync(User, month, year, apartmentId, accountId);
 
-                if (dto == null)
-                    return NotFound(ApiResponse<string>.Fail(404, "Không tìm thấy hóa đơn cho tháng hiện tại."));
+                if (dtos == null || !dtos.Any())
+                    return NotFound(ApiResponse<string>.Fail(404, "Không tìm thấy hóa đơn nào phù hợp."));
 
-                return Ok(ApiResponse<InvoiceResponseDto>.Success(dto, "Lấy hóa đơn thành công."));
+                return Ok(ApiResponse<List<InvoiceResponseDto>>.Success(dtos, "Lấy hóa đơn thành công."));
             }
             catch (UnauthorizedAccessException)
             {

@@ -1,5 +1,12 @@
-namespace Sentana.API.DTOs.Invoice
+﻿namespace Sentana.API.DTOs.Invoice
 {
+    // class dùng để hiển thị từng dòng phí 
+    public class InvoiceDetailItemDto
+    {
+        public string FeeName { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+    }
+
     public class InvoiceResponseDto
     {
         public int InvoiceId { get; set; }
@@ -16,7 +23,10 @@ namespace Sentana.API.DTOs.Invoice
         public decimal? ElectricNumber { get; set; }
         public string? DayCreat { get; set; }
         public string? DayPay { get; set; }
-        public string? StatusName { get; set; }
+        public string StatusName { get; set; } = string.Empty;
         public byte? Payments { get; set; }
+
+        // danh sách chi tiết từng khoản thu
+        public List<InvoiceDetailItemDto> Details { get; set; } = new List<InvoiceDetailItemDto>();
     }
 }
