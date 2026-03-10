@@ -40,5 +40,28 @@ namespace Sentana.API.Controllers
 
             return StatusCode(result.StatusCode, result);
         }
+
+        [HttpPut("{id}/extend")]
+        public async Task<IActionResult> ExtendContract(int id, [FromBody] ExtendContractDto request)
+        {
+            if (id <= 0)
+            {
+                return BadRequest(new { message = "Mã hợp đồng không hợp lệ." });
+            }
+
+            if (request == null)
+            {
+                return BadRequest(new { message = "Dữ liệu gửi lên không được để trống." });
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var result = await _contractService.ExtendContractAsync(id, request);
+
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }
