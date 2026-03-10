@@ -1,18 +1,22 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Sentana.API.DTOs;
 using Sentana.API.DTOs.Contracts;
 using Sentana.API.Enums;
 using Sentana.API.Helpers;
 using Sentana.API.Models;
+using Sentana.API.Repositories; 
 
 namespace Sentana.API.Services
 {
     public class ContractService : IContractService
     {
         private readonly SentanaContext _context;
+        private readonly IContractRepository _contractRepository; 
 
-        public ContractService(SentanaContext context)
+        public ContractService(SentanaContext context, IContractRepository contractRepository)
         {
             _context = context;
+            _contractRepository = contractRepository; 
         }
 
         public async Task<ApiResponse<object>> TerminateContractAsync(int contractId, TerminateContractDto request)
@@ -328,6 +332,46 @@ namespace Sentana.API.Services
                 startDay = contract.StartDay,
                 endDay = contract.EndDay
             }, "Cập nhật hợp đồng thành công.");
+        }
+        public async Task<ApiResponse<object>> GetContractDetailAsync(int contractId)
+        {
+            if (contractId <= 0)
+            {
+                return ApiResponse<object>.Fail(400, "Contract ID không hợp lệ.");
+            }
+
+            var contract = await _contractRepository.GetContractDetailAsync(contractId);
+
+            if (contract == null)
+            {
+                return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng.");
+            }
+
+            if (contract.IsDeleted == true)
+            {
+                return ApiResponse<object>.Fail(404, "Hợp đồng đã bị xóa.");
+            }
+
+            var dto = new ContractDetailDto
+            {
+                ContractId = contract.ContractId,
+                ContractCode = contract.ContractCode,
+                ApartmentId = contract.ApartmentId,
+                ApartmentName = contract.Apartment?.ApartmentName,
+                AccountId = contract.AccountId,
+                TenantName = contract.Account?.Info?.FullName,
+                StartDay = contract.StartDay,
+                EndDay = contract.EndDay,
+                MonthlyRent = contract.MonthlyRent,
+                Deposit = contract.Deposit,
+                AdditionalCost = contract.AdditionalCost,
+                RefundAmount = contract.RefundAmount,
+                File = contract.File,
+                Status = contract.Status,
+                CreatedAt = contract.CreatedAt
+            };
+
+            return ApiResponse<object>.Success(dto, "Lấy chi tiết hợp đồng thành công.");
         }
     }
 }

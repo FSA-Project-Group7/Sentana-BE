@@ -64,12 +64,12 @@ namespace Sentana.API.Services
 
             return services.Select(static s =>
             {
-                int status = (int)(s.Status ?? GeneralStatus.Inactive); // Ensure non-null value
+                int status = (int)(s.Status ?? GeneralStatus.Inactive); 
                 return new ServiceResponseDto
                 {
                     ServiceId = s.ServiceId,
-                    ServiceName = s.ServiceName ?? string.Empty, // Ensure non-null value
-                    Description = s.Description ?? string.Empty, // Ensure non-null value
+                    ServiceName = s.ServiceName ?? string.Empty, 
+                    Description = s.Description ?? string.Empty, 
                     ServiceFee = s.ServiceFee ?? 0,
                     Status = status,
                     CreatedAt = s.CreatedAt
