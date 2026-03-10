@@ -144,5 +144,103 @@ namespace Sentana.API.Services
                 newEndDay = request.NewEndDate
             }, "Gia hạn hợp đồng thành công.");
         }
+        public async Task<ApiResponse<object>> CreateContractAsync(CreateContractDto request)
+        {
+            if (request == null)
+            {
+                return ApiResponse<object>.Fail(400, "Request body không được để trống.");
+            }
+
+            if (request.ApartmentId <= 0)
+            {
+                return ApiResponse<object>.Fail(400, "Apartment ID không hợp lệ.");
+            }
+
+            if (request.AccountId <= 0)
+            {
+                return ApiResponse<object>.Fail(400, "Account ID không hợp lệ.");
+            }
+
+            if (request.StartDay >= request.EndDay)
+            {
+                return ApiResponse<object>.Fail(400, "Ngày kết thúc phải lớn hơn ngày bắt đầu.");
+            }
+
+            if (request.MonthlyRent < 0)
+            {
+                return ApiResponse<object>.Fail(400, "Tiền thuê không hợp lệ.");
+            }
+
+            if (request.Deposit < 0)
+            {
+                return ApiResponse<object>.Fail(400, "Tiền cọc không hợp lệ.");
+            }
+
+            var apartment = await _context.Apartments
+                .FirstOrDefaultAsync(a => a.ApartmentId == request.ApartmentId && a.IsDeleted == false);
+
+            if (apartment == null)
+            {
+                return ApiResponse<object>.Fail(404, "Apartment không tồn tại.");
+            }
+
+            if (apartment.Status != ApartmentStatus.Vacant)
+            {
+                return ApiResponse<object>.Fail(400, "Phòng hiện không trống.");
+            }
+
+            var account = await _context.Accounts
+                .FirstOrDefaultAsync(a => a.AccountId == request.AccountId && a.IsDeleted == false);
+
+            if (account == null)
+            {
+                return ApiResponse<object>.Fail(404, "Account không tồn tại.");
+            }
+
+            var overlapContract = await _context.Contracts
+                .AnyAsync(c =>
+                    c.ApartmentId == request.ApartmentId &&
+                    c.Status == GeneralStatus.Active &&
+                    c.IsDeleted == false);
+
+            if (overlapContract)
+            {
+                return ApiResponse<object>.Fail(400, "Phòng đã có hợp đồng đang hoạt động.");
+            }
+
+            var contractCode = "CT-" + DateTime.Now.Ticks;
+
+            var contract = new Contract
+            {
+                ContractCode = contractCode,
+                ApartmentId = request.ApartmentId,
+                AccountId = request.AccountId,
+                StartDay = request.StartDay,
+                EndDay = request.EndDay,
+                MonthlyRent = request.MonthlyRent,
+                Deposit = request.Deposit,
+                AdditionalCost = 0,
+                RefundAmount = 0,
+                File = request.File,
+                Status = GeneralStatus.Active,
+                CreatedAt = DateTime.Now
+            };
+
+            await _context.Contracts.AddAsync(contract);
+
+            apartment.Status = ApartmentStatus.Occupied;
+
+            await _context.SaveChangesAsync();
+
+            return ApiResponse<object>.Success(new
+            {
+                contractId = contract.ContractId,
+                contractCode = contract.ContractCode,
+                apartmentId = contract.ApartmentId,
+                accountId = contract.AccountId,
+                startDay = contract.StartDay,
+                endDay = contract.EndDay
+            }, "Tạo hợp đồng thành công.");
+        }
     }
 }
