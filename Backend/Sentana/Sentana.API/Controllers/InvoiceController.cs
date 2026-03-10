@@ -1,44 +1,58 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Invoice;
-using Sentana.API.Models;
+using Sentana.API.Helpers;
 using Sentana.API.Services;
-using System.Security.Claims;
 
 namespace Sentana.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class InvoiceController : ControllerBase
+    public class InvoiceController : BaseController 
     {
         private readonly IInvoiceService _invoiceService;
 
-        public InvoiceController(SentanaContext context)
+        public InvoiceController(IInvoiceService invoiceService)
         {
-            _invoiceService = new InvoiceService(context);
+            _invoiceService = invoiceService;
         }
-        /// <param name="apartmentId">optional for Manager</param>
-        /// <param name="accountId">optional for Manager</param>
+
+        // US12
         [HttpGet("current")]
-        [Authorize] // Resident or Manager must be authenticated
-        [ProducesResponseType(typeof(InvoiceResponseDto), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [ProducesResponseType(StatusCodes.Status403Forbidden)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [Authorize]
         public async Task<IActionResult> GetCurrentInvoice([FromQuery] int? apartmentId = null, [FromQuery] int? accountId = null)
         {
             try
             {
                 var dto = await _invoiceService.GetCurrentInvoiceAsync(User, apartmentId, accountId);
-                if (dto == null)
-                    return NotFound(new { message = "Không tìm thấy hóa đơn cho tháng hiện tại." });
 
-                return Ok(dto);
+                if (dto == null)
+                    return NotFound(ApiResponse<string>.Fail(404, "Không tìm thấy hóa đơn cho tháng hiện tại."));
+
+                return Ok(ApiResponse<InvoiceResponseDto>.Success(dto, "Lấy hóa đơn thành công."));
             }
             catch (UnauthorizedAccessException)
             {
-                return Unauthorized(new { message = "Invalid token or AccountId claim missing." });
+                return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ hoặc thiếu quyền truy cập."));
             }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
+            }
+        }
+
+        [HttpPost("generate")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GenerateInvoices([FromBody] GenerateInvoiceRequestDto request)
+        {
+            int currentUserId = GetCurrentAccountId();
+
+            var result = await _invoiceService.GenerateMonthlyInvoicesAsync(request, currentUserId);
+
+            if (!result.IsSuccess)
+                return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+
+            return Ok(ApiResponse<string>.Success(null, result.Message));
         }
     }
 }
