@@ -1,133 +1,54 @@
-using System.Security.Claims;
-using Microsoft.EntityFrameworkCore;
-using Sentana.API.DTOs.Invoice;
-using Sentana.API.Enums;
-using Sentana.API.Models;
-
-namespace Sentana.API.Services
+public async Task<ApiResponse<object>> ReviewPaymentAsync(int transactionId, ReviewPaymentDto request)
 {
-    public class PaymentService : IPaymentService
+    if (transactionId <= 0)
     {
-        private readonly SentanaContext _context;
-
-        public PaymentService(SentanaContext context)
-        {
-            _context = context;
-        }
-
-        public async Task<List<PaymentHistoryItemDto>> GetPaymentHistoryAsync(
-            ClaimsPrincipal user,
-            int? apartmentId = null,
-            int? accountId = null)
-        {
-            if (user == null) throw new UnauthorizedAccessException("User is null.");
-
-            var accountIdClaim = user.FindFirst("AccountId")?.Value;
-            if (!int.TryParse(accountIdClaim, out var callerAccountId))
-                throw new UnauthorizedAccessException("Invalid token or AccountId claim missing.");
-
-            var role = user.FindFirst(ClaimTypes.Role)?.Value
-                       ?? user.FindFirst("role")?.Value
-                       ?? string.Empty;
-            var isManager = string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase);
-
-            var targetApartmentId = await ResolveTargetApartmentIdAsync(
-                callerAccountId,
-                isManager,
-                apartmentId,
-                accountId);
-
-            if (!targetApartmentId.HasValue) return new List<PaymentHistoryItemDto>();
-
-            var invoices = await _context.Invoices
-                .AsNoTracking()
-                .Include(i => i.Apartment)
-                .Include(i => i.PaymentTransactions)
-                .Where(i => i.ApartmentId == targetApartmentId.Value
-                            && i.Status == InvoiceStatus.Paid
-                            && (i.IsDeleted == false || i.IsDeleted == null))
-                .ToListAsync();
-
-            var history = invoices
-                .Select(i =>
-                {
-                    var approvedTransactions = i.PaymentTransactions
-                        .Where(t => (t.IsDeleted == false || t.IsDeleted == null) && t.Status == PaymentTransactionStatus.Approved)
-                        .ToList();
-
-                    var amountPaid = approvedTransactions.Sum(t => t.AmountPaid ?? 0m);
-                    if (amountPaid <= 0m) amountPaid = i.Pay ?? 0m;
-
-                    DateTime? paidDateTime = null;
-                    if (i.DayPay.HasValue)
-                    {
-                        paidDateTime = i.DayPay.Value.ToDateTime(TimeOnly.MinValue);
-                    }
-                    else if (approvedTransactions.Count > 0)
-                    {
-                        paidDateTime = approvedTransactions
-                            .OrderByDescending(t => t.SubmitDate)
-                            .Select(t => t.SubmitDate)
-                            .FirstOrDefault();
-                    }
-
-                    return new PaymentHistoryItemDto
-                    {
-                        InvoiceId = i.InvoiceId,
-                        ApartmentId = i.ApartmentId,
-                        ApartmentCode = i.Apartment?.ApartmentCode,
-                        BillingMonth = i.BillingMonth,
-                        BillingYear = i.BillingYear,
-                        TotalMoney = i.TotalMoney,
-                        AmountPaid = amountPaid,
-                        PaidDate = paidDateTime?.ToString("yyyy-MM-dd")
-                    };
-                })
-                .OrderBy(x => x.PaidDate)
-                .ThenBy(x => x.InvoiceId)
-                .ToList();
-
-            return history;
-        }
-
-        private async Task<int?> ResolveTargetApartmentIdAsync(
-            int callerAccountId,
-            bool isManager,
-            int? apartmentId,
-            int? accountId)
-        {
-            if (isManager)
-            {
-                if (apartmentId.HasValue) return apartmentId.Value;
-
-                if (accountId.HasValue)
-                {
-                    var contract = await _context.Contracts
-                        .AsNoTracking()
-                        .Where(c => c.AccountId == accountId.Value && c.Status == GeneralStatus.Active && c.IsDeleted == false)
-                        .OrderByDescending(c => c.CreatedAt)
-                        .FirstOrDefaultAsync();
-
-                    return contract?.ApartmentId;
-                }
-
-                var ownContract = await _context.Contracts
-                    .AsNoTracking()
-                    .Where(c => c.AccountId == callerAccountId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
-                    .OrderByDescending(c => c.CreatedAt)
-                    .FirstOrDefaultAsync();
-
-                return ownContract?.ApartmentId;
-            }
-
-            var residentContract = await _context.Contracts
-                .AsNoTracking()
-                .Where(c => c.AccountId == callerAccountId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
-                .OrderByDescending(c => c.CreatedAt)
-                .FirstOrDefaultAsync();
-
-            return residentContract?.ApartmentId;
-        }
+        return ApiResponse<object>.Fail(400, "Transaction ID không hợp lệ.");
     }
-}
 
+    if (request == null)
+    {
+        return ApiResponse<object>.Fail(400, "Request body không hợp lệ.");
+    }
+
+    if (request.Status != 1 && request.Status != 2)
+    {
+        return ApiResponse<object>.Fail(400, "Status không hợp lệ.");
+    }
+
+    var transaction = await paymentRepository.GetTransactionAsync(transactionId);
+
+    if (transaction == null)
+    {
+        return ApiResponse<object>.Fail(404, "Transaction không tồn tại.");
+    }
+
+    if (transaction.Status != 0)
+    {
+        return ApiResponse<object>.Fail(400, "Transaction đã được xử lý.");
+    }
+
+    var invoice = await paymentRepository.GetInvoiceByIdAsync(transaction.InvoiceId ?? 0);
+
+    if (invoice == null)
+    {
+        return ApiResponse<object>.Fail(404, "Invoice không tồn tại.");
+    }
+
+    transaction.Status = request.Status;
+    transaction.Note = request.Note;
+
+    if (request.Status == 1)
+    {
+        invoice.Status = 3; // Paid
+        invoice.Pay = transaction.AmountPaid;
+        invoice.Debt = 0;
+    }
+
+    await paymentRepository.SaveAsync();
+
+    return ApiResponse<object>.Success(new
+    {
+        transactionId = transaction.TransactionId,
+        status = transaction.Status
+    }, "Review payment thành công.");
+}
