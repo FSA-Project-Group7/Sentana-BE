@@ -63,5 +63,25 @@ namespace Sentana.API.Controllers
 
             return StatusCode(result.StatusCode, result);
         }
+        [HttpPost]
+        public async Task<IActionResult> CreateContract([FromBody] CreateContractDto request)
+        {
+            if (request == null)
+            {
+                return BadRequest(new
+                {
+                    message = "Request body không được để trống."
+                });
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var result = await _contractService.CreateContractAsync(request);
+
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }
