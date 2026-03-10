@@ -24,5 +24,11 @@ namespace Sentana.API.DTOs.Technician
         [Required(ErrorMessage = "CCCD không được để trống!")]
         [RegularExpression(ValidationHelper.CccdRegex, ErrorMessage = "CCCD bắt buộc phải có đúng 12 chữ số.")]
         public string IdentityCard { get; set; }
+
+        public string? Country { get; set; }
+
+        public string? City { get; set; }
+
+        public string? Address { get; set; }
     }
 }

@@ -72,7 +72,7 @@ namespace Sentana.API.Services
                 new Claim("AccountId", user.AccountId.ToString()),
                 new Claim("RoleId", user.RoleId.ToString()),
                 new Claim(ClaimTypes.Role, user.Role?.RoleName ?? "Resident")
-            };
+            };  
 
             var token = new JwtSecurityToken(
                 issuer: jwtSettings["Issuer"],
