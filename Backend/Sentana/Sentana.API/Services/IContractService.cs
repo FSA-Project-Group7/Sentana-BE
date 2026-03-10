@@ -6,5 +6,6 @@ namespace Sentana.API.Services
     public interface IContractService
     {
         Task<ApiResponse<object>> TerminateContractAsync(int contractId, TerminateContractDto request);
+        Task<ApiResponse<object>> ExtendContractAsync(int contractId, ExtendContractDto request);
     }
 }

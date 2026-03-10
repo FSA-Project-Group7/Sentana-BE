@@ -19,7 +19,7 @@ namespace Sentana.API.Controllers
             {
                 return BadRequest(new
                 {
-                    message = "Invalid contract ID."
+                    message = "Mã hợp đồng không hợp lệ."
                 });
             }
 
@@ -27,7 +27,7 @@ namespace Sentana.API.Controllers
             {
                 return BadRequest(new
                 {
-                    message = "Request body is required."
+                    message = "Nội dung yêu cầu là bắt buộc."
                 });
             }
 
@@ -37,6 +37,29 @@ namespace Sentana.API.Controllers
             }
 
             var result = await _contractService.TerminateContractAsync(id, request);
+
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpPut("{id}/extend")]
+        public async Task<IActionResult> ExtendContract(int id, [FromBody] ExtendContractDto request)
+        {
+            if (id <= 0)
+            {
+                return BadRequest(new { message = "Mã hợp đồng không hợp lệ." });
+            }
+
+            if (request == null)
+            {
+                return BadRequest(new { message = "Dữ liệu gửi lên không được để trống." });
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var result = await _contractService.ExtendContractAsync(id, request);
 
             return StatusCode(result.StatusCode, result);
         }

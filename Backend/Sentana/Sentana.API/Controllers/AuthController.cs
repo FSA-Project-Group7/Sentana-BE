@@ -9,7 +9,7 @@ namespace Sentana.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class AuthController : ControllerBase
+    public class AuthController : BaseController
     {
         private readonly IAuthService _authService;
         public AuthController(IAuthService authService)
@@ -72,11 +72,7 @@ namespace Sentana.API.Controllers
         [Authorize]
         public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequestDto request)
         {
-            var accountIdClaim = User.FindFirstValue("AccountId");
-            if (!int.TryParse(accountIdClaim, out int accountId))
-            {
-                return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ hoặc đã hết hạn."));
-            }
+            int accountId = GetCurrentAccountId();
 
             var result = await _authService.UpdateUserProfileAsync(accountId, request);
 
@@ -180,11 +176,7 @@ namespace Sentana.API.Controllers
         [Authorize]
         public async Task<IActionResult> Logout()
         {
-            var accountIdClaim = User.FindFirstValue("AccountId");
-            if (!int.TryParse(accountIdClaim, out int accountId))
-            {
-                return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ."));
-            }
+            int accountId = GetCurrentAccountId();
 
             var result = await _authService.LogoutAsync(accountId);
 
