@@ -1,6 +1,6 @@
 ﻿using Sentana.API.Enums;
 
-namespace Sentana.API.DTOs
+namespace Sentana.API.DTOs.Contracts
 {
     public class ContractDetailDto
     {
