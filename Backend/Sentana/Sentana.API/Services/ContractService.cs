@@ -242,5 +242,92 @@ namespace Sentana.API.Services
                 endDay = contract.EndDay
             }, "Tạo hợp đồng thành công.");
         }
+        public async Task<ApiResponse<object>> UpdateContractAsync(int contractId, UpdateContractDto request)
+        {
+            if (contractId <= 0)
+            {
+                return ApiResponse<object>.Fail(400, "Contract ID không hợp lệ.");
+            }
+
+            if (request == null)
+            {
+                return ApiResponse<object>.Fail(400, "Request body không được để trống.");
+            }
+
+            if (request.StartDay >= request.EndDay)
+            {
+                return ApiResponse<object>.Fail(400, "Ngày kết thúc phải lớn hơn ngày bắt đầu.");
+            }
+
+            if (request.MonthlyRent < 0)
+            {
+                return ApiResponse<object>.Fail(400, "Tiền thuê không hợp lệ.");
+            }
+
+            if (request.Deposit < 0)
+            {
+                return ApiResponse<object>.Fail(400, "Tiền cọc không hợp lệ.");
+            }
+
+            var contract = await _context.Contracts
+                .Include(c => c.Apartment)
+                .FirstOrDefaultAsync(c => c.ContractId == contractId && c.IsDeleted == false);
+
+            if (contract == null)
+            {
+                return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng.");
+            }
+
+            if (contract.Status != GeneralStatus.Active)
+            {
+                return ApiResponse<object>.Fail(400, "Chỉ có thể cập nhật hợp đồng đang hoạt động.");
+            }
+
+            var apartment = await _context.Apartments
+                .FirstOrDefaultAsync(a => a.ApartmentId == request.ApartmentId && a.IsDeleted == false);
+
+            if (apartment == null)
+            {
+                return ApiResponse<object>.Fail(404, "Apartment không tồn tại.");
+            }
+
+            var account = await _context.Accounts
+                .FirstOrDefaultAsync(a => a.AccountId == request.AccountId && a.IsDeleted == false);
+
+            if (account == null)
+            {
+                return ApiResponse<object>.Fail(404, "Account không tồn tại.");
+            }
+
+            if (request.StartDay < DateOnly.FromDateTime(DateTime.Now.AddYears(-10)))
+            {
+                return ApiResponse<object>.Fail(400, "Ngày bắt đầu không hợp lệ.");
+            }
+
+            if (request.EndDay > DateOnly.FromDateTime(DateTime.Now.AddYears(10)))
+            {
+                return ApiResponse<object>.Fail(400, "Ngày kết thúc không hợp lệ.");
+            }
+
+            contract.ApartmentId = request.ApartmentId;
+            contract.AccountId = request.AccountId;
+            contract.StartDay = request.StartDay;
+            contract.EndDay = request.EndDay;
+            contract.MonthlyRent = request.MonthlyRent;
+            contract.Deposit = request.Deposit;
+            contract.File = request.File;
+            contract.UpdatedAt = DateTime.Now;
+
+            await _context.SaveChangesAsync();
+
+            return ApiResponse<object>.Success(new
+            {
+                contractId = contract.ContractId,
+                apartmentId = contract.ApartmentId,
+                accountId = contract.AccountId,
+                startDay = contract.StartDay,
+                endDay = contract.EndDay
+            }, "Cập nhật hợp đồng thành công.");
+        }
     }
 }
