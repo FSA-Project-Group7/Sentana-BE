@@ -107,5 +107,29 @@ namespace Sentana.API.Controllers
                 return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
             }
         }
+
+        [HttpDelete("DeleteTechnician/{id}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> DeleteTechnician(int id)
+        {
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+            }
+            try
+            {
+                var result = await _technicianService.DeleteTechnicianAsync(id, managerId);
+                if (result)
+                {
+                    return Ok(ApiResponse<object>.Success(null, "Đã xóa kỹ thuật viên thành công."));
+                }
+                return BadRequest(ApiResponse<object>.Fail(400, "Xóa kỹ thuật viên thất bại."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
+            }
+        }
     }
 }

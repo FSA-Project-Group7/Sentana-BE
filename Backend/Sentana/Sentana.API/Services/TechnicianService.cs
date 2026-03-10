@@ -194,5 +194,22 @@ namespace Sentana.API.Services
             await _context.SaveChangesAsync();
             return message;
         }
+
+        public async Task<bool> DeleteTechnicianAsync(int technicianId, int managerId)
+        {
+            var technician = await GetTechnicianById(technicianId);
+            if (technician == null)
+                throw new Exception("Kỹ thuật viên không tồn tại hoặc đã bị xóa trước đó.");
+            var hasProcessingTask = await _context.MaintenanceRequests
+                .AnyAsync(m => m.AssignedTo == technicianId && m.Status == MaintenanceRequestStatus.Processing);
+            if (hasProcessingTask)
+                throw new Exception("Không thể xóa kỹ thuật viên đang trong quá trình xử lý nhiệm vụ.");
+            technician.IsDeleted = true; 
+            technician.Status = GeneralStatus.Inactive;
+            technician.UpdatedAt = DateTime.Now;
+            technician.UpdatedBy = managerId;
+            _context.Accounts.Update(technician);
+            return await _context.SaveChangesAsync() > 0;
+        }
     }
 }
