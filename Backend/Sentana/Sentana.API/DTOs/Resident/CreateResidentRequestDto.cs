@@ -1,28 +1,36 @@
-﻿using Sentana.API.Enums;
-using Sentana.API.Helpers;
+﻿using Sentana.API.Helpers;
 using System.ComponentModel.DataAnnotations;
 
-namespace Sentana.API.DTOs.Technician
+namespace Sentana.API.DTOs.Resident
 {
-    public class UpdateTechnicianRequestDto
+    public class CreateResidentRequestDto
     {
-        [Required(ErrorMessage = "Email không được để trống")]
+        [Required(ErrorMessage = "Email không được để trống!")]
         [RegularExpression(ValidationHelper.EmailRegex, ErrorMessage = "Email bắt buộc phải có đuôi @gmail.com")]
-        public string Email { get; set; } = string.Empty;
+        public string Email { get; set; }
+
+        [Required(ErrorMessage = "Tên đăng nhập không được để trống!")]
+        public string UserName { get; set; }
+
+        [Required(ErrorMessage = "Mật khẩu không được để trống!")]
+        [RegularExpression(ValidationHelper.PasswordRegex, ErrorMessage = "Mật khẩu phải ít nhất 8 ký tự, gồm chữ cái, chữ số và ký tự đặc biệt")]
+        public string Password { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Họ tên không được để trống")]
         [RegularExpression(ValidationHelper.FullNameRegex, ErrorMessage = "Họ và tên chỉ được chứa chữ cái và khoảng trắng")]
         public string FullName { get; set; } = string.Empty;
 
-        [RegularExpression(ValidationHelper.PhoneRegex, ErrorMessage = "Số điện thoại không hợp lệ. Phải là định dạng VN 10 số")] 
+        [RegularExpression(ValidationHelper.PhoneRegex, ErrorMessage = "Số điện thoại không hợp lệ. Phải là định dạng Việt Nam 10 số")]
         public string? PhoneNumber { get; set; }
 
         [Required(ErrorMessage = "CCCD không được để trống!")]
         [RegularExpression(ValidationHelper.CccdRegex, ErrorMessage = "CCCD bắt buộc phải có đúng 12 chữ số.")]
         public string IdentityCard { get; set; }
+
         public string? Country { get; set; }
+
         public string? City { get; set; }
+
         public string? Address { get; set; }
-        public bool? IsDeleted { get; set; }
     }
 }

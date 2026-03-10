@@ -47,7 +47,8 @@ namespace Sentana.API
             builder.Services.AddScoped<ResidentService>();
             builder.Services.AddScoped<IBuildingService, BuildingService>();
             builder.Services.AddScoped<ITechnicianService, TechnicianService>();
-			builder.Services.AddScoped<Sentana.API.Services.IApartmentService, Sentana.API.Services.ApartmentService>();
+            builder.Services.AddScoped<IInfoService, InfoService>();
+            builder.Services.AddScoped<Sentana.API.Services.IApartmentService, Sentana.API.Services.ApartmentService>();
 			builder.Services.AddCors(options =>
 			{
 				options.AddPolicy("AllowReactApp", policy =>
