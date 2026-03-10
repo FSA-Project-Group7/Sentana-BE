@@ -1,11 +1,12 @@
-using Sentana.API.Services;
+using DotNetEnv;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Sentana.API.Models;
+using Sentana.API.Repositories;
+using Sentana.API.Services;
 using System.Text;
-using DotNetEnv;
 
 
 namespace Sentana.API
@@ -44,6 +45,7 @@ namespace Sentana.API
             builder.Services.AddScoped<IAuthService, AuthService>();
             builder.Services.AddScoped<IServiceService, ServiceService>();
             builder.Services.AddScoped<IContractService, ContractService>();
+            builder.Services.AddScoped<IContractRepository, ContractRepository>();
             builder.Services.AddScoped<ResidentService>();
             builder.Services.AddScoped<IBuildingService, BuildingService>();
             builder.Services.AddScoped<ITechnicianService, TechnicianService>();
