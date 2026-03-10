@@ -44,5 +44,13 @@ namespace Sentana.API.Controllers
 
             return Ok(ApiResponse<string>.Success(null, result.Message));
         }
+
+        [HttpGet("history/{apartmentId}")]
+        [Authorize(Roles = "Manager,Resident")] // Cư dân cũng có quyền xem lịch sử của họ
+        public async Task<IActionResult> GetUtilityHistory(int apartmentId, [FromQuery] int? month, [FromQuery] int? year)
+        {
+            var history = await _utilityService.GetUtilityHistoryAsync(apartmentId, month, year);
+            return Ok(ApiResponse<List<UtilityHistoryDto>>.Success(history, "Lấy lịch sử thành công."));
+        }
     }
 }

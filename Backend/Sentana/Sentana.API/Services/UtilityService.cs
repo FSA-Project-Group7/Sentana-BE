@@ -128,5 +128,48 @@ namespace Sentana.API.Services
 
             return isSaved ? (true, "Ghi nhận chỉ số nước thành công!") : (false, "Lỗi khi lưu dữ liệu nước.");
         }
+
+        // utility history
+        public async Task<List<UtilityHistoryDto>> GetUtilityHistoryAsync(int apartmentId, int? month, int? year)
+        {
+            // danh sách điện
+            var elecQuery = _context.ElectricMeters.Where(e => e.ApartmentId == apartmentId && e.IsDeleted == false);
+            if (month.HasValue) elecQuery = elecQuery.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Month == month.Value);
+            if (year.HasValue) elecQuery = elecQuery.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Year == year.Value);
+            var elecList = await elecQuery.ToListAsync();
+
+            // danh sách nước
+            var waterQuery = _context.WaterMeters.Where(w => w.ApartmentId == apartmentId && w.IsDeleted == false);
+            if (month.HasValue) waterQuery = waterQuery.Where(w => w.RegistrationDate.HasValue && w.RegistrationDate.Value.Month == month.Value);
+            if (year.HasValue) waterQuery = waterQuery.Where(w => w.RegistrationDate.HasValue && w.RegistrationDate.Value.Year == year.Value);
+            var waterList = await waterQuery.ToListAsync();
+
+            // ghép 2 danh sách lại theo tháng và năm
+            var history = new List<UtilityHistoryDto>();
+
+            // lấy tất cả các tháng có dữ liệu (từ cả điện và nước)
+            var dates = elecList.Select(e => new { e.RegistrationDate!.Value.Month, e.RegistrationDate!.Value.Year })
+                .Union(waterList.Select(w => new { w.RegistrationDate!.Value.Month, w.RegistrationDate!.Value.Year }))
+                .Distinct()
+                .OrderByDescending(d => d.Year).ThenByDescending(d => d.Month);
+
+            foreach (var date in dates)
+            {
+                var elec = elecList.FirstOrDefault(e => e.RegistrationDate!.Value.Month == date.Month && e.RegistrationDate!.Value.Year == date.Year);
+                var water = waterList.FirstOrDefault(w => w.RegistrationDate!.Value.Month == date.Month && w.RegistrationDate!.Value.Year == date.Year);
+
+                history.Add(new UtilityHistoryDto
+                {
+                    Month = date.Month,
+                    Year = date.Year,
+                    ElectricityOldIndex = elec?.OldIndex ?? 0,
+                    ElectricityNewIndex = elec?.NewIndex ?? 0,
+                    WaterOldIndex = water?.OldIndex ?? 0,
+                    WaterNewIndex = water?.NewIndex ?? 0
+                });
+            }
+
+            return history;
+        }
     }
 }
