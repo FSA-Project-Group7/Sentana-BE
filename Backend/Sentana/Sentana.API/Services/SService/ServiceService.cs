@@ -4,7 +4,7 @@ using Sentana.API.Enums;
 using Sentana.API.Models;
 using System.Security.Claims;
 
-namespace Sentana.API.Services
+namespace Sentana.API.Services.SService
 {
     public class ServiceService : IServiceService
     {
@@ -37,7 +37,7 @@ namespace Sentana.API.Services
             service.ServiceName = request.ServiceName;
             service.Description = request.Description;
             service.ServiceFee = request.ServiceFee;
-            service.Status = (GeneralStatus)request.Status;
+            service.Status = request.Status;
 
             await _context.SaveChangesAsync();
 
@@ -64,12 +64,12 @@ namespace Sentana.API.Services
 
             return services.Select(static s =>
             {
-                int status = (int)(s.Status ?? GeneralStatus.Inactive); 
+                int status = (int)(s.Status ?? GeneralStatus.Inactive);
                 return new ServiceResponseDto
                 {
                     ServiceId = s.ServiceId,
-                    ServiceName = s.ServiceName ?? string.Empty, 
-                    Description = s.Description ?? string.Empty, 
+                    ServiceName = s.ServiceName ?? string.Empty,
+                    Description = s.Description ?? string.Empty,
                     ServiceFee = s.ServiceFee ?? 0,
                     Status = status,
                     CreatedAt = s.CreatedAt
@@ -88,7 +88,7 @@ namespace Sentana.API.Services
             if (exist)
                 return false;
 
-            var roomService = new Models.ApartmentService
+            var roomService = new ApartmentService
             {
                 ApartmentId = request.ApartmentId,
                 ServiceId = request.ServiceId,

@@ -4,7 +4,7 @@ using Sentana.API.DTOs.Building;
 using Sentana.API.Enums;
 using Sentana.API.Models;
 
-namespace Sentana.API.Services
+namespace Sentana.API.Services.SBuilding
 {
     public class BuildingService : IBuildingService
     {

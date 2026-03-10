@@ -2,7 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Invoice;
 using Sentana.API.Helpers;
-using Sentana.API.Services;
+using Sentana.API.Services.SInvoice;
 
 namespace Sentana.API.Controllers
 {

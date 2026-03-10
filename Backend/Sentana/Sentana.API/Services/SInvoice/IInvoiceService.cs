@@ -3,7 +3,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Sentana.API.DTOs.Invoice;
 
-namespace Sentana.API.Services
+namespace Sentana.API.Services.SInvoice
 {
     public interface IInvoiceService
     {

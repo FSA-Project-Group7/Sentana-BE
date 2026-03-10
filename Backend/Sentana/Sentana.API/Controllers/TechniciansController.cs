@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Technician;
 using Sentana.API.Helpers;
-using Sentana.API.Services;
+using Sentana.API.Services.STechnician;
 using System.Security.Claims;
 
 namespace Sentana.API.Controllers

@@ -1,6 +1,6 @@
 ﻿using Sentana.API.DTOs.Resident;
 
-namespace Sentana.API.Services
+namespace Sentana.API.Services.SResident
 {
     public interface IResidentService
     {

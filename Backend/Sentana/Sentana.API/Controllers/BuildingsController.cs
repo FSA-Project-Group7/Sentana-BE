@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Sentana.API.DTOs.Building;
 using Sentana.API.Models;
-using Sentana.API.Services;
+using Sentana.API.Services.SBuilding;
 
 namespace Sentana.API.Controllers
 {

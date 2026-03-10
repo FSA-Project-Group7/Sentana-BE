@@ -1,6 +1,6 @@
 ﻿using Sentana.API.DTOs.Auth;
 
-namespace Sentana.API.Services
+namespace Sentana.API.Services.SBuilding
 {
     public interface IAuthService
     {

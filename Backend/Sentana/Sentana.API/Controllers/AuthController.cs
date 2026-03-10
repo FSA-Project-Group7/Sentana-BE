@@ -3,7 +3,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Auth;
 using Sentana.API.Helpers;
-using Sentana.API.Services;
+using Sentana.API.Services.SBuilding;
 
 namespace Sentana.API.Controllers
 {

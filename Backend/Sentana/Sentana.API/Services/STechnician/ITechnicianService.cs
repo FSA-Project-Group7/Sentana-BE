@@ -1,6 +1,6 @@
 ﻿using Sentana.API.DTOs.Technician;
 
-namespace Sentana.API.Services
+namespace Sentana.API.Services.STechnician
 {
     public interface ITechnicianService
     {

@@ -6,6 +6,13 @@ using Microsoft.OpenApi.Models;
 using Sentana.API.Models;
 using Sentana.API.Repositories;
 using Sentana.API.Services;
+using Sentana.API.Services.SApartment;
+using Sentana.API.Services.SBuilding;
+using Sentana.API.Services.SInfo;
+using Sentana.API.Services.SInvoice;
+using Sentana.API.Services.SPayment;
+using Sentana.API.Services.SService;
+using Sentana.API.Services.STechnician;
 using System.Text;
 
 
@@ -52,7 +59,7 @@ namespace Sentana.API
             builder.Services.AddScoped<IBuildingService, BuildingService>();
             builder.Services.AddScoped<ITechnicianService, TechnicianService>();
             builder.Services.AddScoped<IInfoService, InfoService>();
-            builder.Services.AddScoped<Sentana.API.Services.IApartmentService, Sentana.API.Services.ApartmentService>();
+            builder.Services.AddScoped<IApartmentService, Services.SApartment.ApartmentService>();
 			builder.Services.AddCors(options =>
 			{
 				options.AddPolicy("AllowReactApp", policy =>

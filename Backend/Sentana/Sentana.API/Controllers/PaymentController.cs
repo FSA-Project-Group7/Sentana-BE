@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Payment;
-using Sentana.API.Services;
+using Sentana.API.Services.SPayment;
 
 namespace Sentana.API.Controllers
 {
