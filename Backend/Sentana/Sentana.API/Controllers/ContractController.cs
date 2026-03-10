@@ -111,5 +111,12 @@ namespace Sentana.API.Controllers
 
             return StatusCode(result.StatusCode, result);
         }
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetContractDetail(int id)
+        {
+            var result = await _contractService.GetContractDetailAsync(id);
+
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }

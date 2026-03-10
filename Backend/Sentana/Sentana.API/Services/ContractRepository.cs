@@ -48,5 +48,14 @@ namespace Sentana.API.Repositories
         {
             await _context.SaveChangesAsync();
         }
+
+        // Implementation for the missing method
+        public async Task<Contract?> GetContractDetailAsync(int contractId)
+        {
+            return await _context.Contracts
+                .Include(c => c.Apartment)
+                .Include(c => c.Account)
+                .FirstOrDefaultAsync(c => c.ContractId == contractId && c.IsDeleted == false);
+        }
     }
 }
