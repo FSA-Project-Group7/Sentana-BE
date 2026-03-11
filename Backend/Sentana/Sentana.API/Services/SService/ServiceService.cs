@@ -70,6 +70,9 @@ namespace Sentana.API.Services.SService
                 .Where(x => x.IsDeleted == false)
                 .ToListAsync();
 
+            if (!services.Any())
+                throw new KeyNotFoundException("Dịch vụ không tồn tại");
+
             return services.Select(s => new ServiceResponseDto
             {
                 ServiceId = s.ServiceId,
@@ -152,6 +155,9 @@ namespace Sentana.API.Services.SService
                 .Where(x => x.ApartmentId == roomId && x.IsDeleted == false)
                 .Include(x => x.Service)
                 .ToListAsync();
+
+            if (!roomServices.Any())
+                throw new KeyNotFoundException("Phòng chưa có dịch vụ nào.");
 
             return roomServices.Select(rs => new RoomServiceResponseDto
             {
