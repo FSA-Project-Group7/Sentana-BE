@@ -13,6 +13,6 @@ namespace Sentana.API.Services.STechnician
         Task<string> ToggleTechnicianStatus(int technicianId);
 		Task<string> ToggleTechAvailability(int technicianId);
 
-		Task<bool> DeleteTechnicianAsync(int technicianId, int managerId);
+		Task<bool> DeleteTechnician(int technicianId, int managerId);
     }
 }
