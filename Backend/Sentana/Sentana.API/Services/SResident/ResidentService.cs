@@ -3,7 +3,7 @@ using Sentana.API.DTOs.Resident;
 using Sentana.API.DTOs.Technician;
 using Sentana.API.Enums;
 using Sentana.API.Models;
-using Sentana.API.Services;
+using Sentana.API.Services.SResident;
 
 public class ResidentService : IResidentService
 {

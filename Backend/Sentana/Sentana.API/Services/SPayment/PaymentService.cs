@@ -3,7 +3,7 @@ using Sentana.API.Helpers;
 using Sentana.API.Models;
 using Sentana.API.Repositories;
 
-namespace Sentana.API.Services;
+namespace Sentana.API.Services.SPayment;
 
 public class PaymentService(IPaymentRepository paymentRepository) : IPaymentService
 {
@@ -81,7 +81,7 @@ public class PaymentService(IPaymentRepository paymentRepository) : IPaymentServ
         return ApiResponse<object>.Success(new
         {
             transactionId = transaction.TransactionId,
-            invoiceId = invoiceId,
+            invoiceId,
             proofUrl = transaction.PaymentProofImage,
             status = "Pending"
         }, "Upload payment proof thành công.");

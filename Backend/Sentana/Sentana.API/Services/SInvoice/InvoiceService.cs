@@ -5,9 +5,9 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Invoice;
 using Sentana.API.Models;
-using Sentana.API.Enums; 
+using Sentana.API.Enums;
 
-namespace Sentana.API.Services
+namespace Sentana.API.Services.SInvoice
 {
     public class InvoiceService : IInvoiceService
     {
@@ -71,7 +71,7 @@ namespace Sentana.API.Services
             var rawInvoices = await query.OrderByDescending(i => i.CreatedAt).ToListAsync();
 
             // nếu không truyền thời gian thì lấy hóa đơn mới nhất
-            var invoicesToProcess = (month.HasValue && year.HasValue)
+            var invoicesToProcess = month.HasValue && year.HasValue
                 ? rawInvoices
                 : rawInvoices.GroupBy(i => i.ApartmentId).Select(g => g.First()).ToList();
 

@@ -2,7 +2,7 @@
 using Sentana.API.DTOs.Info;
 using Sentana.API.Models;
 
-namespace Sentana.API.Services
+namespace Sentana.API.Services.SInfo
 {
     public class InfoService : IInfoService
     {

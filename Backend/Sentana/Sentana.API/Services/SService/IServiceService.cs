@@ -2,7 +2,7 @@
 using Sentana.API.Models;
 using System.Security.Claims;
 
-namespace Sentana.API.Services
+namespace Sentana.API.Services.SService
 {
     public interface IServiceService
     {
@@ -12,7 +12,7 @@ namespace Sentana.API.Services
         Task<IEnumerable<ServiceResponseDto>> GetServiceListAsync();
         Task<bool> AssignServiceToRoom(AssignRoomServiceRequestDto request);
         Task<bool> RemoveServiceFromRoom(RemoveRoomServiceRequestDto request);
-        Task<bool> UpdateRoomServicePrice(UpdateRoomServicePriceRequestDto request);        
+        Task<bool> UpdateRoomServicePrice(UpdateRoomServicePriceRequestDto request);
         Task<IEnumerable<RoomServiceResponseDto>> GetRoomServiceListAsync(int roomId);
         Task<bool> ApartmentExistsAsync(int apartmentId);
         Task<bool> ServiceExistsAsync(int serviceId);

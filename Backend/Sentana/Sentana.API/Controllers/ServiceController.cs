@@ -1,7 +1,7 @@
-﻿using Sentana.API.Services;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Service;
 using Microsoft.AspNetCore.Authorization;
+using Sentana.API.Services.SService;
 
 namespace Sentana.API.Controllers
 {

@@ -1,11 +1,11 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Apartment;
-using Sentana.API.Services;
+using Sentana.API.Services.SApartment;
 
 namespace Sentana.API.Controllers
 {
-	[Route("api/[controller]")]
+    [Route("api/[controller]")]
 	[ApiController]
 	[Authorize] // Yêu cầu phải đăng nhập
 	public class ApartmentsController : ControllerBase

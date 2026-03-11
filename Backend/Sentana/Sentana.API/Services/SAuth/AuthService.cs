@@ -6,18 +6,17 @@ using System.Text;
 using Sentana.API.Models;
 using Sentana.API.DTOs.Auth;
 using Sentana.API.Enums;
-using Sentana.API.Services;
 using Microsoft.Extensions.Caching.Memory;
 using System.Security.Cryptography;
 
-namespace Sentana.API.Services
+namespace Sentana.API.Services.SBuilding
 {
     public class AuthService : IAuthService
     {
         private readonly SentanaContext _context;
         private readonly IConfiguration _configuration;
-        private readonly IMemoryCache _cache; 
-        private readonly IEmailService _emailService; 
+        private readonly IMemoryCache _cache;
+        private readonly IEmailService _emailService;
 
         public AuthService(SentanaContext context, IConfiguration configuration, IMemoryCache cache, IEmailService emailService)
         {
@@ -40,7 +39,7 @@ namespace Sentana.API.Services
             {
                 return null;
             }
-             // tạo jwt token - access token
+            // tạo jwt token - access token
             var token = GenerateJwtToken(user);
             // tạo refesh token
             var refreshToken = GenerateRefreshToken();
@@ -72,7 +71,7 @@ namespace Sentana.API.Services
                 new Claim("AccountId", user.AccountId.ToString()),
                 new Claim("RoleId", user.RoleId.ToString()),
                 new Claim(ClaimTypes.Role, user.Role?.RoleName ?? "Resident")
-            };  
+            };
 
             var token = new JwtSecurityToken(
                 issuer: jwtSettings["Issuer"],
@@ -103,7 +102,7 @@ namespace Sentana.API.Services
             {
                 AccountId = user.AccountId,
                 UserName = user.UserName,
-                Email = user.Email, 
+                Email = user.Email,
                 Role = user.Role?.RoleName ?? "Resident",
                 FullName = user.Info?.FullName,
                 PhoneNumber = user.Info?.PhoneNumber,

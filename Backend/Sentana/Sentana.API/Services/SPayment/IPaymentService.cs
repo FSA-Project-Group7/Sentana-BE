@@ -1,7 +1,7 @@
 using Sentana.API.DTOs.Payment;
 using Sentana.API.Helpers;
 
-namespace Sentana.API.Services
+namespace Sentana.API.Services.SPayment
 {
     public interface IPaymentService
     {

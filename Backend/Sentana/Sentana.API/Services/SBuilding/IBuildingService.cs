@@ -2,7 +2,7 @@ using System.Security.Claims;
 using Sentana.API.DTOs.Building;
 using Sentana.API.Models;
 
-namespace Sentana.API.Services
+namespace Sentana.API.Services.SBuilding
 {
     public interface IBuildingService
     {

@@ -4,7 +4,7 @@ using Sentana.API.DTOs.Technician;
 using Sentana.API.Enums;
 using Sentana.API.Models;
 
-namespace Sentana.API.Services
+namespace Sentana.API.Services.STechnician
 {
     public class TechnicianService : ITechnicianService
     {
@@ -94,12 +94,12 @@ namespace Sentana.API.Services
                 Status = GeneralStatus.Active,
                 TechAvailability = (byte)TechAvailability.Free,
                 CreatedAt = currentTime,
-                CreatedBy = managerId, 
+                CreatedBy = managerId,
                 IsDeleted = false
             };
             if (existingInfo != null)
             {
-                newAccount.InfoId = existingInfo.InfoId; 
+                newAccount.InfoId = existingInfo.InfoId;
             }
             else
             {
@@ -204,7 +204,7 @@ namespace Sentana.API.Services
                 .AnyAsync(m => m.AssignedTo == technicianId && m.Status == MaintenanceRequestStatus.Processing);
             if (hasProcessingTask)
                 throw new Exception("Không thể xóa kỹ thuật viên đang trong quá trình xử lý nhiệm vụ.");
-            technician.IsDeleted = true; 
+            technician.IsDeleted = true;
             technician.Status = GeneralStatus.Inactive;
             technician.UpdatedAt = DateTime.Now;
             technician.UpdatedBy = managerId;
