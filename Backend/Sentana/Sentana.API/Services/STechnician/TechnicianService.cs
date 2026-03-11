@@ -58,7 +58,8 @@ namespace Sentana.API.Services.STechnician
             return new TechnicianResponseDto
             {
                 AccountId = account.AccountId,
-                UserName = account.UserName,
+				Code = account.Code,
+				UserName = account.UserName,
                 Email = account.Email,
                 FullName = info?.FullName,
                 PhoneNumber = info?.PhoneNumber,
@@ -127,7 +128,8 @@ namespace Sentana.API.Services.STechnician
                 .Select(a => new TechnicianResponseDto
                 {
                     AccountId = a.AccountId,
-                    UserName = a.UserName,
+					Code = a.Code,
+					UserName = a.UserName,
                     FullName = a.Info != null ? a.Info.FullName : null,
                     Email = a.Email,
                     PhoneNumber = a.Info != null ? a.Info.PhoneNumber : null,
@@ -211,5 +213,28 @@ namespace Sentana.API.Services.STechnician
             _context.Accounts.Update(technician);
             return await _context.SaveChangesAsync() > 0;
         }
-    }
-}
+
+		public async Task<string> ToggleTechAvailability(int technicianId)
+		{
+			var technician = await GetTechnicianById(technicianId);
+			if (technician == null) throw new Exception("Kỹ thuật viên không tồn tại.");
+
+			// Sử dụng trực tiếp Enum TechAvailability và ép kiểu về byte
+			if (technician.TechAvailability == (byte)TechAvailability.Free)
+			{
+				technician.TechAvailability = (byte)TechAvailability.Busy; // Chuyển sang 0
+			}
+			else
+			{
+				technician.TechAvailability = (byte)TechAvailability.Free; // Chuyển về 1
+			}
+
+			_context.Accounts.Update(technician);
+			await _context.SaveChangesAsync();
+
+			return technician.TechAvailability == (byte)TechAvailability.Free
+				? "Đã chuyển tình trạng: Rảnh rỗi"
+				: "Đã chuyển tình trạng: Đang bận";
+		}
+	}
+	}

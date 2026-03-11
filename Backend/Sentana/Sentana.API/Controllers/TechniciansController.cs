@@ -108,7 +108,22 @@ namespace Sentana.API.Controllers
             }
         }
 
-        [HttpDelete("DeleteTechnician/{id}")]
+		[HttpPut("toggleAvailability/{id}")]
+		[Authorize(Roles = "Manager")]
+		public async Task<IActionResult> ToggleTechAvailability(int id)
+		{
+			try
+			{
+				string message = await _technicianService.ToggleTechAvailability(id);
+				return Ok(ApiResponse<object>.Success(null, message));
+			}
+			catch (Exception ex)
+			{
+				return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
+			}
+		}
+
+		[HttpDelete("DeleteTechnician/{id}")]
         [Authorize(Roles = "Manager")]
         public async Task<IActionResult> DeleteTechnician(int id)
         {
