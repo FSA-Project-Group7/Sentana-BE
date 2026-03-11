@@ -2,6 +2,7 @@
 using Sentana.API.DTOs.Utility;
 using Sentana.API.Enums;
 using Sentana.API.Models;
+using System.Security.Claims;
 using Sentana.API.Helpers; 
 
 namespace Sentana.API.Services
@@ -133,14 +134,48 @@ namespace Sentana.API.Services
         }
 
         // Utility history
-        public async Task<List<UtilityHistoryDto>> GetUtilityHistoryAsync(int apartmentId, int? month, int? year)
+        public async Task<(bool IsSuccess, string Message, List<UtilityHistoryDto>? Data)> GetUtilityHistoryAsync(ClaimsPrincipal user, int? targetApartmentId, int? month, int? year)
         {
-            var elecQuery = _context.ElectricMeters.Where(e => e.ApartmentId == apartmentId && e.IsDeleted == false);
+            // 1. DÙNG HELPER ĐỂ VALIDATE THÁNG/NĂM (Chặn Case 2, 3, 4 của Tester)
+            var valResult = ValidationHelper.ValidateMonthYear(month, year);
+            if (!valResult.IsValid) return (false, valResult.ErrorMessage, null);
+
+            // 2. LẤY THÔNG TIN NGƯỜI DÙNG TỪ TOKEN
+            var accountIdClaim = user.FindFirst("AccountId")?.Value;
+            if (!int.TryParse(accountIdClaim, out var callerAccountId))
+                return (false, "Token không hợp lệ.", null);
+
+            var role = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? string.Empty;
+            var isManager = string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase);
+
+            int resolvedApartmentId = 0;
+
+            // 3. XỬ LÝ LOGIC TỰ ĐỘNG TÌM PHÒNG (Chặn Case 1 của Tester)
+            if (isManager)
+            {
+                if (!targetApartmentId.HasValue) return (false, "Vui lòng cung cấp ID căn hộ.", null);
+                resolvedApartmentId = targetApartmentId.Value;
+            }
+            else // Nếu là Resident
+            {
+                var contract = await _context.Contracts
+                    .Where(c => c.AccountId == callerAccountId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
+                    .OrderByDescending(c => c.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (contract == null || !contract.ApartmentId.HasValue)
+                    return (false, "Không tìm thấy hợp đồng thuê nhà đang hiệu lực của bạn.", null);
+
+                resolvedApartmentId = contract.ApartmentId.Value; // Tự động lấy phòng của Cư dân
+            }
+
+            // 4. TRUY VẤN DỮ LIỆU BÌNH THƯỜNG DỰA TRÊN `resolvedApartmentId`
+            var elecQuery = _context.ElectricMeters.Where(e => e.ApartmentId == resolvedApartmentId && e.IsDeleted == false);
             if (month.HasValue) elecQuery = elecQuery.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Month == month.Value);
             if (year.HasValue) elecQuery = elecQuery.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Year == year.Value);
             var elecList = await elecQuery.ToListAsync();
 
-            var waterQuery = _context.WaterMeters.Where(w => w.ApartmentId == apartmentId && w.IsDeleted == false);
+            var waterQuery = _context.WaterMeters.Where(w => w.ApartmentId == resolvedApartmentId && w.IsDeleted == false);
             if (month.HasValue) waterQuery = waterQuery.Where(w => w.RegistrationDate.HasValue && w.RegistrationDate.Value.Month == month.Value);
             if (year.HasValue) waterQuery = waterQuery.Where(w => w.RegistrationDate.HasValue && w.RegistrationDate.Value.Year == year.Value);
             var waterList = await waterQuery.ToListAsync();
@@ -168,7 +203,7 @@ namespace Sentana.API.Services
                 });
             }
 
-            return history;
+            return (true, "Thành công", history);
         }
     }
 }

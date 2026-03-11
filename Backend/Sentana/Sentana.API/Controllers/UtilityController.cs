@@ -52,12 +52,26 @@ namespace Sentana.API.Controllers
             return Ok(ApiResponse<string>.Success(null, result.Message));
         }
 
-        [HttpGet("history/{apartmentId}")]
-        [Authorize(Roles = "Manager,Resident")] // Cư dân cũng có quyền xem lịch sử của họ
-        public async Task<IActionResult> GetUtilityHistory(int apartmentId, [FromQuery] int? month, [FromQuery] int? year)
+        // Dành cho Cư dân (Tự động móc ID phòng từ Token)
+        [HttpGet("history/my")]
+        [Authorize(Roles = "Resident")]
+        public async Task<IActionResult> GetMyUtilityHistory([FromQuery] int? month, [FromQuery] int? year)
         {
-            var history = await _utilityService.GetUtilityHistoryAsync(apartmentId, month, year);
-            return Ok(ApiResponse<List<UtilityHistoryDto>>.Success(history, "Lấy lịch sử thành công."));
+            var result = await _utilityService.GetUtilityHistoryAsync(User, null, month, year);
+            if (!result.IsSuccess) return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+
+            return Ok(ApiResponse<List<UtilityHistoryDto>>.Success(result.Data, "Lấy lịch sử thành công."));
+        }
+
+        // Dành cho Quản lý (Bắt buộc truyền ID phòng)
+        [HttpGet("history/apartment/{apartmentId}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetUtilityHistoryByApartment(int apartmentId, [FromQuery] int? month, [FromQuery] int? year)
+        {
+            var result = await _utilityService.GetUtilityHistoryAsync(User, apartmentId, month, year);
+            if (!result.IsSuccess) return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+
+            return Ok(ApiResponse<List<UtilityHistoryDto>>.Success(result.Data, "Lấy lịch sử thành công."));
         }
     }
 }

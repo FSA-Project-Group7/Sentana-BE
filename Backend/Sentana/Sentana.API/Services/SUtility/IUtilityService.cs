@@ -1,4 +1,5 @@
-﻿using Sentana.API.DTOs.Utility;
+﻿using System.Security.Claims;
+using Sentana.API.DTOs.Utility;
 
 namespace Sentana.API.Services
 {
@@ -10,7 +11,7 @@ namespace Sentana.API.Services
         // nhập chỉ số nước
         Task<(bool IsSuccess, string Message)> InputWaterIndexAsync(InputWaterIndexDto request, int currentUserId);
         // Utility history
-        Task<List<UtilityHistoryDto>> GetUtilityHistoryAsync(int apartmentId, int? month, int? year);
+        Task<(bool IsSuccess, string Message, List<UtilityHistoryDto>? Data)> GetUtilityHistoryAsync(ClaimsPrincipal user, int? targetApartmentId, int? month, int? year);
 
     }
 }
