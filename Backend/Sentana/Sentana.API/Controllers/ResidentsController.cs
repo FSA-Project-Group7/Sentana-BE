@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Resident;
 using Sentana.API.DTOs.Technician;
@@ -76,6 +76,33 @@ namespace Sentana.API.Controllers
                 return BadRequest("Resident not found");
 
             return Ok(result);
+        }
+
+        // US41 - Import Resident List from Excel
+        [HttpPost("import")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> ImportResidents([FromForm] IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, "Vui lòng upload file Excel (.xlsx)."));
+            }
+
+            if (!file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, "Hệ thống chỉ chấp nhận file định dạng .xlsx."));
+            }
+
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Không thể xác định danh tính Manager. Vui lòng đăng nhập lại."));
+            }
+
+            using var stream = file.OpenReadStream();
+            var result = await _residentService.ImportResidentsFromExcelAsync(stream, managerId);
+
+            return Ok(ApiResponse<ImportResidentsResultDto>.Success(result, "Import danh sách cư dân hoàn tất."));
         }
     }
 }
