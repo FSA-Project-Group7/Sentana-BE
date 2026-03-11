@@ -11,7 +11,8 @@ namespace Sentana.API.Services.STechnician
         Task<TechnicianResponseDto> UpdateTechnician(int technicianId, UpdateTechnicianRequestDto technicianRequest, int managerId);
 
         Task<string> ToggleTechnicianStatus(int technicianId);
+		Task<string> ToggleTechAvailability(int technicianId);
 
-        Task<bool> DeleteTechnicianAsync(int technicianId, int managerId);
+		Task<bool> DeleteTechnicianAsync(int technicianId, int managerId);
     }
 }

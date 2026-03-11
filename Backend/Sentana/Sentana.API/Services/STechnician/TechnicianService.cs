@@ -212,5 +212,28 @@ namespace Sentana.API.Services.STechnician
             _context.Accounts.Update(technician);
             return await _context.SaveChangesAsync() > 0;
         }
-    }
-}
+
+		public async Task<string> ToggleTechAvailability(int technicianId)
+		{
+			var technician = await GetTechnicianById(technicianId);
+			if (technician == null) throw new Exception("Kỹ thuật viên không tồn tại.");
+
+			// Sử dụng trực tiếp Enum TechAvailability và ép kiểu về byte
+			if (technician.TechAvailability == (byte)TechAvailability.Free)
+			{
+				technician.TechAvailability = (byte)TechAvailability.Busy; // Chuyển sang 0
+			}
+			else
+			{
+				technician.TechAvailability = (byte)TechAvailability.Free; // Chuyển về 1
+			}
+
+			_context.Accounts.Update(technician);
+			await _context.SaveChangesAsync();
+
+			return technician.TechAvailability == (byte)TechAvailability.Free
+				? "Đã chuyển tình trạng: Rảnh rỗi"
+				: "Đã chuyển tình trạng: Đang bận";
+		}
+	}
+	}
