@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sentana.API.DTOs.Common;
 using Sentana.API.DTOs.Invoice;
 using Sentana.API.Helpers;
 using Sentana.API.Services.SInvoice;
@@ -70,6 +71,22 @@ namespace Sentana.API.Controllers
                 return BadRequest(ApiResponse<string>.Fail(400, result.Message));
 
             return Ok(ApiResponse<string>.Success(null, result.Message));
+        }
+
+        /// Danh sách Hóa đơn tổng quan cho Quản lý 
+        [HttpGet("list")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetInvoiceList([FromQuery] InvoiceListRequestDto request)
+        {
+            try
+            {
+                var result = await _invoiceService.GetInvoiceListAsync(request);
+                return Ok(ApiResponse<PagedResult<InvoiceListItemDto>>.Success(result, "Lấy danh sách thành công."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
+            }
         }
     }
 }

@@ -136,11 +136,10 @@ namespace Sentana.API.Services
         // Utility history
         public async Task<(bool IsSuccess, string Message, List<UtilityHistoryDto>? Data)> GetUtilityHistoryAsync(ClaimsPrincipal user, int? targetApartmentId, int? month, int? year)
         {
-            // 1. DÙNG HELPER ĐỂ VALIDATE THÁNG/NĂM (Chặn Case 2, 3, 4 của Tester)
             var valResult = ValidationHelper.ValidateMonthYear(month, year);
             if (!valResult.IsValid) return (false, valResult.ErrorMessage, null);
 
-            // 2. LẤY THÔNG TIN NGƯỜI DÙNG TỪ TOKEN
+            // lấy thông tin người dùng
             var accountIdClaim = user.FindFirst("AccountId")?.Value;
             if (!int.TryParse(accountIdClaim, out var callerAccountId))
                 return (false, "Token không hợp lệ.", null);
@@ -150,7 +149,6 @@ namespace Sentana.API.Services
 
             int resolvedApartmentId = 0;
 
-            // 3. XỬ LÝ LOGIC TỰ ĐỘNG TÌM PHÒNG (Chặn Case 1 của Tester)
             if (isManager)
             {
                 if (!targetApartmentId.HasValue) return (false, "Vui lòng cung cấp ID căn hộ.", null);
@@ -169,7 +167,6 @@ namespace Sentana.API.Services
                 resolvedApartmentId = contract.ApartmentId.Value; // Tự động lấy phòng của Cư dân
             }
 
-            // 4. TRUY VẤN DỮ LIỆU BÌNH THƯỜNG DỰA TRÊN `resolvedApartmentId`
             var elecQuery = _context.ElectricMeters.Where(e => e.ApartmentId == resolvedApartmentId && e.IsDeleted == false);
             if (month.HasValue) elecQuery = elecQuery.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Month == month.Value);
             if (year.HasValue) elecQuery = elecQuery.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Year == year.Value);

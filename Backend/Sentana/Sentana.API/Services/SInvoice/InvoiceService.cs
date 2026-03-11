@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Invoice;
 using Sentana.API.Models;
 using Sentana.API.Enums;
+using Sentana.API.DTOs.Common;
 
 namespace Sentana.API.Services.SInvoice
 {
@@ -227,6 +228,56 @@ namespace Sentana.API.Services.SInvoice
             }
 
             return (false, $"Không tạo được hóa đơn nào. Có {skippedCount} phòng đã tồn tại hóa đơn.", 0);
+        }
+
+        // view invoice list ( phân trang + lọc )
+        public async Task<PagedResult<InvoiceListItemDto>> GetInvoiceListAsync(InvoiceListRequestDto request)
+        {
+            var query = _context.Invoices
+                .Include(i => i.Apartment)
+                .Where(i => i.IsDeleted == false);
+
+            // filter
+            if (request.Month.HasValue)
+                query = query.Where(i => i.BillingMonth == request.Month.Value);
+
+            if (request.Year.HasValue)
+                query = query.Where(i => i.BillingYear == request.Year.Value);
+
+            if (request.Status.HasValue)
+                query = query.Where(i => i.Status == request.Status.Value);
+
+            // đếm tổng số bản ghi thỏa mãn
+            int totalCount = await query.CountAsync();
+
+            // phân trang và Sắp xếp (Mới nhất lên đầu)
+            var invoices = await query
+                .OrderByDescending(i => i.CreatedAt)
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .ToListAsync();
+
+            // map sang DTO
+            var items = invoices.Select(i => new InvoiceListItemDto
+            {
+                InvoiceId = i.InvoiceId,
+                ApartmentId = i.ApartmentId,
+                ApartmentCode = i.Apartment?.ApartmentCode,
+                BillingMonth = i.BillingMonth,
+                BillingYear = i.BillingYear,
+                TotalMoney = i.TotalMoney,
+                Debt = i.Debt,
+                StatusName = i.Status?.ToString() ?? string.Empty,
+                CreatedAt = i.CreatedAt?.ToString("yyyy-MM-dd HH:mm")
+            }).ToList();
+
+            return new PagedResult<InvoiceListItemDto>
+            {
+                TotalCount = totalCount,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                Items = items
+            };
         }
     }
 }
