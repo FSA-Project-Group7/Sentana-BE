@@ -68,12 +68,19 @@ namespace Sentana.API.Controllers
             var result = await _invoiceService.GenerateMonthlyInvoicesAsync(request, currentUserId);
 
             if (!result.IsSuccess)
+            {
+                if (result.Message.Contains("Không tìm thấy") || result.Message.Contains("không tồn tại"))
+                {
+                    return NotFound(ApiResponse<string>.Fail(404, result.Message));
+                }
+
                 return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+            }
 
             return Ok(ApiResponse<string>.Success(null, result.Message));
         }
 
-        /// Danh sách Hóa đơn tổng quan cho Quản lý 
+        // Danh sách Hóa đơn tổng quan cho Quản lý 
         [HttpGet("list")]
         [Authorize(Roles = "Manager")]
         public async Task<IActionResult> GetInvoiceList([FromQuery] InvoiceListRequestDto request)
