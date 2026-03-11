@@ -16,5 +16,28 @@
 
         // Họ và tên chỉ chữ cái
         public const string FullNameRegex = @"^[\p{L}\s]+$";
+
+        public static (bool IsValid, string ErrorMessage) ValidateUtilityIndex(decimal newIndex, decimal oldIndex, DateTime registrationDate)
+        {
+            // kiểm tra ngày tháng: Không được ở tương lai
+            if (registrationDate > DateTime.Now)
+            {
+                return (false, "Định dạng ngày hợp lệ nhưng ngày chốt số không được lớn hơn ngày hiện tại.");
+            }
+
+            // kiểm tra logic con số: Không được âm
+            if (newIndex < 0)
+            {
+                return (false, "Chỉ số tiêu thụ không được phép là số âm.");
+            }
+
+            // số mới phải lớn hơn hoặc bằng số cũ
+            if (newIndex < oldIndex)
+            {
+                return (false, $"Chỉ số mới ({newIndex}) không được nhỏ hơn chỉ số cũ ({oldIndex}).");
+            }
+
+            return (true, string.Empty);
+        }
     }
 }

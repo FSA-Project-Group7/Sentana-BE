@@ -27,6 +27,13 @@ namespace Sentana.API.Controllers
 
             if (!result.IsSuccess)
             {
+                // Nếu lỗi do không tìm thấy phòng -> Trả về 404
+                if (result.Message.Contains("Không tìm thấy") || result.Message.Contains("not found"))
+                {
+                    return NotFound(ApiResponse<string>.Fail(404, result.Message));
+                }
+
+                // Các lỗi logic khác (Ngày tương lai, Chỉ số nhỏ...) -> Trả về 400
                 return BadRequest(ApiResponse<string>.Fail(400, result.Message));
             }
 
