@@ -1,8 +1,9 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Building;
+using Sentana.API.Enums;
 using Sentana.API.Models;
 using Sentana.API.Services.SBuilding;
 
@@ -110,8 +111,8 @@ namespace Sentana.API.Controllers
                     City = b.City,
                     FloorNumber = b.FloorNumber,
                     ApartmentNumber = b.ApartmentNumber,
-                    StatusName = b.Status.ToString() ?? string.Empty
-                })
+					Status = (byte?)b.Status
+				})
                 .ToListAsync();
 
             return Ok(buildings);
