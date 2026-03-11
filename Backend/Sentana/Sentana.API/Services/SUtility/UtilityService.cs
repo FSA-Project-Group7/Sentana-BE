@@ -3,7 +3,9 @@ using Sentana.API.DTOs.Utility;
 using Sentana.API.Enums;
 using Sentana.API.Models;
 using System.Security.Claims;
-using Sentana.API.Helpers; 
+using Sentana.API.Helpers;
+using OfficeOpenXml;
+
 
 namespace Sentana.API.Services
 {
@@ -201,6 +203,45 @@ namespace Sentana.API.Services
             }
 
             return (true, "Thành công", history);
+        }
+
+        public async Task<(bool IsSuccess, string Message)> ImportUtilityExcelAsync(IFormFile file, string utilityType, int currentUserId)
+        {
+            if (file == null || file.Length == 0) return (false, "File không được để trống.");
+
+            ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+            using var stream = new MemoryStream();
+            await file.CopyToAsync(stream);
+            using var package = new ExcelPackage(stream);
+
+            var worksheet = package.Workbook.Worksheets.FirstOrDefault();
+            if (worksheet == null) return (false, "File Excel trống.");
+
+            int rowCount = worksheet.Dimension.Rows;
+            int successCount = 0;
+
+            // cột 1: ApartmentId, cột 2: NewIndex, cột 3: Ngày chốt (yyyy-MM-dd)
+            for (int row = 2; row <= rowCount; row++) 
+            {
+                if (int.TryParse(worksheet.Cells[row, 1].Text, out int aptId) &&
+                    decimal.TryParse(worksheet.Cells[row, 2].Text, out decimal newIndex) &&
+                    DateTime.TryParse(worksheet.Cells[row, 3].Text, out DateTime regDate))
+                {
+                    if (utilityType.ToLower() == "electric")
+                    {
+                        var dto = new InputElectricIndexDto { ApartmentId = aptId, NewIndex = newIndex, RegistrationDate = regDate };
+                        var res = await InputElectricityIndexAsync(dto, currentUserId);
+                        if (res.IsSuccess) successCount++;
+                    }
+                    else if (utilityType.ToLower() == "water")
+                    {
+                        var dto = new InputWaterIndexDto { ApartmentId = aptId, NewIndex = newIndex, RegistrationDate = regDate };
+                        var res = await InputWaterIndexAsync(dto, currentUserId);
+                        if (res.IsSuccess) successCount++;
+                    }
+                }
+            }
+            return (true, $"Import thành công {successCount} bản ghi.");
         }
     }
 }
