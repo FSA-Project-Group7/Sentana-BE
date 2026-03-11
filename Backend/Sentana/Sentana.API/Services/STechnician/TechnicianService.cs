@@ -128,7 +128,8 @@ namespace Sentana.API.Services.STechnician
                 .Select(a => new TechnicianResponseDto
                 {
                     AccountId = a.AccountId,
-                    UserName = a.UserName,
+					Code = a.Code,
+					UserName = a.UserName,
                     FullName = a.Info != null ? a.Info.FullName : null,
                     Email = a.Email,
                     PhoneNumber = a.Info != null ? a.Info.PhoneNumber : null,
