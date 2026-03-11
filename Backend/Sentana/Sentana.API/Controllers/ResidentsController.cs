@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 using Sentana.API.DTOs.Resident;
 using Sentana.API.DTOs.Technician;
 using Sentana.API.Helpers;
@@ -19,7 +20,6 @@ namespace Sentana.API.Controllers
         {
             _residentService = residentService;
         }
-
 
         [HttpPost("CreateResident")]
         [Authorize(Roles = "Manager")]
@@ -81,8 +81,10 @@ namespace Sentana.API.Controllers
         // US41 - Import Resident List from Excel
         [HttpPost("import")]
         [Authorize(Roles = "Manager")]
-        public async Task<IActionResult> ImportResidents([FromForm] IFormFile file)
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> ImportResidents([FromForm] ImportResidentsRequestDto request)
         {
+            var file = request?.File;
             if (file == null || file.Length == 0)
             {
                 return BadRequest(ApiResponse<object>.Fail(400, "Vui lòng upload file Excel (.xlsx)."));
