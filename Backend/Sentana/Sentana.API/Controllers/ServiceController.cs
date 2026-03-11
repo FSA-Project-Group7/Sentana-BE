@@ -13,7 +13,7 @@ namespace Sentana.API.Controllers
         private readonly IServiceService _serviceService = serviceService;
 
         [HttpPost]
-        public async Task<IActionResult> CreateService([FromBody] CreateServiceRequestDto request)
+        public async Task<IActionResult> CreateService(CreateServiceRequestDto request)
         {
             if (string.IsNullOrWhiteSpace(request.ServiceName))
                 return BadRequest(new { message = "Tên dịch vụ không thể để trống." });
@@ -48,24 +48,31 @@ namespace Sentana.API.Controllers
                     data = result
                 });
             }
-            catch (Exception ex)
+            catch (KeyNotFoundException ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return NotFound(new { message = ex.Message });
             }
         }
 
         [HttpGet]
         public async Task<IActionResult> GetServiceList()
         {
-            var services = await _serviceService.GetServiceListAsync();
-            return Ok(services);
+            try
+            {
+                var services = await _serviceService.GetServiceListAsync();
+                return Ok(services);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteService(int id)
         {
             if (id <= 0)
-                return BadRequest(new { message = "Mã dịch vụ không hợp lệ." });
+                return BadRequest(new { message = "Mã định danh dịch vụ không hợp lệ." });
 
             try
             {
@@ -73,16 +80,12 @@ namespace Sentana.API.Controllers
 
                 return Ok(new
                 {
-                    message = "Đã xóa dịch vụ thành công."
+                    message = "Đã xóa dịch vụ thành công"
                 });
             }
-            catch (KeyNotFoundException)
+            catch (KeyNotFoundException ex)
             {
-                return NotFound(new { message = "Không tìm thấy dịch vụ." });
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { message = ex.Message });
+                return NotFound(new { message = ex.Message });
             }
         }
 
@@ -97,30 +100,33 @@ namespace Sentana.API.Controllers
             if (!apartmentExists)
                 return NotFound(new { message = "Không tìm thấy căn hộ." });
 
-            var services = await _serviceService.GetRoomServiceListAsync(roomId);
-
-            return Ok(services);
+            try
+            {
+                var services = await _serviceService.GetRoomServiceListAsync(roomId);
+                return Ok(services);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
         }
-
         [HttpPost("room")]
-        public async Task<IActionResult> AssignServiceToRoom([FromBody] AssignRoomServiceRequestDto request)
+        public async Task<IActionResult> AssignServiceToRoom(AssignRoomServiceRequestDto request)
         {
             var apartmentExists = await _serviceService.ApartmentExistsAsync(request.ApartmentId);
-
             if (!apartmentExists)
                 return NotFound(new { message = "Không tìm thấy căn hộ." });
 
             var serviceExists = await _serviceService.ServiceExistsAsync(request.ServiceId);
-
             if (!serviceExists)
                 return NotFound(new { message = "Không tìm thấy dịch vụ." });
 
             var result = await _serviceService.AssignServiceToRoom(request);
 
             if (!result)
-                return BadRequest(new { message = "Dịch vụ đã được gán cho phòng." });
+                return BadRequest(new { message = "Dịch vụ đã được chỉ định cho phòng." });
 
-            return Ok(new { message = "Gán dịch vụ cho phòng thành công." });
+            return Ok(new { message = "Dịch vụ được chỉ định cho phòng đã thành công." });
         }
 
         [HttpDelete("room")]
@@ -136,18 +142,18 @@ namespace Sentana.API.Controllers
             if (!result)
                 return NotFound(new { message = "Không tìm thấy dịch vụ trong phòng." });
 
-            return Ok(new { message = "Đã gỡ dịch vụ khỏi phòng." });
+            return Ok(new { message = "Dịch vụ đã được gỡ bỏ khỏi phòng thành công." });
         }
 
         [HttpPut("room/price")]
-        public async Task<IActionResult> UpdateRoomServicePrice([FromBody] UpdateRoomServicePriceRequestDto request)
+        public async Task<IActionResult> UpdateRoomServicePrice(UpdateRoomServicePriceRequestDto request)
         {
             if (request.ActualPrice < 0)
-                return BadRequest(new { message = "Giá dịch vụ phải >= 0." });
+                return BadRequest(new { message = "Giá thực tế phải lớn hơn hoặc bằng 0." });
 
-            var relationExists = await _serviceService.CheckRoomServiceRelationAsync(request.ApartmentId, request.ServiceId);
+            var isServiceAssigned = await _serviceService.CheckRoomServiceRelationAsync(request.ApartmentId, request.ServiceId);
 
-            if (!relationExists)
+            if (!isServiceAssigned)
                 return NotFound(new { message = "Không tìm thấy dịch vụ trong phòng." });
 
             var result = await _serviceService.UpdateRoomServicePrice(request);
@@ -155,7 +161,7 @@ namespace Sentana.API.Controllers
             if (!result)
                 return NotFound(new { message = "Không tìm thấy dịch vụ trong phòng." });
 
-            return Ok(new { message = "Cập nhật giá dịch vụ thành công." });
+            return Ok(new { message = "Giá dịch vụ phòng đã được cập nhật thành công." });
         }
     }
 }
