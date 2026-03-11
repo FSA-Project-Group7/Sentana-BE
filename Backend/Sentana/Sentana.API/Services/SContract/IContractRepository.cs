@@ -15,6 +15,6 @@ namespace Sentana.API.Repositories
         Task AddContractAsync(Contract contract);
         Task<Contract?> GetContractDetailAsync(int contractId);
 
-        Task SaveAsync(); // dùng để lưu thay đổi vào database.
+        Task SaveAsync();
     }
 }
