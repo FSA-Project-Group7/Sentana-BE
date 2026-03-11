@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+using OfficeOpenXml;
 using Sentana.API.DTOs.Resident;
 using Sentana.API.DTOs.Technician;
 using Sentana.API.Enums;
@@ -155,5 +156,126 @@ public class ResidentService : IResidentService
         await _context.SaveChangesAsync();
 
         return true;
+    }
+
+    public async Task<ImportResidentsResultDto> ImportResidentsFromExcelAsync(Stream fileStream, int managerId)
+    {
+        ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+
+        using var package = new ExcelPackage(fileStream);
+        var worksheet = package.Workbook.Worksheets.FirstOrDefault();
+        if (worksheet == null)
+        {
+            return new ImportResidentsResultDto
+            {
+                Errors = new List<string> { "File Excel không chứa worksheet nào." }
+            };
+        }
+
+        var result = new ImportResidentsResultDto();
+        int startRow = 2; // row 1: header
+
+        for (int row = startRow; row <= worksheet.Dimension.End.Row; row++)
+        {
+            result.TotalRows++;
+
+            try
+            {
+                var email = worksheet.Cells[row, 1].Text?.Trim();
+                var userName = worksheet.Cells[row, 2].Text?.Trim();
+                var fullName = worksheet.Cells[row, 3].Text?.Trim();
+                var phoneNumber = worksheet.Cells[row, 4].Text?.Trim();
+                var identityCard = worksheet.Cells[row, 5].Text?.Trim();
+                var country = worksheet.Cells[row, 6].Text?.Trim();
+                var city = worksheet.Cells[row, 7].Text?.Trim();
+                var address = worksheet.Cells[row, 8].Text?.Trim();
+                var apartmentCode = worksheet.Cells[row, 9].Text?.Trim();
+
+                // Required validations
+                if (string.IsNullOrWhiteSpace(email) ||
+                    string.IsNullOrWhiteSpace(userName) ||
+                    string.IsNullOrWhiteSpace(fullName) ||
+                    string.IsNullOrWhiteSpace(identityCard))
+                {
+                    result.FailedCount++;
+                    result.Errors.Add($"Dòng {row}: Thiếu trường bắt buộc (Email, UserName, FullName, IdentityCard).");
+                    continue;
+                }
+
+                if (await CheckEmailExist(email))
+                {
+                    result.FailedCount++;
+                    result.Errors.Add($"Dòng {row}: Email '{email}' đã tồn tại.");
+                    continue;
+                }
+
+                if (await CheckUserNameExist(userName))
+                {
+                    result.FailedCount++;
+                    result.Errors.Add($"Dòng {row}: Tên đăng nhập '{userName}' đã tồn tại.");
+                    continue;
+                }
+
+                if (await CheckDuplicateRoleByIdentityCard(identityCard, 2))
+                {
+                    result.FailedCount++;
+                    result.Errors.Add($"Dòng {row}: CCCD '{identityCard}' đã có tài khoản cư dân.");
+                    continue;
+                }
+
+                Apartment? apartment = null;
+                if (!string.IsNullOrWhiteSpace(apartmentCode))
+                {
+                    apartment = await _context.Apartments
+                        .FirstOrDefaultAsync(a => a.ApartmentCode == apartmentCode && a.IsDeleted == false);
+
+                    if (apartment == null)
+                    {
+                        result.FailedCount++;
+                        result.Errors.Add($"Dòng {row}: Không tìm thấy căn hộ với mã '{apartmentCode}'.");
+                        continue;
+                    }
+                }
+
+                var dto = new CreateResidentRequestDto
+                {
+                    Email = email,
+                    UserName = userName,
+                    Password = "Temp@123", // or generate random, sẽ reset sau
+                    FullName = fullName,
+                    PhoneNumber = phoneNumber,
+                    IdentityCard = identityCard,
+                    Country = country,
+                    City = city,
+                    Address = address
+                };
+
+                var resident = await CreateResident(dto, managerId);
+
+                if (apartment != null)
+                {
+                    var aptResident = new ApartmentResident
+                    {
+                        ApartmentId = apartment.ApartmentId,
+                        AccountId = resident.AccountId,
+                        Status = GeneralStatus.Active,
+                        CreatedAt = DateTime.Now,
+                        CreatedBy = managerId,
+                        IsDeleted = false
+                    };
+                    _context.ApartmentResidents.Add(aptResident);
+                    await _context.SaveChangesAsync();
+                }
+
+                result.SuccessCount++;
+            }
+            catch (Exception ex)
+            {
+                result.FailedCount++;
+                result.Errors.Add($"Dòng {row}: {ex.Message}");
+            }
+        }
+
+        return result;
     }
 }

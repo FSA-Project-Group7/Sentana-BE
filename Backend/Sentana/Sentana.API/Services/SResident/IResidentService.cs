@@ -1,4 +1,4 @@
-﻿using Sentana.API.DTOs.Resident;
+using Sentana.API.DTOs.Resident;
 
 namespace Sentana.API.Services.SResident
 {
@@ -8,5 +8,7 @@ namespace Sentana.API.Services.SResident
         Task<ResidentResponseDto> CreateResident(CreateResidentRequestDto request, int managerId);
 
         Task<IEnumerable<ResidentResponseDto>> GetAllResidents();
+
+        Task<ImportResidentsResultDto> ImportResidentsFromExcelAsync(Stream fileStream, int managerId);
     }
 }
