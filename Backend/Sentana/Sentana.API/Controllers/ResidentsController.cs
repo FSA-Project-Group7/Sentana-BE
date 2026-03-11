@@ -13,7 +13,7 @@ namespace Sentana.API.Controllers
     [Authorize(Roles = "Manager")]
     public class ResidentsController : ControllerBase
     {
-        private readonly ResidentService     _residentService;
+        private readonly ResidentService   _residentService;
 
         public ResidentsController(ResidentService residentService)
         {
@@ -66,6 +66,35 @@ namespace Sentana.API.Controllers
                 return StatusCode(500, errorResponse);
             }
         }
+
+        [HttpPut("UpdateResident/{id}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> UpdateResident(int id, [FromBody] UpdateResidentRequestDto residentRequest)
+        {
+            if (!ModelState.IsValid)
+            {
+                string firstError = ModelState.Values
+                                      .SelectMany(v => v.Errors)
+                                      .Select(e => e.ErrorMessage)
+                                      .FirstOrDefault() ?? "Dữ liệu đầu vào không hợp lệ.";
+                return BadRequest(ApiResponse<object>.Fail(400, firstError));
+            }
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại."));
+            }
+            try
+            {
+                var updatedResident = await _residentService.UpdateResident(id, residentRequest, managerId);
+                return Ok(ApiResponse<ResidentResponseDto>.Success(updatedResident, "Cập nhật thông tin cư dân thành công!"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, $"Cập nhật tài khoản cư dân thất bại. {ex.Message}"));
+            }
+        }
+
 
         [HttpPost("assign")]
         public async Task<IActionResult> AssignResident(AssignResidentRequestDto request)

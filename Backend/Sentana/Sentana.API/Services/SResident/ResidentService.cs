@@ -156,4 +156,41 @@ public class ResidentService : IResidentService
 
         return true;
     }
+
+    public async Task<ResidentResponseDto> UpdateResident(int residentId, UpdateResidentRequestDto request, int managerId)
+    {
+        var resident = await GetResidentById(residentId);
+        if (resident == null || resident.IsDeleted == true)
+            throw new Exception("Cư dân không tồn tại trong hệ thống.");
+        var emailExist = await _context.Accounts.AnyAsync(a =>
+        a.Email.ToLower() == request.Email.ToLower() && a.AccountId != residentId);
+        if (emailExist)
+        {
+            throw new Exception("Email này đã được sử dụng cho một tài khoản khác.");
+        }
+        var identityCardExist = await _context.InFos.AnyAsync(i =>
+        i.CmndCccd == request.IdentityCard && i.InfoId != resident.InfoId);
+        if (identityCardExist)
+        {
+            throw new Exception("CCCD này đã được sử dụng cho một tài khoản khác.");
+        }
+        DateTime currentTime = DateTime.Now;
+        resident.Email = request.Email;
+        resident.UpdatedAt = currentTime;
+        resident.UpdatedBy = managerId;
+        if (resident.Info != null)
+        {
+            resident.Info.FullName = request.FullName;
+            resident.Info.PhoneNumber = request.PhoneNumber;
+            resident.Info.CmndCccd = request.IdentityCard;
+            resident.Info.Country = request.Country;
+            resident.Info.City = request.City;
+            resident.Info.Address = request.Address;
+            resident.Info.UpdatedAt = currentTime;
+        }
+        _context.Accounts.Update(resident);
+        await _context.SaveChangesAsync();
+        return MapToResponse(resident);
+    }
+
 }
