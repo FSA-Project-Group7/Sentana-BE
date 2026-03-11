@@ -58,7 +58,8 @@ namespace Sentana.API.Services.STechnician
             return new TechnicianResponseDto
             {
                 AccountId = account.AccountId,
-                UserName = account.UserName,
+				Code = account.Code,
+				UserName = account.UserName,
                 Email = account.Email,
                 FullName = info?.FullName,
                 PhoneNumber = info?.PhoneNumber,
