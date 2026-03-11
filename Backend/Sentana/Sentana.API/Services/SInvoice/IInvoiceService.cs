@@ -11,5 +11,6 @@ namespace Sentana.API.Services.SInvoice
         Task<List<InvoiceResponseDto>> GetCurrentInvoicesAsync(ClaimsPrincipal user, int? month = null, int? year = null, int? apartmentId = null, int? accountId = null);
         Task<(bool IsSuccess, string Message, int GeneratedCount)> GenerateMonthlyInvoicesAsync(GenerateInvoiceRequestDto request, int currentUserId);
         Task<PagedResult<InvoiceListItemDto>> GetInvoiceListAsync(InvoiceListRequestDto request);
+        Task<(bool IsSuccess, string Message)> EditInvoiceAsync(int invoiceId, EditInvoiceDto request);
     }
 }

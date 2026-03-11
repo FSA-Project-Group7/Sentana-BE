@@ -12,7 +12,6 @@ namespace Sentana.API.DTOs.Invoice
         [Range(2000, 2100, ErrorMessage = "Năm không hợp lệ (Phải từ năm 2000 trở đi).")]
         public int Year { get; set; }
 
-        [Required(ErrorMessage = "Vui lòng chọn căn hộ.")]
-        public int ApartmentId { get; set; }
+        public int? ApartmentId { get; set; } 
     }
 }

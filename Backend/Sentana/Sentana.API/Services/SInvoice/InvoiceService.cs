@@ -279,5 +279,27 @@ namespace Sentana.API.Services.SInvoice
                 Items = items
             };
         }
+
+        // Edit invoice
+        public async Task<(bool IsSuccess, string Message)> EditInvoiceAsync(int invoiceId, EditInvoiceDto request)
+        {
+            var invoice = await _context.Invoices.FirstOrDefaultAsync(i => i.InvoiceId == invoiceId && i.IsDeleted == false);
+
+            if (invoice == null) return (false, "Không tìm thấy hóa đơn.");
+            if (invoice.Status != Enums.InvoiceStatus.Unpaid) return (false, "Chỉ được chỉnh sửa khi hóa đơn chưa thanh toán.");
+
+            // Cộng thêm phụ phí vào Tổng tiền và Tiền nợ
+            if (request.AdditionalFee.HasValue && request.AdditionalFee.Value > 0)
+            {
+                invoice.TotalMoney += request.AdditionalFee.Value;
+                invoice.Debt += request.AdditionalFee.Value;
+                // Có thể lưu thêm note vào DB nếu bảng Invoice của bạn có cột Note/Description
+            }
+
+            _context.Invoices.Update(invoice);
+            bool isSaved = await _context.SaveChangesAsync() > 0;
+
+            return isSaved ? (true, "Cập nhật hóa đơn thành công.") : (false, "Lỗi khi cập nhật.");
+        }
     }
 }

@@ -95,5 +95,19 @@ namespace Sentana.API.Controllers
                 return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
             }
         }
+
+        // Edit Invoice
+        [HttpPut("{id}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> EditInvoice(int id, [FromBody] EditInvoiceDto request)
+        {
+            var result = await _invoiceService.EditInvoiceAsync(id, request);
+            if (!result.IsSuccess)
+            {
+                if (result.Message.Contains("Không tìm thấy")) return NotFound(ApiResponse<string>.Fail(404, result.Message));
+                return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+            }
+            return Ok(ApiResponse<string>.Success(null, result.Message));
+        }
     }
 }
