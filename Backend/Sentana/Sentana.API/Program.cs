@@ -105,6 +105,8 @@ namespace Sentana.API
                 {
                     { securityScheme, new string[] { } }
                 });
+
+                c.CustomSchemaIds(type => type.FullName);
             });
 
             var app = builder.Build();
