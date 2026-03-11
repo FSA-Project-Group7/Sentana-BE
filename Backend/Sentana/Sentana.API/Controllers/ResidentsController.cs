@@ -66,16 +66,33 @@ namespace Sentana.API.Controllers
                 return StatusCode(500, errorResponse);
             }
         }
-
+                
+        // Updated: assign resident to room using service method that requires managerId
         [HttpPost("assign")]
-        public async Task<IActionResult> AssignResident(AssignResidentRequestDto request)
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> AssignResident([FromBody] AssignResidentRequestDto request)
         {
-            var result = await _residentService.AssignResident(request);
+            if (!ModelState.IsValid)
+            {
+                string firstError = ModelState.Values
+                                      .SelectMany(v => v.Errors)
+                                      .Select(e => e.ErrorMessage)
+                                      .FirstOrDefault() ?? "Dữ liệu đầu vào không hợp lệ.";
+                return BadRequest(ApiResponse<object>.Fail(400, firstError));
+            }
 
-            if (!result)
-                return BadRequest("Resident not found");
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Không thể xác định danh tính Manager. Vui lòng đăng nhập lại."));
+            }
 
-            return Ok(result);
+            var (isSuccess, message) = await _residentService.AssignResidentToRoomAsync(request, managerId);
+
+            if (!isSuccess)
+                return BadRequest(ApiResponse<object>.Fail(400, message));
+
+            return Ok(ApiResponse<object>.Success(null, message));
         }
 
         // US41 - Import Resident List from Excel

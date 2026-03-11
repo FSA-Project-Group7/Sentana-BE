@@ -142,22 +142,6 @@ public class ResidentService : IResidentService
             .ToListAsync();
     }
 
-    public async Task<bool> AssignResident(AssignResidentRequestDto request)
-    {
-        var resident = await _context.ApartmentResidents
-            .FirstOrDefaultAsync(r => r.ResidentId == request.ResidentId && r.IsDeleted == false);
-
-        if (resident == null)
-            return false;
-
-        resident.ApartmentId = request.ApartmentId;
-        resident.Status = GeneralStatus.Active;
-
-        await _context.SaveChangesAsync();
-
-        return true;
-    }
-
     public async Task<ImportResidentsResultDto> ImportResidentsFromExcelAsync(Stream fileStream, int managerId)
     {
         ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
@@ -277,5 +261,64 @@ public class ResidentService : IResidentService
         }
 
         return result;
+    }
+
+    //duy anh
+    public async Task<(bool IsSuccess, string Message)> AssignResidentToRoomAsync(AssignResidentRequestDto request, int managerId)
+    {
+        // 1. Kiểm tra Tài khoản Cư dân có tồn tại và đúng Role (RoleId = 2) không?
+        var residentAccount = await _context.Accounts
+            .FirstOrDefaultAsync(a => a.AccountId == request.AccountId && a.RoleId == 2 && a.IsDeleted == false);
+
+        if (residentAccount == null)
+        {
+            return (false, "Không tìm thấy Cư dân này trong hệ thống.");
+        }
+
+        // 2. Kiểm tra Căn hộ có tồn tại không?
+        var apartment = await _context.Apartments
+            .FirstOrDefaultAsync(a => a.ApartmentId == request.ApartmentId && a.IsDeleted == false);
+
+        if (apartment == null)
+        {
+            return (false, "Không tìm thấy Căn hộ này.");
+        }
+
+        // 3. Kiểm tra xem Cư dân này đã được gán vào chính Căn hộ này chưa? (Tránh duplicate)
+        var isAlreadyAssigned = await _context.ApartmentResidents
+            .AnyAsync(ar => ar.AccountId == request.AccountId
+                         && ar.ApartmentId == request.ApartmentId
+                         && ar.IsDeleted == false);
+
+        if (isAlreadyAssigned)
+        {
+            return (false, "Cư dân này đã được gán vào căn hộ này từ trước.");
+        }
+
+        // 4. Thực hiện Map Cư dân vào Căn hộ (Insert mới)
+        var newAssignment = new ApartmentResident
+        {
+            AccountId = request.AccountId,
+            ApartmentId = request.ApartmentId,
+            RelationshipId = request.RelationshipId, // Có thể Null tùy yêu cầu bài toán
+            Status = GeneralStatus.Active,
+            CreatedAt = DateTime.Now,
+            CreatedBy = managerId,
+            IsDeleted = false
+        };
+
+        _context.ApartmentResidents.Add(newAssignment);
+
+        // Mở rộng: Nếu muốn tự động cập nhật trạng thái phòng thành "Đang ở" khi có người gán vào
+        if (apartment.Status == ApartmentStatus.Vacant)
+        {
+            apartment.Status = ApartmentStatus.Occupied;
+            apartment.UpdatedAt = DateTime.Now;
+            apartment.UpdatedBy = managerId;
+        }
+
+        await _context.SaveChangesAsync();
+
+        return (true, $"Đã thêm cư dân {residentAccount.UserName} vào căn hộ {apartment.ApartmentCode} thành công.");
     }
 }
