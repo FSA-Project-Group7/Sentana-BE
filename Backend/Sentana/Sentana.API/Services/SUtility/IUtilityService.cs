@@ -12,6 +12,6 @@ namespace Sentana.API.Services
         Task<(bool IsSuccess, string Message)> InputWaterIndexAsync(InputWaterIndexDto request, int currentUserId);
         // Utility history
         Task<(bool IsSuccess, string Message, List<UtilityHistoryDto>? Data)> GetUtilityHistoryAsync(ClaimsPrincipal user, int? targetApartmentId, int? month, int? year);
-
+        Task<(bool IsSuccess, string Message)> ImportUtilityExcelAsync(IFormFile file, string utilityType, int currentUserId);
     }
 }

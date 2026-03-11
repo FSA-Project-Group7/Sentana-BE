@@ -3,7 +3,9 @@ using Sentana.API.DTOs.Utility;
 using Sentana.API.Enums;
 using Sentana.API.Models;
 using System.Security.Claims;
-using Sentana.API.Helpers; 
+using Sentana.API.Helpers;
+using OfficeOpenXml;
+
 
 namespace Sentana.API.Services
 {
@@ -136,11 +138,10 @@ namespace Sentana.API.Services
         // Utility history
         public async Task<(bool IsSuccess, string Message, List<UtilityHistoryDto>? Data)> GetUtilityHistoryAsync(ClaimsPrincipal user, int? targetApartmentId, int? month, int? year)
         {
-            // 1. DÙNG HELPER ĐỂ VALIDATE THÁNG/NĂM (Chặn Case 2, 3, 4 của Tester)
             var valResult = ValidationHelper.ValidateMonthYear(month, year);
             if (!valResult.IsValid) return (false, valResult.ErrorMessage, null);
 
-            // 2. LẤY THÔNG TIN NGƯỜI DÙNG TỪ TOKEN
+            // lấy thông tin người dùng
             var accountIdClaim = user.FindFirst("AccountId")?.Value;
             if (!int.TryParse(accountIdClaim, out var callerAccountId))
                 return (false, "Token không hợp lệ.", null);
@@ -150,7 +151,6 @@ namespace Sentana.API.Services
 
             int resolvedApartmentId = 0;
 
-            // 3. XỬ LÝ LOGIC TỰ ĐỘNG TÌM PHÒNG (Chặn Case 1 của Tester)
             if (isManager)
             {
                 if (!targetApartmentId.HasValue) return (false, "Vui lòng cung cấp ID căn hộ.", null);
@@ -169,7 +169,6 @@ namespace Sentana.API.Services
                 resolvedApartmentId = contract.ApartmentId.Value; // Tự động lấy phòng của Cư dân
             }
 
-            // 4. TRUY VẤN DỮ LIỆU BÌNH THƯỜNG DỰA TRÊN `resolvedApartmentId`
             var elecQuery = _context.ElectricMeters.Where(e => e.ApartmentId == resolvedApartmentId && e.IsDeleted == false);
             if (month.HasValue) elecQuery = elecQuery.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Month == month.Value);
             if (year.HasValue) elecQuery = elecQuery.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Year == year.Value);
@@ -204,6 +203,45 @@ namespace Sentana.API.Services
             }
 
             return (true, "Thành công", history);
+        }
+
+        public async Task<(bool IsSuccess, string Message)> ImportUtilityExcelAsync(IFormFile file, string utilityType, int currentUserId)
+        {
+            if (file == null || file.Length == 0) return (false, "File không được để trống.");
+
+            ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+            using var stream = new MemoryStream();
+            await file.CopyToAsync(stream);
+            using var package = new ExcelPackage(stream);
+
+            var worksheet = package.Workbook.Worksheets.FirstOrDefault();
+            if (worksheet == null) return (false, "File Excel trống.");
+
+            int rowCount = worksheet.Dimension.Rows;
+            int successCount = 0;
+
+            // cột 1: ApartmentId, cột 2: NewIndex, cột 3: Ngày chốt (yyyy-MM-dd)
+            for (int row = 2; row <= rowCount; row++) 
+            {
+                if (int.TryParse(worksheet.Cells[row, 1].Text, out int aptId) &&
+                    decimal.TryParse(worksheet.Cells[row, 2].Text, out decimal newIndex) &&
+                    DateTime.TryParse(worksheet.Cells[row, 3].Text, out DateTime regDate))
+                {
+                    if (utilityType.ToLower() == "electric")
+                    {
+                        var dto = new InputElectricIndexDto { ApartmentId = aptId, NewIndex = newIndex, RegistrationDate = regDate };
+                        var res = await InputElectricityIndexAsync(dto, currentUserId);
+                        if (res.IsSuccess) successCount++;
+                    }
+                    else if (utilityType.ToLower() == "water")
+                    {
+                        var dto = new InputWaterIndexDto { ApartmentId = aptId, NewIndex = newIndex, RegistrationDate = regDate };
+                        var res = await InputWaterIndexAsync(dto, currentUserId);
+                        if (res.IsSuccess) successCount++;
+                    }
+                }
+            }
+            return (true, $"Import thành công {successCount} bản ghi.");
         }
     }
 }

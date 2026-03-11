@@ -17,7 +17,7 @@
         // Họ và tên chỉ chữ cái
         public const string FullNameRegex = @"^[\p{L}\s]+$";
 
-        // Validate chỉ số nhập liệu 
+        // Validate chỉ số nhập liệu cho input index điện nước
         public static (bool IsValid, string ErrorMessage) ValidateUtilityIndex(decimal newIndex, decimal oldIndex, DateTime registrationDate)
         {
             // kiểm tra ngày tháng: Không được ở tương lai

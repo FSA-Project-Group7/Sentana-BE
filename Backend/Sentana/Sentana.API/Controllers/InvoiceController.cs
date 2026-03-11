@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sentana.API.DTOs.Common;
 using Sentana.API.DTOs.Invoice;
 using Sentana.API.Helpers;
 using Sentana.API.Services.SInvoice;
@@ -67,8 +68,45 @@ namespace Sentana.API.Controllers
             var result = await _invoiceService.GenerateMonthlyInvoicesAsync(request, currentUserId);
 
             if (!result.IsSuccess)
-                return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+            {
+                if (result.Message.Contains("Không tìm thấy") || result.Message.Contains("không tồn tại"))
+                {
+                    return NotFound(ApiResponse<string>.Fail(404, result.Message));
+                }
 
+                return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+            }
+
+            return Ok(ApiResponse<string>.Success(null, result.Message));
+        }
+
+        // Danh sách Hóa đơn tổng quan cho Quản lý 
+        [HttpGet("list")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetInvoiceList([FromQuery] InvoiceListRequestDto request)
+        {
+            try
+            {
+                var result = await _invoiceService.GetInvoiceListAsync(request);
+                return Ok(ApiResponse<PagedResult<InvoiceListItemDto>>.Success(result, "Lấy danh sách thành công."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
+            }
+        }
+
+        // Edit Invoice
+        [HttpPut("{id}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> EditInvoice(int id, [FromBody] EditInvoiceDto request)
+        {
+            var result = await _invoiceService.EditInvoiceAsync(id, request);
+            if (!result.IsSuccess)
+            {
+                if (result.Message.Contains("Không tìm thấy")) return NotFound(ApiResponse<string>.Fail(404, result.Message));
+                return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+            }
             return Ok(ApiResponse<string>.Success(null, result.Message));
         }
     }

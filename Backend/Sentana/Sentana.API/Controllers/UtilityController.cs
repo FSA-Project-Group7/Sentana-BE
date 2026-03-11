@@ -73,5 +73,19 @@ namespace Sentana.API.Controllers
 
             return Ok(ApiResponse<List<UtilityHistoryDto>>.Success(result.Data, "Lấy lịch sử thành công."));
         }
+
+        //Import chỉ số Điện/Nước bằng file Excel
+        [HttpPost("import")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> ImportExcel(IFormFile file, [FromQuery] string type)
+        {
+            if (type != "electric" && type != "water")
+                return BadRequest(ApiResponse<string>.Fail(400, "Loại tiện ích (type) phải là 'electric' hoặc 'water'."));
+
+            var result = await _utilityService.ImportUtilityExcelAsync(file, type, 1);
+            if (!result.IsSuccess) return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+
+            return Ok(ApiResponse<string>.Success(null, result.Message));
+        }
     }
 }
