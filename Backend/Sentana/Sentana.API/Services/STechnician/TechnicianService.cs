@@ -124,7 +124,7 @@ namespace Sentana.API.Services.STechnician
         public async Task<IEnumerable<TechnicianResponseDto>> GetAllTechnician()
         {
             return await _context.Accounts
-                .Where(a => a.RoleId == 3)
+                .Where(a => a.RoleId == 3 && a.IsDeleted == false)
                 .Select(a => new TechnicianResponseDto
                 {
                     AccountId = a.AccountId,
@@ -156,7 +156,6 @@ namespace Sentana.API.Services.STechnician
             if (identityCardExist) throw new Exception("Số CCCD này đã tồn tại ở một hồ sơ khác.");
             DateTime currentTime = DateTime.Now;
             technician.Email = technicianRequest.Email;
-            technician.IsDeleted = technicianRequest.IsDeleted;
             technician.UpdatedAt = currentTime;
             technician.UpdatedBy = managerId;
             if (technician.Info != null)
@@ -236,5 +235,64 @@ namespace Sentana.API.Services.STechnician
 				? "Đã chuyển tình trạng: Rảnh rỗi"
 				: "Đã chuyển tình trạng: Đang bận";
 		}
-	}
-	}
+
+        public async Task<IEnumerable<TechnicianResponseDto>> GetDeletedTechnicians()
+        {
+            return await _context.Accounts
+                .Where(a => a.RoleId == 3 && a.IsDeleted == true)
+                .Select(a => new TechnicianResponseDto
+                {
+                    AccountId = a.AccountId,
+                    Code = a.Code,
+                    UserName = a.UserName,
+                    FullName = a.Info != null ? a.Info.FullName : null,
+                    Email = a.Email,
+                    PhoneNumber = a.Info != null ? a.Info.PhoneNumber : null,
+                    IdentityCard = a.Info != null ? a.Info.CmndCccd : null,
+                    Status = a.Status,
+                    TechAvailability = a.TechAvailability,
+                    Country = a.Info != null ? a.Info.Country : null,
+                    City = a.Info != null ? a.Info.City : null,
+                    Address = a.Info != null ? a.Info.Address : null,
+                    IsDeleted = a.IsDeleted
+                })
+                .ToListAsync();
+        }
+
+        public async Task<bool> RestoreTechnician(int technicianId, int managerId)
+        {
+            var technician = await GetTechnicianById(technicianId);
+            if (technician == null)
+                throw new Exception("Kỹ thuật viên không tồn tại hoặc đã bị xóa trước đó.");
+            var emailExist = await _context.Accounts.AnyAsync(a =>
+            a.Email.ToLower() == technician.Email.ToLower() && a.AccountId != technicianId && a.IsDeleted == false);
+            if (emailExist) throw new Exception("Email của tài khoản này đã được sử dụng bởi một tài khoản đang hoạt động khác.");
+            technician.IsDeleted = false;
+            technician.Status = GeneralStatus.Active;
+            technician.UpdatedAt = DateTime.Now;
+            technician.UpdatedBy = managerId;
+            _context.Accounts.Update(technician);
+            return await _context.SaveChangesAsync() > 0;
+        }
+
+        public async Task<bool> HardDeleteTechnician(int technicianId)
+        {
+            var technician = await _context.Accounts
+            .FirstOrDefaultAsync(a => a.AccountId == technicianId && a.RoleId == 3 && a.IsDeleted == true);
+            if (technician == null)
+            {
+                throw new Exception("Không tìm thấy kỹ thuật viên này trong danh sách đã xóa.");
+            }
+            var hasRelatedTasks = await _context.MaintenanceRequests
+            .AnyAsync(m => m.AssignedTo == technicianId);
+            if (hasRelatedTasks)
+            {
+                throw new Exception("Không thể xóa vĩnh viễn! Kỹ thuật viên này đã có lịch sử công việc trong hệ thống.");
+            }
+            _context.Accounts.Remove(technician);
+            return await _context.SaveChangesAsync() > 0;
+        }
+
+
+    }
+}

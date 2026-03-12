@@ -13,5 +13,8 @@ namespace Sentana.API.Services.SResident
         Task<ImportResidentsResultDto> ImportResidentsFromExcelAsync(Stream fileStream, int managerId);
 
         Task<(bool IsSuccess, string Message)> AssignResidentToRoomAsync(AssignResidentRequestDto request, int managerId);
+
+        // now returns detailed DTO (no model changes required)
+        Task<RemoveResidentResponseDto> RemoveResidentFromRoomAsync(AssignResidentRequestDto request, int managerId);
     }
 }

@@ -153,5 +153,34 @@ namespace Sentana.API.Controllers
 
             return Ok(ApiResponse<ImportResidentsResultDto>.Success(result, "Import danh sách cư dân hoàn tất."));
         }
+
+        [HttpPost("remove")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> RemoveResident([FromBody] RemoveResidentRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                string firstError = ModelState.Values
+                                      .SelectMany(v => v.Errors)
+                                      .Select(e => e.ErrorMessage)
+                                      .FirstOrDefault() ?? "Dữ liệu đầu vào không hợp lệ.";
+                return BadRequest(ApiResponse<object>.Fail(400, firstError));
+            }
+
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Không thể xác định danh tính Manager. Vui lòng đăng nhập lại."));
+            }
+
+            var dto = await _residentService.RemoveResidentFromRoomAsync(
+                new AssignResidentRequestDto { AccountId = request.AccountId, ApartmentId = request.ApartmentId, RelationshipId = request.RelationshipId },
+                managerId);
+
+            if (!dto.IsSuccess)
+                return BadRequest(ApiResponse<RemoveResidentResponseDto>.Fail(400, dto.Message));
+
+            return Ok(ApiResponse<RemoveResidentResponseDto>.Success(dto, dto.Message));
+        }
     }
 }

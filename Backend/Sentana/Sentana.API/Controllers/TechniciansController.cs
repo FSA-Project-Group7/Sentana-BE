@@ -146,5 +146,63 @@ namespace Sentana.API.Controllers
                 return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
             }
         }
+
+        [HttpGet("Deleted")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetDeletedTechnicians()
+        {
+            try
+            {
+                var technicians = await _technicianService.GetDeletedTechnicians();
+                return Ok(ApiResponse<IEnumerable<TechnicianResponseDto>>.Success(technicians, "Lấy danh sách kỹ thuật viên đã xóa thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(500, $"Lỗi: {ex.Message}"));
+            }
+        }
+
+        [HttpPut("Restore/{id}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> RestoreTechnician(int id)
+        {
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+            }
+            try
+            {
+                var result = await _technicianService.RestoreTechnician(id, managerId);
+                if (result)
+                {
+                    return Ok(ApiResponse<object>.Success(null, "Khôi phục tài khoản kỹ thuật viên thành công!"));
+                }
+                return BadRequest(ApiResponse<object>.Fail(400, "Khôi phục tài khoản thất bại."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
+            }
+        }
+
+        [HttpDelete("HardDelete/{id}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> HardDeleteTechnician(int id)
+        {
+            try
+            {
+                var result = await _technicianService.HardDeleteTechnician(id);
+                if (result)
+                {
+                    return Ok(ApiResponse<object>.Success(null, "Đã xóa vĩnh viễn kỹ thuật viên khỏi hệ thống."));
+                }
+                return BadRequest(ApiResponse<object>.Fail(400, "Xóa vĩnh viễn thất bại."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
+            }
+        }
     }
 }
