@@ -23,5 +23,6 @@ namespace Sentana.API.DTOs.Building
 
         [Range(0, 100000, ErrorMessage = "Số căn hộ phải lớn hơn hoặc bằng 0.")]
         public int? ApartmentNumber { get; set; }
-    }
+		public byte? Status { get; set; }
+	}
 }

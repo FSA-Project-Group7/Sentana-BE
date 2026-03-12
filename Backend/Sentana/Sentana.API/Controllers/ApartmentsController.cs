@@ -7,7 +7,7 @@ namespace Sentana.API.Controllers
 {
     [Route("api/[controller]")]
 	[ApiController]
-	[Authorize] // Yêu cầu phải đăng nhập
+	[Authorize] 
 	public class ApartmentsController : ControllerBase
 	{
 		private readonly IApartmentService _apartmentService;
@@ -25,7 +25,7 @@ namespace Sentana.API.Controllers
 		}
 
 		[HttpPost]
-		[Authorize(Roles = "Manager, Admin")] // Phân quyền
+		[Authorize(Roles = "Manager")] // Phân quyền
 		public async Task<IActionResult> CreateApartment([FromBody] CreateApartmentDto newApartmentDto)
 		{
 			try
@@ -88,6 +88,29 @@ namespace Sentana.API.Controllers
 			{
 				return BadRequest(new { message = ex.Message });
 			}
+		}
+		[HttpGet("deleted")]
+		[Authorize(Roles = "Manager")]
+		public async Task<IActionResult> GetDeletedApartments()
+		{
+			try { return Ok(await _apartmentService.GetDeletedApartmentsAsync()); }
+			catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+		}
+
+		[HttpPut("{id}/restore")]
+		[Authorize(Roles = "Manager")]
+		public async Task<IActionResult> RestoreApartment(int id)
+		{
+			try { await _apartmentService.RestoreApartmentAsync(id); return Ok(new { message = "Khôi phục thành công" }); }
+			catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+		}
+
+		[HttpDelete("{id}/hard")]
+		[Authorize(Roles = "Manager")]
+		public async Task<IActionResult> HardDeleteApartment(int id)
+		{
+			try { await _apartmentService.HardDeleteApartmentAsync(id); return Ok(new { message = "Xóa vĩnh viễn thành công" }); }
+			catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
 		}
 	}
 }

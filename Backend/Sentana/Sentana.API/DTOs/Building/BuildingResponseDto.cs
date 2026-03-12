@@ -11,6 +11,6 @@ namespace Sentana.API.DTOs.Building
         public string? City { get; set; }
         public int? FloorNumber { get; set; }
         public int? ApartmentNumber { get; set; }
-        public string StatusName { get; set; } = string.Empty;
-    }
+		public byte? Status { get; set; }
+	}
 }

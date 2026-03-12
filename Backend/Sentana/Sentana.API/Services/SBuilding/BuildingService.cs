@@ -15,169 +15,213 @@ namespace Sentana.API.Services.SBuilding
             _context = context;
         }
 
-        public async Task<BuildingResponseDto> CreateBuildingAsync(BuildingRequestDto dto, ClaimsPrincipal user)
-        {
-            if (dto == null || string.IsNullOrWhiteSpace(dto.BuildingName))
-            {
-                throw new ArgumentException("Tên tòa nhà là bắt buộc.");
-            }
+		public async Task<BuildingResponseDto> CreateBuildingAsync(BuildingRequestDto dto, ClaimsPrincipal user)
+		{
+			if (!dto.FloorNumber.HasValue || dto.FloorNumber <= 0)
+				throw new ArgumentException("Số tầng là bắt buộc và phải lớn hơn 0.");
 
-            if (string.IsNullOrWhiteSpace(dto.BuildingCode))
-            {
-                throw new ArgumentException("Mã tòa nhà là bắt buộc.");
-            }
+			int? accountId = null;
+			var accountIdClaim = user?.FindFirst("AccountId");
+			if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
+			{
+				accountId = parsedAccountId;
+			}
 
-            int? accountId = null;
-            var accountIdClaim = user?.FindFirst("AccountId");
-            if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
-            {
-                accountId = parsedAccountId;
-            }
+			var lastBuilding = await _context.Buildings
+				.Where(b => b.BuildingCode != null && b.BuildingCode.StartsWith("SEN-"))
+				.OrderByDescending(b => b.BuildingCode)
+				.FirstOrDefaultAsync();
 
-            var isNameExists = await _context.Buildings
-                .AnyAsync(b => b.BuildingName == dto.BuildingName && b.IsDeleted == false);
+			char nextChar = 'A'; 
 
-            if (isNameExists)
-            {
-                throw new InvalidOperationException("Tên tòa nhà đã tồn tại.");
-            }
+			if (lastBuilding != null && lastBuilding.BuildingCode.Length >= 5)
+			{
+				char lastChar = lastBuilding.BuildingCode.Last();
+				if (char.IsLetter(lastChar) && lastChar >= 'A' && lastChar < 'Z')
+				{
+					nextChar = (char)(lastChar + 1);
+				}
+				else if (lastChar == 'Z')
+				{
+					throw new InvalidOperationException("Hệ thống đã đạt giới hạn tối đa tòa nhà (Từ A đến Z).");
+				}
+			}
 
-            var isCodeExists = await _context.Buildings
-                .AnyAsync(b => b.BuildingCode == dto.BuildingCode && b.IsDeleted == false);
+			string generatedCode = $"SEN-{nextChar}";
+			string generatedName = $"Chung cư SENTANA Tòa {nextChar}";
+			int calculatedApartmentNumber = dto.FloorNumber.Value * 10;
 
-            if (isCodeExists)
-            {
-                throw new InvalidOperationException("Mã tòa nhà đã tồn tại.");
-            }
+			var newBuilding = new Building
+			{
+				BuildingName = generatedName,
+				BuildingCode = generatedCode,
+				Address = dto.Address,
+				City = dto.City,
+				FloorNumber = dto.FloorNumber,
+				ApartmentNumber = calculatedApartmentNumber,
+				Status = (GeneralStatus)1, 
+				CreatedAt = DateTime.UtcNow,
+				IsDeleted = false,
+				CreatedBy = accountId ?? 0
+			};
 
-            var newBuilding = new Building
-            {
-                BuildingName = dto.BuildingName,
-                BuildingCode = dto.BuildingCode,
-                Address = dto.Address,
-                City = dto.City,
-                FloorNumber = dto.FloorNumber,
-                ApartmentNumber = dto.ApartmentNumber,
-                Status = GeneralStatus.Active,
-                CreatedAt = DateTime.Now,
-                IsDeleted = false
-            };
+			_context.Buildings.Add(newBuilding);
+			await _context.SaveChangesAsync(); 
+			var newApartments = new List<Apartment>();
 
-            if (accountId.HasValue)
-            {
-                newBuilding.CreatedBy = accountId.Value;
-            }
+			for (int floor = 1; floor <= newBuilding.FloorNumber; floor++)
+			{
+				for (int aptIndex = 1; aptIndex <= 10; aptIndex++) 
+				{
+					int roomNumber = (floor * 100) + aptIndex;
 
-            _context.Buildings.Add(newBuilding);
-            await _context.SaveChangesAsync();
+					newApartments.Add(new Apartment
+					{
+						BuildingId = newBuilding.BuildingId, 
+						ApartmentCode = $"{newBuilding.BuildingCode}-{roomNumber}", 
+						ApartmentName = $"Phòng {roomNumber} Tòa {nextChar}",       
+						ApartmentNumber = roomNumber,
+						FloorNumber = floor,
+						Area = 0,
+						Status = (ApartmentStatus)1, 
+						CreatedAt = DateTime.UtcNow,
+						CreatedBy = accountId ?? 0,
+						IsDeleted = false
+					});
+				}
+			}
 
-            return MapToResponseDto(newBuilding);
-        }
+			await _context.Apartments.AddRangeAsync(newApartments);
+			await _context.SaveChangesAsync();
 
-        public async Task<BuildingResponseDto> UpdateBuildingAsync(int id, BuildingRequestDto dto, ClaimsPrincipal user)
-        {
-            int? accountId = null;
-            var accountIdClaim = user?.FindFirst("AccountId");
-            if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
-            {
-                accountId = parsedAccountId;
-            }
+			return MapToResponseDto(newBuilding);
+		}
 
-            var existingBuilding = await _context.Buildings
-                .FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == false);
+		public async Task<BuildingResponseDto> UpdateBuildingAsync(int id, BuildingRequestDto dto, ClaimsPrincipal user)
+		{
+			int? accountId = null;
+			var accountIdClaim = user?.FindFirst("AccountId");
+			if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
+				accountId = parsedAccountId;
 
-            if (existingBuilding == null)
-                throw new InvalidOperationException("Không tìm thấy tòa nhà.");
+			var existingBuilding = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == false);
+			if (existingBuilding == null) throw new InvalidOperationException("Không tìm thấy tòa nhà.");
 
-            if (!string.IsNullOrWhiteSpace(dto.BuildingName))
-            {
-                var isNameExists = await _context.Buildings
-                    .AnyAsync(b => b.BuildingName == dto.BuildingName
-                                   && b.BuildingId != id
-                                   && b.IsDeleted == false);
+			// Giữ nguyên Tên và Mã (Vì FE gửi lại cái cũ để vượt qua Validate)
+			if (!string.IsNullOrWhiteSpace(dto.BuildingName) && dto.BuildingName != existingBuilding.BuildingName)
+				existingBuilding.BuildingName = dto.BuildingName;
 
-                if (isNameExists)
-                    throw new InvalidOperationException("Tên tòa nhà đã tồn tại.");
+			if (!string.IsNullOrWhiteSpace(dto.BuildingCode) && dto.BuildingCode != existingBuilding.BuildingCode)
+				existingBuilding.BuildingCode = dto.BuildingCode;
 
-                existingBuilding.BuildingName = dto.BuildingName;
-            }
+			// 1. Cập nhật Địa chỉ
+			if (dto.Address != null) existingBuilding.Address = dto.Address;
+			if (dto.City != null) existingBuilding.City = dto.City;
 
-            if (dto.BuildingCode != null)
-            {
-                if (string.IsNullOrWhiteSpace(dto.BuildingCode))
-                    throw new ArgumentException("Mã tòa nhà không được để trống.");
+			// 2. Cập nhật Tầng và TỰ ĐỘNG tính lại số căn hộ
+			if (dto.FloorNumber.HasValue)
+			{
+				existingBuilding.FloorNumber = dto.FloorNumber.Value;
+				existingBuilding.ApartmentNumber = dto.FloorNumber.Value * 10;
+			}
 
-                var isCodeExists = await _context.Buildings
-                    .AnyAsync(b => b.BuildingCode == dto.BuildingCode
-                                   && b.BuildingId != id
-                                   && b.IsDeleted == false);
+			// 2. Ép Trạng thái nhận giá trị từ giao diện
+			if (dto.Status.HasValue)
+			{
+				existingBuilding.Status = (GeneralStatus)dto.Status.Value;
+			}
 
-                if (isCodeExists)
-                    throw new InvalidOperationException("Mã tòa nhà đã tồn tại.");
+			if (!string.IsNullOrEmpty(dto.Address)) existingBuilding.Address = dto.Address;
+			if (!string.IsNullOrEmpty(dto.City)) existingBuilding.City = dto.City;
 
-                existingBuilding.BuildingCode = dto.BuildingCode;
-            }
+			existingBuilding.UpdatedAt = DateTime.UtcNow;
 
-            if (dto.Address != null)
-            {
-                existingBuilding.Address = dto.Address;
-            }
+			// === KẾT THÚC ĐOẠN ÉP KIỂU ===
 
-            if (dto.City != null)
-            {
-                existingBuilding.City = dto.City;
-            }
+			_context.Buildings.Update(existingBuilding);
+			await _context.SaveChangesAsync();
 
-            if (dto.FloorNumber.HasValue)
-            {
-                existingBuilding.FloorNumber = dto.FloorNumber.Value;
-            }
+			return MapToResponseDto(existingBuilding);
+		}
 
-            if (dto.ApartmentNumber.HasValue)
-            {
-                existingBuilding.ApartmentNumber = dto.ApartmentNumber.Value;
-            }
+		public async Task<bool> DeleteBuildingAsync(int id, ClaimsPrincipal user) 
+		{
+			var existingBuilding = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == false);
+			if (existingBuilding == null) throw new InvalidOperationException("Không tìm thấy tòa nhà.");
 
-            existingBuilding.UpdatedAt = DateTime.UtcNow;
-            existingBuilding.UpdatedBy = accountId;
+			//Kiểm tra xem tòa nhà còn căn hộ nào không
+			var hasActiveApartments = await _context.Apartments
+				.AnyAsync(a => a.BuildingId == id && a.IsDeleted == false);
 
-            await _context.SaveChangesAsync();
+			if (hasActiveApartments)
+				throw new InvalidOperationException("Không thể đưa vào thùng rác! Tòa nhà này vẫn đang có căn hộ tồn tại bên trong.");
 
-            return MapToResponseDto(existingBuilding);
-        }
+			existingBuilding.IsDeleted = true;
+			existingBuilding.UpdatedAt = DateTime.UtcNow;
 
-        public async Task<bool> DeleteBuildingAsync(int id, ClaimsPrincipal user)
-        {
-            int? accountId = null;
-            var accountIdClaim = user?.FindFirst("AccountId");
-            if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
-            {
-                accountId = parsedAccountId;
-            }
+			// Lấy ID của người Admin đang thao tác xóa để lưu vào DB
+			var accountIdClaim = user?.FindFirst("AccountId");
+			if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
+			{
+				existingBuilding.UpdatedBy = parsedAccountId;
+			}
 
-            var existingBuilding = await _context.Buildings
-                .FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == false);
+			_context.Buildings.Update(existingBuilding);
+			await _context.SaveChangesAsync();
+			return true;
+		}
 
-            if (existingBuilding == null)
-                throw new InvalidOperationException("Không tìm thấy tòa nhà.");
+		//Lấy danh sách đã xóa mềm
+		public async Task<IEnumerable<BuildingResponseDto>> GetDeletedBuildingsAsync()
+		{
+			return await _context.Buildings
+				.Where(b => b.IsDeleted == true) // Chỉ lấy các tòa nhà đã xóa mềm
+				.Select(b => new BuildingResponseDto
+				{
+					BuildingId = b.BuildingId,
+					BuildingName = b.BuildingName,
+					BuildingCode = b.BuildingCode,
+					Address = b.Address,
+					City = b.City,
+					FloorNumber = b.FloorNumber,
+					ApartmentNumber = b.ApartmentNumber,
+					Status = (byte?)b.Status
+				})
+				.ToListAsync();
+		}
 
-            // không cho xóa nếu tòa nhà còn căn hộ
-            var hasApartments = await _context.Apartments
-                .AnyAsync(a => a.BuildingId == id && a.IsDeleted == false);
+		//Khôi phục tòa nhà đã xóa mềm
+		public async Task<bool> RestoreBuildingAsync(int id)
+		{
+			var building = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == true);
+			if (building == null) throw new InvalidOperationException("Không tìm thấy tòa nhà trong thùng rác.");
 
-            if (hasApartments)
-                throw new InvalidOperationException("Tòa nhà đang chứa căn hộ, không thể xóa.");
+			building.IsDeleted = false; // Khôi phục lại
+			building.UpdatedAt = DateTime.UtcNow;
 
-            existingBuilding.IsDeleted = true;
-            existingBuilding.UpdatedAt = DateTime.UtcNow;
-            existingBuilding.UpdatedBy = accountId;
+			_context.Buildings.Update(building);
+			await _context.SaveChangesAsync();
+			return true;
+		}
 
-            await _context.SaveChangesAsync();
+		//Xóa vĩnh viễn
+		public async Task<bool> HardDeleteBuildingAsync(int id)
+		{
+			var building = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == true);
+			if (building == null) throw new InvalidOperationException("Không tìm thấy tòa nhà trong thùng rác.");
 
-            return true;
-        }
+			// Kiểm tra lại một lần nữa cho chắc chắn trước khi xóa bay màu
+			var hasActiveApartments = await _context.Apartments
+				.AnyAsync(a => a.BuildingId == id && a.IsDeleted == false);
 
-        private static BuildingResponseDto MapToResponseDto(Building building)
+			if (hasActiveApartments)
+				throw new InvalidOperationException("Không thể xóa vĩnh viễn! Tòa nhà này vẫn đang chứa các căn hộ chưa bị xóa.");
+
+			_context.Buildings.Remove(building);
+			await _context.SaveChangesAsync();
+			return true;
+		}
+		private static BuildingResponseDto MapToResponseDto(Building building)
         {
             return new BuildingResponseDto
             {
@@ -188,8 +232,8 @@ namespace Sentana.API.Services.SBuilding
                 City = building.City,
                 FloorNumber = building.FloorNumber,
                 ApartmentNumber = building.ApartmentNumber,
-                StatusName = building.Status?.ToString() ?? string.Empty
-            };
+				Status = (byte?)building.Status
+			};
         }
     }
 }
