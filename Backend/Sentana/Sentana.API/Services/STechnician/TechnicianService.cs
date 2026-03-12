@@ -274,5 +274,25 @@ namespace Sentana.API.Services.STechnician
             _context.Accounts.Update(technician);
             return await _context.SaveChangesAsync() > 0;
         }
+
+        public async Task<bool> HardDeleteTechnician(int technicianId)
+        {
+            var technician = await _context.Accounts
+            .FirstOrDefaultAsync(a => a.AccountId == technicianId && a.RoleId == 3 && a.IsDeleted == true);
+            if (technician == null)
+            {
+                throw new Exception("Không tìm thấy kỹ thuật viên này trong danh sách đã xóa.");
+            }
+            var hasRelatedTasks = await _context.MaintenanceRequests
+            .AnyAsync(m => m.AssignedTo == technicianId);
+            if (hasRelatedTasks)
+            {
+                throw new Exception("Không thể xóa vĩnh viễn! Kỹ thuật viên này đã có lịch sử công việc trong hệ thống.");
+            }
+            _context.Accounts.Remove(technician);
+            return await _context.SaveChangesAsync() > 0;
+        }
+
+
     }
 }
