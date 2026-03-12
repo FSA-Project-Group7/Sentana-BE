@@ -10,7 +10,10 @@ namespace Sentana.API.Services.SService
     {
         private readonly SentanaContext _context;
 
-        public ServiceService(SentanaContext context) => _context = context;
+        public ServiceService(SentanaContext context)
+        {
+            _context = context;
+        }
 
         public async Task<Service> CreateServiceAsync(CreateServiceRequestDto request)
         {
@@ -19,7 +22,8 @@ namespace Sentana.API.Services.SService
                 ServiceName = request.ServiceName,
                 Description = request.Description,
                 ServiceFee = request.ServiceFee,
-                Status = GeneralStatus.Active
+                Status = GeneralStatus.Active,
+                IsDeleted = false
             };
 
             _context.Services.Add(service);
@@ -31,8 +35,10 @@ namespace Sentana.API.Services.SService
         public async Task<Service> UpdateServiceAsync(UpdateServiceRequestDto request)
         {
             var service = await _context.Services
-                .FirstOrDefaultAsync(x => x.ServiceId == request.ServiceId)
-                ?? throw new Exception("Không tìm thấy dịch vụ.");
+                .FirstOrDefaultAsync(x => x.ServiceId == request.ServiceId && x.IsDeleted == false);
+
+            if (service == null)
+                throw new KeyNotFoundException("Không tìm thấy dịch vụ.");
 
             service.ServiceName = request.ServiceName;
             service.Description = request.Description;
@@ -47,33 +53,34 @@ namespace Sentana.API.Services.SService
         public async Task DeleteServiceAsync(int serviceId)
         {
             var service = await _context.Services
-                .FirstOrDefaultAsync(x => x.ServiceId == serviceId)
-                ?? throw new Exception("Không tìm thấy dịch vụ.");
+                .FirstOrDefaultAsync(x => x.ServiceId == serviceId && x.IsDeleted == false);
 
-            if (service.Status == GeneralStatus.Inactive)
-                throw new Exception("Dịch vụ hiện đã không hoạt động.");
+            if (service == null)
+                throw new KeyNotFoundException("Không tìm thấy dịch vụ.");
 
             service.Status = GeneralStatus.Inactive;
+            service.IsDeleted = true;
 
             await _context.SaveChangesAsync();
         }
 
         public async Task<IEnumerable<ServiceResponseDto>> GetServiceListAsync()
         {
-            var services = await _context.Services.ToListAsync();
+            var services = await _context.Services
+                .Where(x => x.IsDeleted == false)
+                .ToListAsync();
 
-            return services.Select(static s =>
+            if (!services.Any())
+                throw new KeyNotFoundException("Dịch vụ không tồn tại");
+
+            return services.Select(s => new ServiceResponseDto
             {
-                int status = (int)(s.Status ?? GeneralStatus.Inactive);
-                return new ServiceResponseDto
-                {
-                    ServiceId = s.ServiceId,
-                    ServiceName = s.ServiceName ?? string.Empty,
-                    Description = s.Description ?? string.Empty,
-                    ServiceFee = s.ServiceFee ?? 0,
-                    Status = status,
-                    CreatedAt = s.CreatedAt
-                };
+                ServiceId = s.ServiceId,
+                ServiceName = s.ServiceName ?? "",
+                Description = s.Description ?? "",
+                ServiceFee = s.ServiceFee ?? 0,
+                Status = (int)(s.Status ?? GeneralStatus.Inactive),
+                CreatedAt = s.CreatedAt
             });
         }
 
@@ -136,9 +143,9 @@ namespace Sentana.API.Services.SService
                 return false;
 
             roomService.ActualPrice = request.ActualPrice;
-            roomService.EndDay = DateOnly.FromDateTime(DateTime.Now);
 
             await _context.SaveChangesAsync();
+
             return true;
         }
 
@@ -149,24 +156,28 @@ namespace Sentana.API.Services.SService
                 .Include(x => x.Service)
                 .ToListAsync();
 
+            if (!roomServices.Any())
+                throw new KeyNotFoundException("Phòng chưa có dịch vụ nào.");
+
             return roomServices.Select(rs => new RoomServiceResponseDto
             {
                 ApartmentId = rs.ApartmentId ?? 0,
                 ServiceId = rs.ServiceId ?? 0,
-                ServiceName = rs.Service?.ServiceName ?? string.Empty,
+                ServiceName = rs.Service?.ServiceName ?? "",
                 ActualPrice = rs.ActualPrice ?? 0
             });
         }
+
         public async Task<bool> ApartmentExistsAsync(int apartmentId)
         {
             return await _context.Apartments
-                .AnyAsync(a => a.ApartmentId == apartmentId);
+                .AnyAsync(x => x.ApartmentId == apartmentId && x.IsDeleted == false);
         }
 
         public async Task<bool> ServiceExistsAsync(int serviceId)
         {
             return await _context.Services
-                .AnyAsync(s => s.ServiceId == serviceId);
+                .AnyAsync(x => x.ServiceId == serviceId && x.IsDeleted == false);
         }
 
         public async Task<bool> CheckRoomServiceRelationAsync(int apartmentId, int serviceId)

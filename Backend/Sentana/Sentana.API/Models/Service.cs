@@ -18,7 +18,7 @@ public partial class Service
 
     public DateTime? CreatedAt { get; set; }
 
-    public bool? IsDeleted { get; set; }
+    public bool IsDeleted { get; set; }
 
     public virtual ICollection<ApartmentService> ApartmentServices { get; set; } = new List<ApartmentService>();
 }

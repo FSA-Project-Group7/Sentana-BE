@@ -147,7 +147,7 @@ namespace Sentana.API.Services.STechnician
         public async Task<TechnicianResponseDto> UpdateTechnician(int technicianId, UpdateTechnicianRequestDto technicianRequest, int managerId)
         {
             var technician = await GetTechnicianById(technicianId);
-            if (technician == null) throw new Exception("Kỹ thuật viên không tồn tại trong hệ thống.");
+            if (technician == null || technician.IsDeleted == true) throw new Exception("Kỹ thuật viên không tồn tại trong hệ thống.");
             var emailExist = await _context.Accounts.AnyAsync(a =>
                 a.Email.ToLower() == technicianRequest.Email.ToLower() && a.AccountId != technicianId);
             if (emailExist) throw new Exception("Email này đã được sử dụng cho một tài khoản khác.");
@@ -177,7 +177,7 @@ namespace Sentana.API.Services.STechnician
         public async Task<string> ToggleTechnicianStatus(int technicianId)
         {
             var technician = await GetTechnicianById(technicianId);
-            if (technician == null) throw new Exception("Kỹ thuật viên không tồn tại.");
+            if (technician == null || technician.IsDeleted == true) throw new Exception("Không thể thay đổi trạng thái tài khoản đã bị xóa.");
             string message = "";
             if (technician.Status == GeneralStatus.Active)
             {
@@ -197,10 +197,10 @@ namespace Sentana.API.Services.STechnician
             return message;
         }
 
-        public async Task<bool> DeleteTechnicianAsync(int technicianId, int managerId)
+        public async Task<bool> DeleteTechnician(int technicianId, int managerId)
         {
             var technician = await GetTechnicianById(technicianId);
-            if (technician == null)
+            if (technician == null || technician.IsDeleted == true)
                 throw new Exception("Kỹ thuật viên không tồn tại hoặc đã bị xóa trước đó.");
             var hasProcessingTask = await _context.MaintenanceRequests
                 .AnyAsync(m => m.AssignedTo == technicianId && m.Status == MaintenanceRequestStatus.Processing);

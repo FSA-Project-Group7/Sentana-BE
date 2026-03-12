@@ -1,5 +1,6 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 using Sentana.API.DTOs.Resident;
 using Sentana.API.DTOs.Technician;
 using Sentana.API.Helpers;
@@ -13,13 +14,12 @@ namespace Sentana.API.Controllers
     [Authorize(Roles = "Manager")]
     public class ResidentsController : ControllerBase
     {
-        private readonly ResidentService     _residentService;
+        private readonly ResidentService   _residentService;
 
         public ResidentsController(ResidentService residentService)
         {
             _residentService = residentService;
         }
-
 
         [HttpPost("CreateResident")]
         [Authorize(Roles = "Manager")]
@@ -67,15 +67,91 @@ namespace Sentana.API.Controllers
             }
         }
 
-        [HttpPost("assign")]
-        public async Task<IActionResult> AssignResident(AssignResidentRequestDto request)
+        [HttpPut("UpdateResident/{id}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> UpdateResident(int id, [FromBody] UpdateResidentRequestDto residentRequest)
         {
-            var result = await _residentService.AssignResident(request);
+            if (!ModelState.IsValid)
+            {
+                string firstError = ModelState.Values
+                                      .SelectMany(v => v.Errors)
+                                      .Select(e => e.ErrorMessage)
+                                      .FirstOrDefault() ?? "Dữ liệu đầu vào không hợp lệ.";
+                return BadRequest(ApiResponse<object>.Fail(400, firstError));
+            }
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại."));
+            }
+            try
+            {
+                var updatedResident = await _residentService.UpdateResident(id, residentRequest, managerId);
+                return Ok(ApiResponse<ResidentResponseDto>.Success(updatedResident, "Cập nhật thông tin cư dân thành công!"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, $"Cập nhật tài khoản cư dân thất bại. {ex.Message}"));
+            }
+        }
 
-            if (!result)
-                return BadRequest("Resident not found");
 
-            return Ok(result);
+                
+        // Updated: assign resident to room using service method that requires managerId
+        [HttpPost("assign")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> AssignResident([FromBody] AssignResidentRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                string firstError = ModelState.Values
+                                      .SelectMany(v => v.Errors)
+                                      .Select(e => e.ErrorMessage)
+                                      .FirstOrDefault() ?? "Dữ liệu đầu vào không hợp lệ.";
+                return BadRequest(ApiResponse<object>.Fail(400, firstError));
+            }
+
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Không thể xác định danh tính Manager. Vui lòng đăng nhập lại."));
+            }
+
+            var (isSuccess, message) = await _residentService.AssignResidentToRoomAsync(request, managerId);
+
+            if (!isSuccess)
+                return BadRequest(ApiResponse<object>.Fail(400, message));
+
+            return Ok(ApiResponse<object>.Success(null, message));
+        }
+
+        // US41 - Import Resident List from Excel
+        [HttpPost("import")]
+        [Authorize(Roles = "Manager")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> ImportResidents([FromForm] ImportResidentsRequestDto request)
+        {
+            var file = request?.File;
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, "Vui lòng upload file Excel (.xlsx)."));
+            }
+
+            if (!file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, "Hệ thống chỉ chấp nhận file định dạng .xlsx."));
+            }
+
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Không thể xác định danh tính Manager. Vui lòng đăng nhập lại."));
+            }
+
+            using var stream = file.OpenReadStream();
+            var result = await _residentService.ImportResidentsFromExcelAsync(stream, managerId);
+
+            return Ok(ApiResponse<ImportResidentsResultDto>.Success(result, "Import danh sách cư dân hoàn tất."));
         }
     }
 }

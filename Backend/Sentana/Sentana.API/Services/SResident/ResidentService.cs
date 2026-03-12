@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+using OfficeOpenXml;
 using Sentana.API.DTOs.Resident;
 using Sentana.API.DTOs.Technician;
 using Sentana.API.Enums;
@@ -141,19 +142,220 @@ public class ResidentService : IResidentService
             .ToListAsync();
     }
 
-    public async Task<bool> AssignResident(AssignResidentRequestDto request)
+    public async Task<ImportResidentsResultDto> ImportResidentsFromExcelAsync(Stream fileStream, int managerId)
     {
-        var resident = await _context.ApartmentResidents
-            .FirstOrDefaultAsync(r => r.ResidentId == request.ResidentId && r.IsDeleted == false);
+        ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
 
-        if (resident == null)
-            return false;
+        using var package = new ExcelPackage(fileStream);
+        var worksheet = package.Workbook.Worksheets.FirstOrDefault();
+        if (worksheet == null)
+        {
+            return new ImportResidentsResultDto
+            {
+                Errors = new List<string> { "File Excel không chứa worksheet nào." }
+            };
+        }
 
-        resident.ApartmentId = request.ApartmentId;
-        resident.Status = GeneralStatus.Active;
+        var result = new ImportResidentsResultDto();
+        int startRow = 2; // row 1: header
+
+        for (int row = startRow; row <= worksheet.Dimension.End.Row; row++)
+        {
+            result.TotalRows++;
+
+            try
+            {
+                var email = worksheet.Cells[row, 1].Text?.Trim();
+                var userName = worksheet.Cells[row, 2].Text?.Trim();
+                var fullName = worksheet.Cells[row, 3].Text?.Trim();
+                var phoneNumber = worksheet.Cells[row, 4].Text?.Trim();
+                var identityCard = worksheet.Cells[row, 5].Text?.Trim();
+                var country = worksheet.Cells[row, 6].Text?.Trim();
+                var city = worksheet.Cells[row, 7].Text?.Trim();
+                var address = worksheet.Cells[row, 8].Text?.Trim();
+                var apartmentCode = worksheet.Cells[row, 9].Text?.Trim();
+
+                // Required validations
+                if (string.IsNullOrWhiteSpace(email) ||
+                    string.IsNullOrWhiteSpace(userName) ||
+                    string.IsNullOrWhiteSpace(fullName) ||
+                    string.IsNullOrWhiteSpace(identityCard))
+                {
+                    result.FailedCount++;
+                    result.Errors.Add($"Dòng {row}: Thiếu trường bắt buộc (Email, UserName, FullName, IdentityCard).");
+                    continue;
+                }
+
+                if (await CheckEmailExist(email))
+                {
+                    result.FailedCount++;
+                    result.Errors.Add($"Dòng {row}: Email '{email}' đã tồn tại.");
+                    continue;
+                }
+
+                if (await CheckUserNameExist(userName))
+                {
+                    result.FailedCount++;
+                    result.Errors.Add($"Dòng {row}: Tên đăng nhập '{userName}' đã tồn tại.");
+                    continue;
+                }
+
+                if (await CheckDuplicateRoleByIdentityCard(identityCard, 2))
+                {
+                    result.FailedCount++;
+                    result.Errors.Add($"Dòng {row}: CCCD '{identityCard}' đã có tài khoản cư dân.");
+                    continue;
+                }
+
+                Apartment? apartment = null;
+                if (!string.IsNullOrWhiteSpace(apartmentCode))
+                {
+                    apartment = await _context.Apartments
+                        .FirstOrDefaultAsync(a => a.ApartmentCode == apartmentCode && a.IsDeleted == false);
+
+                    if (apartment == null)
+                    {
+                        result.FailedCount++;
+                        result.Errors.Add($"Dòng {row}: Không tìm thấy căn hộ với mã '{apartmentCode}'.");
+                        continue;
+                    }
+                }
+
+                var dto = new CreateResidentRequestDto
+                {
+                    Email = email,
+                    UserName = userName,
+                    Password = "Temp@123", // or generate random, sẽ reset sau
+                    FullName = fullName,
+                    PhoneNumber = phoneNumber,
+                    IdentityCard = identityCard,
+                    Country = country,
+                    City = city,
+                    Address = address
+                };
+
+                var resident = await CreateResident(dto, managerId);
+
+                if (apartment != null)
+                {
+                    var aptResident = new ApartmentResident
+                    {
+                        ApartmentId = apartment.ApartmentId,
+                        AccountId = resident.AccountId,
+                        Status = GeneralStatus.Active,
+                        CreatedAt = DateTime.Now,
+                        CreatedBy = managerId,
+                        IsDeleted = false
+                    };
+                    _context.ApartmentResidents.Add(aptResident);
+                    await _context.SaveChangesAsync();
+                }
+
+                result.SuccessCount++;
+            }
+            catch (Exception ex)
+            {
+                result.FailedCount++;
+                result.Errors.Add($"Dòng {row}: {ex.Message}");
+            }
+        }
+
+        return result;
+    }
+
+    //duy anh
+    public async Task<(bool IsSuccess, string Message)> AssignResidentToRoomAsync(AssignResidentRequestDto request, int managerId)
+    {
+        // 1. Kiểm tra Tài khoản Cư dân có tồn tại và đúng Role (RoleId = 2) không?
+        var residentAccount = await _context.Accounts
+            .FirstOrDefaultAsync(a => a.AccountId == request.AccountId && a.RoleId == 2 && a.IsDeleted == false);
+
+        if (residentAccount == null)
+        {
+            return (false, "Không tìm thấy Cư dân này trong hệ thống.");
+        }
+
+        // 2. Kiểm tra Căn hộ có tồn tại không?
+        var apartment = await _context.Apartments
+            .FirstOrDefaultAsync(a => a.ApartmentId == request.ApartmentId && a.IsDeleted == false);
+
+        if (apartment == null)
+        {
+            return (false, "Không tìm thấy Căn hộ này.");
+        }
+
+        // 3. Kiểm tra xem Cư dân này đã được gán vào chính Căn hộ này chưa? (Tránh duplicate)
+        var isAlreadyAssigned = await _context.ApartmentResidents
+            .AnyAsync(ar => ar.AccountId == request.AccountId
+                         && ar.ApartmentId == request.ApartmentId
+                         && ar.IsDeleted == false);
+
+        if (isAlreadyAssigned)
+        {
+            return (false, "Cư dân này đã được gán vào căn hộ này từ trước.");
+        }
+
+        // 4. Thực hiện Map Cư dân vào Căn hộ (Insert mới)
+        var newAssignment = new ApartmentResident
+        {
+            AccountId = request.AccountId,
+            ApartmentId = request.ApartmentId,
+            RelationshipId = request.RelationshipId, // Có thể Null tùy yêu cầu bài toán
+            Status = GeneralStatus.Active,
+            CreatedAt = DateTime.Now,
+            CreatedBy = managerId,
+            IsDeleted = false
+        };
+
+        _context.ApartmentResidents.Add(newAssignment);
+
+        // Mở rộng: Nếu muốn tự động cập nhật trạng thái phòng thành "Đang ở" khi có người gán vào
+        if (apartment.Status == ApartmentStatus.Vacant)
+        {
+            apartment.Status = ApartmentStatus.Occupied;
+            apartment.UpdatedAt = DateTime.Now;
+            apartment.UpdatedBy = managerId;
+        }
 
         await _context.SaveChangesAsync();
 
-        return true;
+        return (true, $"Đã thêm cư dân {residentAccount.UserName} vào căn hộ {apartment.ApartmentCode} thành công.");
     }
+
+    public async Task<ResidentResponseDto> UpdateResident(int residentId, UpdateResidentRequestDto request, int managerId)
+    {
+        var resident = await GetResidentById(residentId);
+        if (resident == null || resident.IsDeleted == true)
+            throw new Exception("Cư dân không tồn tại trong hệ thống.");
+        var emailExist = await _context.Accounts.AnyAsync(a =>
+        a.Email.ToLower() == request.Email.ToLower() && a.AccountId != residentId);
+        if (emailExist)
+        {
+            throw new Exception("Email này đã được sử dụng cho một tài khoản khác.");
+        }
+        var identityCardExist = await _context.InFos.AnyAsync(i =>
+        i.CmndCccd == request.IdentityCard && i.InfoId != resident.InfoId);
+        if (identityCardExist)
+        {
+            throw new Exception("CCCD này đã được sử dụng cho một tài khoản khác.");
+        }
+        DateTime currentTime = DateTime.Now;
+        resident.Email = request.Email;
+        resident.UpdatedAt = currentTime;
+        resident.UpdatedBy = managerId;
+        if (resident.Info != null)
+        {
+            resident.Info.FullName = request.FullName;
+            resident.Info.PhoneNumber = request.PhoneNumber;
+            resident.Info.CmndCccd = request.IdentityCard;
+            resident.Info.Country = request.Country;
+            resident.Info.City = request.City;
+            resident.Info.Address = request.Address;
+            resident.Info.UpdatedAt = currentTime;
+        }
+        _context.Accounts.Update(resident);
+        await _context.SaveChangesAsync();
+        return MapToResponse(resident);
+    }
+
 }

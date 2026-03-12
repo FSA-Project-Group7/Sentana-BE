@@ -9,8 +9,9 @@ namespace Sentana.API.DTOs.Invoice
         public int Month { get; set; }
 
         [Required(ErrorMessage = "Vui lòng nhập năm.")]
+        [Range(2000, 2100, ErrorMessage = "Năm không hợp lệ (Phải từ năm 2000 trở đi).")]
         public int Year { get; set; }
 
-        public int? ApartmentId { get; set; }
+        public int? ApartmentId { get; set; } 
     }
 }

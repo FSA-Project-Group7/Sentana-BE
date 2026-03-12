@@ -134,7 +134,7 @@ namespace Sentana.API.Controllers
             }
             try
             {
-                var result = await _technicianService.DeleteTechnicianAsync(id, managerId);
+                var result = await _technicianService.DeleteTechnician(id, managerId);
                 if (result)
                 {
                     return Ok(ApiResponse<object>.Success(null, "Đã xóa kỹ thuật viên thành công."));
