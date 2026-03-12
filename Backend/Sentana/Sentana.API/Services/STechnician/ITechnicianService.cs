@@ -18,5 +18,7 @@ namespace Sentana.API.Services.STechnician
         Task<IEnumerable<TechnicianResponseDto>> GetDeletedTechnicians();
 
         Task<bool> RestoreTechnician(int technicianId, int managerId);
+
+        Task<bool> HardDeleteTechnician(int technicianId);
     }
 }

@@ -185,5 +185,24 @@ namespace Sentana.API.Controllers
                 return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
             }
         }
+
+        [HttpDelete("HardDelete/{id}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> HardDeleteTechnician(int id)
+        {
+            try
+            {
+                var result = await _technicianService.HardDeleteTechnician(id);
+                if (result)
+                {
+                    return Ok(ApiResponse<object>.Success(null, "Đã xóa vĩnh viễn kỹ thuật viên khỏi hệ thống."));
+                }
+                return BadRequest(ApiResponse<object>.Fail(400, "Xóa vĩnh viễn thất bại."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
+            }
+        }
     }
 }
