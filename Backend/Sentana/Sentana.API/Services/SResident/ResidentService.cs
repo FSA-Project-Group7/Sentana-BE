@@ -358,4 +358,103 @@ public class ResidentService : IResidentService
         return MapToResponse(resident);
     }
 
+    // Remove resident from room (Manager only)
+    public async Task<RemoveResidentResponseDto> RemoveResidentFromRoomAsync(AssignResidentRequestDto request, int managerId)
+    {
+        var now = DateTime.UtcNow;
+
+        var response = new RemoveResidentResponseDto
+        {
+            IsSuccess = false,
+            Message = string.Empty,
+            RemovedAt = now,
+            RemovedBy = managerId,
+            ApartmentResidentId = null,
+            ApartmentId = request.ApartmentId,
+            AccountId = request.AccountId,
+            ContractId = null,
+            ApartmentStatus = null,
+            ResidentStatus = null,
+            ContractStatus = null
+        };
+
+        if (request == null || request.AccountId <= 0 || request.ApartmentId <= 0)
+        {
+            response.Message = "Request không hợp lệ.";
+            return response;
+        }
+
+        var residentAccount = await _context.Accounts
+            .FirstOrDefaultAsync(a => a.AccountId == request.AccountId && a.RoleId == 2 && a.IsDeleted == false);
+
+        if (residentAccount == null)
+        {
+            response.Message = "Không tìm thấy cư dân trong hệ thống.";
+            return response;
+        }
+
+        var aptResident = await _context.ApartmentResidents
+            .FirstOrDefaultAsync(ar => ar.AccountId == request.AccountId
+                                       && ar.ApartmentId == request.ApartmentId
+                                       && ar.IsDeleted == false
+                                       && ar.Status == GeneralStatus.Active);
+
+        if (aptResident == null)
+        {
+            response.Message = "Cư dân này không được gán vào căn hộ được chỉ định hoặc đã rời phòng.";
+            return response;
+        }
+
+        var contract = await _context.Contracts
+            .FirstOrDefaultAsync(c => c.AccountId == request.AccountId
+                                       && c.ApartmentId == request.ApartmentId
+                                       && c.IsDeleted == false
+                                       && c.Status == GeneralStatus.Active);
+
+        if (contract == null)
+        {
+            response.Message = "Chỉ cho phép gỡ khi hợp đồng đang ở trạng thái Active.";
+            return response;
+        }
+
+        // Update contract status -> mark terminated (use Inactive)
+        contract.Status = GeneralStatus.Inactive;
+        contract.UpdatedAt = DateTime.UtcNow;
+        contract.UpdatedBy = managerId;
+        response.ContractId = contract.ContractId;
+        response.ContractStatus = contract.Status?.ToString();
+
+        // Update apartment status -> Vacant
+        var apartment = await _context.Apartments
+            .FirstOrDefaultAsync(a => a.ApartmentId == request.ApartmentId && a.IsDeleted == false);
+
+        if (apartment != null)
+        {
+            apartment.Status = ApartmentStatus.Vacant;
+            apartment.UpdatedAt = DateTime.UtcNow;
+            apartment.UpdatedBy = managerId;
+            response.ApartmentStatus = apartment.Status.ToString();
+        }
+
+        // Update apartment-resident status to Inactive (keep record for history)
+        aptResident.Status = GeneralStatus.Inactive;
+        // Do NOT set aptResident.UpdatedAt/UpdatedBy here (model lacks fields)
+        response.ApartmentResidentId = aptResident.ResidentId;
+        response.ResidentStatus = aptResident.Status?.ToString();
+
+        // Update account status to Inactive (if desired)
+        residentAccount.Status = GeneralStatus.Inactive;
+        residentAccount.UpdatedAt = DateTime.UtcNow;
+        residentAccount.UpdatedBy = managerId;
+        response.AccountId = residentAccount.AccountId;
+        response.ResidentStatus = residentAccount.Status?.ToString();
+
+        await _context.SaveChangesAsync();
+
+        response.IsSuccess = true;
+        response.Message = $"Đã gỡ cư dân {residentAccount.UserName} khỏi căn hộ {apartment?.ApartmentCode}.";
+
+        return response;
+    }
+
 }
