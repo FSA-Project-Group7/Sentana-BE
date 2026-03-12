@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Apartment;
 using Sentana.API.Enums;
 using Sentana.API.Models;
@@ -172,20 +173,74 @@ namespace Sentana.API.Services.SApartment
             return true;
         }
 
-        public async Task<bool> DeleteApartmentAsync(int id)
-        {
-            var apartment = await _context.Apartments.FirstOrDefaultAsync(a => a.ApartmentId == id && a.IsDeleted == false);
-            if (apartment == null) return false;
+		public async Task<bool> DeleteApartmentAsync(int id, ClaimsPrincipal user = null)
+		{
+			var apt = await _context.Apartments.FirstOrDefaultAsync(a => a.ApartmentId == id && a.IsDeleted == false);
+			if (apt == null) throw new InvalidOperationException("Không tìm thấy căn hộ.");
 
-            // CHỐT CHẶN BẢO VỆ DỮ LIỆU: Chỉ xóa khi phòng trống
-            if (apartment.Status != ApartmentStatus.Vacant)
-                throw new ArgumentException("Không thể xóa căn hộ đang hoạt động hoặc bảo trì. Vui lòng chuyển trạng thái về 'Trống' trước khi xóa.");
+			if (apt.Status == (ApartmentStatus)2)
+				throw new InvalidOperationException("Không thể đưa vào thùng rác vì căn hộ này đang có người ở!");
 
-            apartment.IsDeleted = true;
-            apartment.UpdatedAt = DateTime.Now;
+			apt.IsDeleted = true;
+			apt.UpdatedAt = DateTime.UtcNow;
 
-            await _context.SaveChangesAsync();
-            return true;
-        }
-    }
+			var accountIdClaim = user?.FindFirst("AccountId");
+			if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
+				apt.UpdatedBy = parsedAccountId;
+
+			_context.Apartments.Update(apt);
+			await _context.SaveChangesAsync();
+			return true;
+		}
+
+		// 2. LẤY DANH SÁCH ĐÃ XÓA
+		public async Task<IEnumerable<ApartmentResponseDto>> GetDeletedApartmentsAsync()
+		{
+			return await _context.Apartments
+				.Include(a => a.Building)
+				.Where(a => a.IsDeleted == true)
+				.Select(a => new ApartmentResponseDto
+				{
+					ApartmentId = a.ApartmentId,
+					BuildingId = a.BuildingId,
+					BuildingCode = a.Building != null ? a.Building.BuildingCode : null,
+					ApartmentCode = a.ApartmentCode,
+					ApartmentName = a.ApartmentName,
+					ApartmentNumber = a.ApartmentNumber,
+					FloorNumber = a.FloorNumber,
+					Area = a.Area,
+					Status = (byte?)a.Status
+				})
+				.ToListAsync();
+		}
+
+		// 3. KHÔI PHỤC
+		public async Task<bool> RestoreApartmentAsync(int id)
+		{
+			var apt = await _context.Apartments.FirstOrDefaultAsync(a => a.ApartmentId == id && a.IsDeleted == true);
+			if (apt == null) throw new InvalidOperationException("Không tìm thấy căn hộ trong Danh sách đã xóa.");
+
+			apt.IsDeleted = false;
+			apt.UpdatedAt = DateTime.UtcNow;
+
+			_context.Apartments.Update(apt);
+			await _context.SaveChangesAsync();
+			return true;
+		}
+
+		// 4. XÓA VĨNH VIỄN
+		public async Task<bool> HardDeleteApartmentAsync(int id)
+		{
+			var apt = await _context.Apartments.FirstOrDefaultAsync(a => a.ApartmentId == id && a.IsDeleted == true);
+			if (apt == null) throw new InvalidOperationException("Không tìm thấy căn hộ.");
+
+			// Chặn xóa cứng nếu căn hộ đã từng ký hợp đồng (để bảo vệ dữ liệu kế toán)
+			var hasContracts = await _context.Contracts.AnyAsync(c => c.ApartmentId == id);
+			if (hasContracts) throw new InvalidOperationException("Không thể xóa vĩnh viễn vì căn hộ này đã có lịch sử hợp đồng.");
+
+			_context.Apartments.Remove(apt);
+			await _context.SaveChangesAsync();
+			return true;
+		}
+	}
 }

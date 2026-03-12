@@ -117,5 +117,44 @@ namespace Sentana.API.Controllers
 
             return Ok(buildings);
         }
-    }
+
+		// Lấy danh sách xóa mềm
+		[HttpGet("deleted")]
+		[Authorize(Roles = "Manager")]
+		public async Task<IActionResult> GetDeletedBuildings()
+		{
+			try
+			{
+				var buildings = await _buildingService.GetDeletedBuildingsAsync();
+				return Ok(buildings);
+			}
+			catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+		}
+
+		// Khôi phục
+		[HttpPut("{id}/restore")]
+		[Authorize(Roles = "Manager")]
+		public async Task<IActionResult> RestoreBuilding(int id)
+		{
+			try
+			{
+				await _buildingService.RestoreBuildingAsync(id);
+				return Ok(new { message = "Khôi phục tòa nhà thành công!" });
+			}
+			catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+		}
+
+		// Xóa cứng
+		[HttpDelete("{id}/hard")]
+		[Authorize(Roles = "Manager")]
+		public async Task<IActionResult> HardDeleteBuilding(int id)
+		{
+			try
+			{
+				await _buildingService.HardDeleteBuildingAsync(id);
+				return Ok(new { message = "Đã xóa vĩnh viễn tòa nhà khỏi hệ thống!" });
+			}
+			catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+		}
+	}
 }

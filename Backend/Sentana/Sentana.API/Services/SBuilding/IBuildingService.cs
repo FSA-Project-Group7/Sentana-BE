@@ -11,6 +11,9 @@ namespace Sentana.API.Services.SBuilding
         Task<BuildingResponseDto> UpdateBuildingAsync(int id, BuildingRequestDto dto, ClaimsPrincipal user);
 
         Task<bool> DeleteBuildingAsync(int id, ClaimsPrincipal user);
-    }
+		Task<IEnumerable<BuildingResponseDto>> GetDeletedBuildingsAsync();
+		Task<bool> RestoreBuildingAsync(int id);
+		Task<bool> HardDeleteBuildingAsync(int id);
+	}
 }
 
