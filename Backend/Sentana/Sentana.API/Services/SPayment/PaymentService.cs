@@ -2,11 +2,24 @@ using Sentana.API.DTOs.Payment;
 using Sentana.API.Helpers;
 using Sentana.API.Models;
 using Sentana.API.Repositories;
+using Sentana.API.Services.SStorage;
 
 namespace Sentana.API.Services.SPayment;
 
-public class PaymentService(IPaymentRepository paymentRepository) : IPaymentService
+public class PaymentService : IPaymentService
 {
+    private readonly IPaymentRepository _paymentRepository;
+    private readonly IMinioService _minioService;
+
+
+    public PaymentService(
+    IPaymentRepository paymentRepository,
+    IMinioService minioService)
+    {
+        _paymentRepository = paymentRepository;
+        _minioService = minioService;
+    }
+
     public async Task<ApiResponse<object>> UploadPaymentProofAsync(int invoiceId, UploadPaymentProofDto request)
     {
         if (invoiceId <= 0)
@@ -41,42 +54,27 @@ public class PaymentService(IPaymentRepository paymentRepository) : IPaymentServ
             return ApiResponse<object>.Fail(400, "Chỉ cho phép file JPG hoặc PNG.");
         }
 
-        var invoice = await paymentRepository.GetInvoiceAsync(invoiceId);
+        var invoice = await _paymentRepository.GetInvoiceAsync(invoiceId);
 
         if (invoice == null)
         {
             return ApiResponse<object>.Fail(404, "Invoice không tồn tại.");
         }
 
-        var fileName = Guid.NewGuid() + Path.GetExtension(request.File.FileName);
-
-        var folder = Path.Combine(Directory.GetCurrentDirectory(), "uploads", "payment-proofs");
-
-        if (!Directory.Exists(folder))
-        {
-            Directory.CreateDirectory(folder);
-        }
-
-        var filePath = Path.Combine(folder, fileName);
-
-        using (var stream = new FileStream(filePath, FileMode.Create))
-        {
-            await request.File.CopyToAsync(stream);
-        }
+        var proofUrl = await _minioService.UploadFileAsync(request.File, "payment-proofs");
 
         var transaction = new PaymentTransaction
         {
             InvoiceId = invoiceId,
-            PaymentProofImage = "/uploads/payment-proofs/" + fileName,
+            PaymentProofImage = proofUrl,
             SubmitDate = DateTime.Now,
             Status = 0,
             Note = request.Note,
             CreatedAt = DateTime.Now
         };
 
-        await paymentRepository.AddPaymentTransactionAsync(transaction);
-
-        await paymentRepository.SaveAsync();
+        await _paymentRepository.AddPaymentTransactionAsync(transaction);
+        await _paymentRepository.SaveAsync();
 
         return ApiResponse<object>.Success(new
         {
@@ -86,4 +84,6 @@ public class PaymentService(IPaymentRepository paymentRepository) : IPaymentServ
             status = "Pending"
         }, "Upload payment proof thành công.");
     }
+
+
 }
