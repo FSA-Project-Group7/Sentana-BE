@@ -80,7 +80,7 @@ public class ResidentService : IResidentService
         if (await CheckUserNameExist(request.UserName)) throw new Exception("Tên đăng nhập này đã tồn tại.");
         if (await CheckDuplicateRoleByIdentityCard(request.IdentityCard, 2))
         {
-            throw new Exception("Người sở hữu CCCD này đã có tài khoản Cư dân có thể đã bị xóa. Vui lòng khôi phục thay vì tạo mới.");
+            throw new Exception("Người sở hữu CCCD này đã có tài khoản Cư dân hoặc có thể đã bị xóa. Vui lòng khôi phục thay vì tạo mới.");
         }
         string hashedPassword = BCrypt.Net.BCrypt.HashPassword(request.Password);
         string generatedCode = await GenerateResidentCode();
