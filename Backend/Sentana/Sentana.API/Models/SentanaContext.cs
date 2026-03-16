@@ -203,10 +203,6 @@ public partial class SentanaContext : DbContext
             entity.HasKey(e => e.ElectricMeterId).HasName("PK__Electric__5965F9825D9FD95F");
 
             entity.ToTable("ElectricMeter");
-
-            entity.Property(e => e.Code)
-                .HasMaxLength(50)
-                .IsUnicode(false);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getdate())");
             entity.Property(e => e.IsDeleted).HasDefaultValue(false);
             entity.Property(e => e.NewIndex).HasColumnType("decimal(18, 2)");
@@ -406,10 +402,6 @@ public partial class SentanaContext : DbContext
             entity.HasKey(e => e.WaterMeterId).HasName("PK__WaterMet__28A46589141413EA");
 
             entity.ToTable("WaterMeter");
-
-            entity.Property(e => e.Code)
-                .HasMaxLength(50)
-                .IsUnicode(false);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getdate())");
             entity.Property(e => e.IsDeleted).HasDefaultValue(false);
             entity.Property(e => e.NewIndex).HasColumnType("decimal(18, 2)");
