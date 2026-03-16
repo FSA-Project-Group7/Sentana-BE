@@ -12,10 +12,6 @@ public partial class ElectricMeter
 
     public DateTime? RegistrationDate { get; set; }
 
-    public string? Code { get; set; }
-
-    public DateTime? DeadlineDate { get; set; }
-
     public decimal? OldIndex { get; set; }
 
     public decimal? NewIndex { get; set; }
