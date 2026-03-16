@@ -78,7 +78,7 @@ namespace Sentana.API.Services.STechnician
             if (await CheckUserNameExist(technicianRequest.UserName)) throw new Exception("Tên đăng nhập này đã tồn tại.");
             if (await CheckDuplicateRoleByIdentityCard(technicianRequest.IdentityCard, 3))
             {
-                throw new Exception("Người sở hữu CCCD này đã có tài khoản Kỹ thuật viên có thể đã bị xóa. Vui lòng khôi phục thay vì tạo mới.");
+                throw new Exception("Người sở hữu CCCD này đã có tài khoản Kỹ thuật viên hoặc có thể đã bị xóa. Vui lòng khôi phục thay vì tạo mới.");
             }
             string hashedPassword = BCrypt.Net.BCrypt.HashPassword(technicianRequest.Password);
             string generatedCode = await GenerateTechnicianCode();
