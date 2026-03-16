@@ -16,19 +16,25 @@ namespace Sentana.API.Repositories
         {
             return await _context.Contracts
                 .Include(c => c.Apartment)
-                .FirstOrDefaultAsync(c => c.ContractId == contractId && c.IsDeleted == false);
+                .FirstOrDefaultAsync(c =>
+                    c.ContractId == contractId &&
+                    c.IsDeleted == false);
         }
 
         public async Task<Apartment?> GetApartmentAsync(int apartmentId)
         {
             return await _context.Apartments
-                .FirstOrDefaultAsync(a => a.ApartmentId == apartmentId && a.IsDeleted == false);
+                .FirstOrDefaultAsync(a =>
+                    a.ApartmentId == apartmentId &&
+                    a.IsDeleted == false);
         }
 
         public async Task<Account?> GetAccountAsync(int accountId)
         {
             return await _context.Accounts
-                .FirstOrDefaultAsync(a => a.AccountId == accountId && a.IsDeleted == false);
+                .FirstOrDefaultAsync(a =>
+                    a.AccountId == accountId &&
+                    a.IsDeleted == false);
         }
 
         public async Task<bool> HasActiveContractAsync(int apartmentId)
@@ -49,13 +55,24 @@ namespace Sentana.API.Repositories
             await _context.SaveChangesAsync();
         }
 
-        // Implementation for the missing method
         public async Task<Contract?> GetContractDetailAsync(int contractId)
         {
             return await _context.Contracts
                 .Include(c => c.Apartment)
                 .Include(c => c.Account)
-                .FirstOrDefaultAsync(c => c.ContractId == contractId && c.IsDeleted == false);
+                .FirstOrDefaultAsync(c =>
+                    c.ContractId == contractId &&
+                    c.IsDeleted == false);
+        }
+
+        public async Task<List<Contract>> GetContractListAsync()
+        {
+            return await _context.Contracts
+                .Include(c => c.Apartment)
+                .Include(c => c.Account)
+                .Where(c => c.IsDeleted == false)
+                .OrderByDescending(c => c.CreatedAt)
+                .ToListAsync();
         }
     }
 }
