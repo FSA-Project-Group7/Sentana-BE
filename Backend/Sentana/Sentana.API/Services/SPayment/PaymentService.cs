@@ -86,4 +86,32 @@ public class PaymentService(IPaymentRepository paymentRepository) : IPaymentServ
             status = "Pending"
         }, "Upload payment proof thành công.");
     }
+    public async Task<ApiResponse<object>> GetPaymentsByInvoiceAsync(int invoiceId)
+    {
+        if (invoiceId <= 0)
+        {
+            return ApiResponse<object>.Fail(400, "Invoice ID không hợp lệ.");
+        }
+
+        var payments = await paymentRepository.GetPaymentsByInvoiceAsync(invoiceId);
+
+        return ApiResponse<object>.Success(payments, "Lấy danh sách payment thành công.");
+    }
+
+    public async Task<ApiResponse<object>> GetPaymentDetailAsync(int transactionId)
+    {
+        if (transactionId <= 0)
+        {
+            return ApiResponse<object>.Fail(400, "Transaction ID không hợp lệ.");
+        }
+
+        var transaction = await paymentRepository.GetTransactionAsync(transactionId);
+
+        if (transaction == null)
+        {
+            return ApiResponse<object>.Fail(404, "Transaction không tồn tại.");
+        }
+
+        return ApiResponse<object>.Success(transaction, "Lấy chi tiết payment thành công.");
+    }
 }

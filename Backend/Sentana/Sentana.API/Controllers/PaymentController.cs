@@ -10,6 +10,7 @@ namespace Sentana.API.Controllers
     [Authorize]
     public class PaymentController(IPaymentService paymentService) : ControllerBase
     {
+        [HttpGet]
         [HttpPost("{invoiceId}/upload-proof")]
         public async Task<IActionResult> UploadPaymentProof(int invoiceId, [FromForm] UploadPaymentProofDto request)
         {
