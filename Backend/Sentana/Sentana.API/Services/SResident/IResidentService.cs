@@ -16,5 +16,7 @@ namespace Sentana.API.Services.SResident
 
         // now returns detailed DTO (no model changes required)
         Task<RemoveResidentResponseDto> RemoveResidentFromRoomAsync(AssignResidentRequestDto request, int managerId);
+
+        Task<string> ToggleResidentStatus(int residentId);
     }
 }

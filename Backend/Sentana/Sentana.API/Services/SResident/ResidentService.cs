@@ -80,7 +80,7 @@ public class ResidentService : IResidentService
         if (await CheckUserNameExist(request.UserName)) throw new Exception("Tên đăng nhập này đã tồn tại.");
         if (await CheckDuplicateRoleByIdentityCard(request.IdentityCard, 2))
         {
-            throw new Exception("Người sở hữu CCCD này đã có tài khoản Cư dân có thể đã bị xóa. Vui lòng khôi phục thay vì tạo mới.");
+            throw new Exception("Người sở hữu CCCD này đã có tài khoản Cư dân hoặc có thể đã bị xóa. Vui lòng khôi phục thay vì tạo mới.");
         }
         string hashedPassword = BCrypt.Net.BCrypt.HashPassword(request.Password);
         string generatedCode = await GenerateResidentCode();
@@ -456,5 +456,39 @@ public class ResidentService : IResidentService
 
         return response;
     }
+
+    public async Task<string> ToggleResidentStatus(int residentId)
+    {
+        var account = await GetResidentById(residentId);
+        if (account == null || account.IsDeleted == true)
+        {
+            throw new Exception("Không thể thay đổi trạng thái tài khoản không tồn tại hoặc đã bị xóa.");
+        }
+        string message = "";
+        if (account.Status == GeneralStatus.Active)
+        {
+            var today = DateOnly.FromDateTime(DateTime.Now);
+            var hasActiveContract = await _context.ApartmentResidents
+                .Include(ar => ar.Apartment)
+                .ThenInclude(a => a.Contracts)
+                .AnyAsync(ar => ar.ResidentId == residentId
+                             && ar.Apartment.Contracts.Any(c => c.Status == GeneralStatus.Active && c.EndDay >= today));
+            if (hasActiveContract)
+            {
+                throw new Exception("Không thể vô hiệu hóa vì cư dân đang ở trong phòng còn hạn thuê.");
+            }
+            account.Status = GeneralStatus.Inactive;
+            message = "Khóa tài khoản Cư dân thành công!";
+        }
+        else
+        {
+            account.Status = GeneralStatus.Active;
+            message = "Mở khóa tài khoản Cư dân thành công!";
+        }
+        _context.Accounts.Update(account);
+        await _context.SaveChangesAsync();
+        return message;
+    } 
+
 
 }
