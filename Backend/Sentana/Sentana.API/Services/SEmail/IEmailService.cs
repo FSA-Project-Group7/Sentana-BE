@@ -1,4 +1,4 @@
-﻿namespace Sentana.API.Services
+﻿namespace Sentana.API.Services.SEmail
 {
     public interface IEmailService
     {

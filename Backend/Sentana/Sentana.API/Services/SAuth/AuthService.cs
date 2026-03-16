@@ -8,6 +8,7 @@ using Sentana.API.DTOs.Auth;
 using Sentana.API.Enums;
 using Microsoft.Extensions.Caching.Memory;
 using System.Security.Cryptography;
+using Sentana.API.Services.SEmail;
 
 namespace Sentana.API.Services.SBuilding
 {

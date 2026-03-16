@@ -113,26 +113,26 @@ namespace Sentana.API.Controllers
         }
         // Approve payment
         [HttpPut("transaction/{id}/approve")]
-    [Authorize(Roles = "Manager")]
-    public async Task<IActionResult> ApprovePayment(int id)
-    {
-        // Lấy ID người dùng từ Token (ClaimType NameIdentifier thường dùng lưu ID)
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int currentUserId))
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> ApprovePayment(int id)
         {
-            return Unauthorized(ApiResponse<string>.Fail(401, "Không xác định được danh tính người dùng."));
-        }
+            // Lấy ID người dùng từ Token (ClaimType NameIdentifier thường dùng lưu ID)
+            var userIdClaim = User.FindFirst("AccountId")?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int currentUserId))
+            {
+                return Unauthorized(ApiResponse<string>.Fail(401, "Không xác định được danh tính người dùng."));
+            }
 
-        // Gọi Service với UserId thực tế
-        var result = await _invoiceService.ApprovePaymentAsync(id, currentUserId);
+            // Gọi Service với UserId thực tế
+            var result = await _invoiceService.ApprovePaymentAsync(id, currentUserId);
 
-        if (!result.IsSuccess)
-        {
-            if (result.Message.Contains("Không tìm thấy")) return NotFound(ApiResponse<string>.Fail(404, result.Message));
-            return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+            if (!result.IsSuccess)
+            {
+                if (result.Message.Contains("Không tìm thấy")) return NotFound(ApiResponse<string>.Fail(404, result.Message));
+                return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+            }
+            return Ok(ApiResponse<string>.Success(null, result.Message));
         }
-        return Ok(ApiResponse<string>.Success(null, result.Message));
-    }
 
     // Reject Payment
     [HttpPut("transaction/{id}/reject")]
@@ -140,7 +140,7 @@ namespace Sentana.API.Controllers
     public async Task<IActionResult> RejectPayment(int id, [FromBody] RejectPaymentDto request)
     {
         // Lấy ID người dùng từ Token
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userIdClaim = User.FindFirst("AccountId")?.Value;
         if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int currentUserId))
         {
             return Unauthorized(ApiResponse<string>.Fail(401, "Không xác định được danh tính người dùng."));
@@ -156,5 +156,20 @@ namespace Sentana.API.Controllers
         }
         return Ok(ApiResponse<string>.Success(null, result.Message));
     }
-}
+
+     // Thông báo invoice
+    [HttpPost("{invoiceId}/notify")]
+    [Authorize(Roles = "Manager")]
+    public async Task<IActionResult> SendInvoiceNotification(int invoiceId)
+    {
+        var result = await _invoiceService.SendInvoiceNotificationAsync(invoiceId);
+
+        if (!result.IsSuccess)
+        {
+            if (result.Message.Contains("Không tìm thấy")) return NotFound(ApiResponse<string>.Fail(404, result.Message));
+            return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+        }
+        return Ok(ApiResponse<string>.Success(null, result.Message));
+    }
+    }
 }

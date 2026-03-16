@@ -1,6 +1,7 @@
 ﻿using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
+using Sentana.API.Services.SEmail;
 
 namespace Sentana.API.Services
 {

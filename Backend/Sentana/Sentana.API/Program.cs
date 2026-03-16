@@ -9,6 +9,7 @@ using Sentana.API.Repositories;
 using Sentana.API.Services;
 using Sentana.API.Services.SApartment;
 using Sentana.API.Services.SBuilding;
+using Sentana.API.Services.SEmail;
 using Sentana.API.Services.SInfo;
 using Sentana.API.Services.SInvoice;
 using Sentana.API.Services.SPayment;
@@ -52,7 +53,7 @@ namespace Sentana.API
             builder.Services.AddSingleton<IMinioClient>(sp =>
             {
                 return new MinioClient()
-                    .WithEndpoint("minio.yourdomain.com")
+                    .WithEndpoint("localhost:9000")
                     .WithCredentials("minioadmin", "minioadmin")
                     .Build();
             });

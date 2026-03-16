@@ -17,5 +17,7 @@ namespace Sentana.API.Services.SInvoice
         Task<(bool IsSuccess, string Message)> ApprovePaymentAsync(int transactionId, int currentUserId);
         // Manager từ chối thanh toán
         Task<(bool IsSuccess, string Message)> RejectPaymentAsync(int transactionId, RejectPaymentDto request, int currentUserId);
+        // gửi thông báo invoice 
+        Task<(bool IsSuccess, string Message)> SendInvoiceNotificationAsync(int invoiceId);
     }
 }
