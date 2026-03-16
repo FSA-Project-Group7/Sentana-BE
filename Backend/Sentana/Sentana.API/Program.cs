@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Minio;
 using Sentana.API.Models;
 using Sentana.API.Repositories;
 using Sentana.API.Services;
@@ -12,6 +13,7 @@ using Sentana.API.Services.SInfo;
 using Sentana.API.Services.SInvoice;
 using Sentana.API.Services.SPayment;
 using Sentana.API.Services.SService;
+using Sentana.API.Services.SStorage;
 using Sentana.API.Services.STechnician;
 using System.Text;
 
@@ -47,6 +49,15 @@ namespace Sentana.API
                         IssuerSigningKey = new SymmetricSecurityKey(secretKeyBytes)
                     };
                 });
+            builder.Services.AddSingleton<IMinioClient>(sp =>
+            {
+                return new MinioClient()
+                    .WithEndpoint("minio.yourdomain.com")
+                    .WithCredentials("minioadmin", "minioadmin")
+                    .Build();
+            });
+
+            builder.Services.AddScoped<IMinioService, MinioService>();
 
             // Add services to the container.
             builder.Services.AddScoped<IAuthService, AuthService>();
