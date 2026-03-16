@@ -1,22 +1,22 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs;
 using Sentana.API.DTOs.Contracts;
 using Sentana.API.Enums;
 using Sentana.API.Helpers;
 using Sentana.API.Models;
-using Sentana.API.Repositories; 
+using Sentana.API.Repositories;
 
 namespace Sentana.API.Services
 {
     public class ContractService : IContractService
     {
         private readonly SentanaContext _context;
-        private readonly IContractRepository _contractRepository; 
+        private readonly IContractRepository _contractRepository;
 
         public ContractService(SentanaContext context, IContractRepository contractRepository)
         {
             _context = context;
-            _contractRepository = contractRepository; 
+            _contractRepository = contractRepository;
         }
 
         public async Task<ApiResponse<object>> TerminateContractAsync(int contractId, TerminateContractDto request)
@@ -372,6 +372,32 @@ namespace Sentana.API.Services
             };
 
             return ApiResponse<object>.Success(dto, "Lấy chi tiết hợp đồng thành công.");
+        }
+
+        public async Task<ApiResponse<object>> GetContractListAsync()
+        {
+            var contracts = await _contractRepository.GetContractListAsync();
+
+            var list = contracts.Select(c => new ContractDetailDto
+            {
+                ContractId = c.ContractId,
+                ContractCode = c.ContractCode,
+                ApartmentId = c.ApartmentId,
+                ApartmentName = c.Apartment?.ApartmentName,
+                AccountId = c.AccountId,
+                TenantName = c.Account?.Info?.FullName,
+                StartDay = c.StartDay,
+                EndDay = c.EndDay,
+                MonthlyRent = c.MonthlyRent,
+                Deposit = c.Deposit,
+                AdditionalCost = c.AdditionalCost,
+                RefundAmount = c.RefundAmount,
+                File = c.File,
+                Status = c.Status,
+                CreatedAt = c.CreatedAt
+            }).ToList();
+
+            return ApiResponse<object>.Success(list, "Lấy danh sách hợp đồng thành công.");
         }
     }
 }

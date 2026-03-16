@@ -62,5 +62,14 @@ namespace Sentana.API.Controllers
 
             return StatusCode(result.StatusCode, result);
         }
+
+        // US13 - View Payment History (Resident theo token)
+        [HttpGet("history")]
+        [Authorize(Roles = "Resident")]
+        public async Task<IActionResult> GetPaymentHistory()
+        {
+            var result = await _paymentService.GetPaymentHistoryAsync(User);
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }

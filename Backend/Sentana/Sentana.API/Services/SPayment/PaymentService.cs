@@ -1,11 +1,14 @@
+using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Payment;
+using Sentana.API.Enums;
 using Sentana.API.Helpers;
 using Sentana.API.Models;
 using Sentana.API.Repositories;
 
 namespace Sentana.API.Services.SPayment;
 
-public class PaymentService(IPaymentRepository paymentRepository) : IPaymentService
+public class PaymentService(IPaymentRepository paymentRepository, SentanaContext context) : IPaymentService
 {
     public async Task<ApiResponse<object>> UploadPaymentProofAsync(int invoiceId, UploadPaymentProofDto request)
     {
@@ -113,5 +116,125 @@ public class PaymentService(IPaymentRepository paymentRepository) : IPaymentServ
         }
 
         return ApiResponse<object>.Success(transaction, "Lấy chi tiết payment thành công.");
+    }
+
+    // US13 - View Payment History
+    public async Task<ApiResponse<object>> GetPaymentHistoryAsync(ClaimsPrincipal user, int? apartmentId = null, int? accountId = null)
+    {
+        if (user == null)
+        {
+            return ApiResponse<object>.Fail(401, "User is null.");
+        }
+
+        var accountIdClaim = user.FindFirst("AccountId")?.Value;
+        if (!int.TryParse(accountIdClaim, out var callerAccountId))
+        {
+            return ApiResponse<object>.Fail(401, "Token không hợp lệ hoặc thiếu AccountId.");
+        }
+
+        var role = user.FindFirst(ClaimTypes.Role)?.Value
+                   ?? user.FindFirst("role")?.Value
+                   ?? string.Empty;
+        var isManager = string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase);
+
+        var targetApartmentId = await ResolveTargetApartmentIdAsync(
+            callerAccountId,
+            isManager,
+            apartmentId,
+            accountId);
+
+        if (!targetApartmentId.HasValue)
+        {
+            return ApiResponse<object>.Success(new List<PaymentHistoryItemDto>(), "Không tìm thấy căn hộ để lấy lịch sử thanh toán.");
+        }
+
+        var invoices = await context.Invoices
+            .AsNoTracking()
+            .Include(i => i.Apartment)
+            .Include(i => i.PaymentTransactions)
+            .Where(i => i.ApartmentId == targetApartmentId.Value
+                        && i.Status == InvoiceStatus.Paid
+                        && (i.IsDeleted == false || i.IsDeleted == null))
+            .ToListAsync();
+
+        var history = invoices
+            .Select(i =>
+            {
+                var approvedTransactions = i.PaymentTransactions
+                    .Where(t => (t.IsDeleted == false || t.IsDeleted == null) &&
+                                t.Status == PaymentTransactionStatus.Approved)
+                    .ToList();
+
+                var amountPaid = approvedTransactions.Sum(t => t.AmountPaid ?? 0m);
+                if (amountPaid <= 0m)
+                {
+                    amountPaid = i.Pay ?? 0m;
+                }
+
+                DateTime? paidDateTime = null;
+                if (i.DayPay.HasValue)
+                {
+                    paidDateTime = i.DayPay.Value.ToDateTime(TimeOnly.MinValue);
+                }
+                else if (approvedTransactions.Count > 0)
+                {
+                    paidDateTime = approvedTransactions
+                        .OrderByDescending(t => t.SubmitDate)
+                        .Select(t => t.SubmitDate)
+                        .FirstOrDefault();
+                }
+
+                return new PaymentHistoryItemDto
+                {
+                    InvoiceId = i.InvoiceId,
+                    ApartmentId = i.ApartmentId,
+                    ApartmentCode = i.Apartment?.ApartmentCode,
+                    BillingMonth = i.BillingMonth,
+                    BillingYear = i.BillingYear,
+                    TotalMoney = i.TotalMoney,
+                    AmountPaid = amountPaid,
+                    PaidDate = paidDateTime?.ToString("yyyy-MM-dd")
+                };
+            })
+            .OrderBy(x => x.PaidDate)
+            .ThenBy(x => x.InvoiceId)
+            .ToList();
+
+        return ApiResponse<object>.Success(history, "Lấy lịch sử thanh toán thành công.");
+    }
+
+    private async Task<int?> ResolveTargetApartmentIdAsync(
+        int callerAccountId,
+        bool isManager,
+        int? apartmentId,
+        int? accountId)
+    {
+        if (isManager)
+        {
+            if (apartmentId.HasValue) return apartmentId.Value;
+
+            if (accountId.HasValue)
+            {
+                var contract = await context.Contracts
+                    .AsNoTracking()
+                    .Where(c => c.AccountId == accountId.Value &&
+                                c.Status == GeneralStatus.Active &&
+                                c.IsDeleted == false)
+                    .OrderByDescending(c => c.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                return contract?.ApartmentId;
+            }
+        }
+
+        var residentContract = await context.Contracts
+            .AsNoTracking()
+            .Where(c => c.AccountId == callerAccountId &&
+                        c.Status == GeneralStatus.Active &&
+                        c.IsDeleted == false)
+            .OrderByDescending(c => c.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        return residentContract?.ApartmentId;
     }
 }
