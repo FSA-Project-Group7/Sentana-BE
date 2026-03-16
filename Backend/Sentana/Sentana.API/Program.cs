@@ -52,7 +52,7 @@ namespace Sentana.API
             builder.Services.AddSingleton<IMinioClient>(sp =>
             {
                 return new MinioClient()
-                    .WithEndpoint("minio.yourdomain.com")
+                    .WithEndpoint("localhost:9000")
                     .WithCredentials("minioadmin", "minioadmin")
                     .Build();
             });
