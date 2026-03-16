@@ -11,10 +11,9 @@ public class PaymentService : IPaymentService
     private readonly IPaymentRepository _paymentRepository;
     private readonly IMinioService _minioService;
 
-
     public PaymentService(
-    IPaymentRepository paymentRepository,
-    IMinioService minioService)
+        IPaymentRepository paymentRepository,
+        IMinioService minioService)
     {
         _paymentRepository = paymentRepository;
         _minioService = minioService;
@@ -61,6 +60,7 @@ public class PaymentService : IPaymentService
             return ApiResponse<object>.Fail(404, "Invoice không tồn tại.");
         }
 
+        // Upload lên MinIO
         var proofUrl = await _minioService.UploadFileAsync(request.File, "payment-proofs");
 
         var transaction = new PaymentTransaction
@@ -85,5 +85,32 @@ public class PaymentService : IPaymentService
         }, "Upload payment proof thành công.");
     }
 
+    public async Task<ApiResponse<object>> GetPaymentsByInvoiceAsync(int invoiceId)
+    {
+        if (invoiceId <= 0)
+        {
+            return ApiResponse<object>.Fail(400, "Invoice ID không hợp lệ.");
+        }
 
+        var payments = await _paymentRepository.GetPaymentsByInvoiceAsync(invoiceId);
+
+        return ApiResponse<object>.Success(payments, "Lấy danh sách payment thành công.");
+    }
+
+    public async Task<ApiResponse<object>> GetPaymentDetailAsync(int transactionId)
+    {
+        if (transactionId <= 0)
+        {
+            return ApiResponse<object>.Fail(400, "Transaction ID không hợp lệ.");
+        }
+
+        var transaction = await _paymentRepository.GetTransactionAsync(transactionId);
+
+        if (transaction == null)
+        {
+            return ApiResponse<object>.Fail(404, "Transaction không tồn tại.");
+        }
+
+        return ApiResponse<object>.Success(transaction, "Lấy chi tiết payment thành công.");
+    }
 }
