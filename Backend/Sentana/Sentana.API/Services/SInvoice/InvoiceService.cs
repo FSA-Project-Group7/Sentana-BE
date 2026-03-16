@@ -7,6 +7,7 @@ using Sentana.API.DTOs.Invoice;
 using Sentana.API.Models;
 using Sentana.API.Enums;
 using Sentana.API.DTOs.Common;
+using Sentana.API.DTOs.Payment;
 
 namespace Sentana.API.Services.SInvoice
 {
@@ -301,5 +302,60 @@ namespace Sentana.API.Services.SInvoice
 
             return isSaved ? (true, "Cập nhật hóa đơn thành công.") : (false, "Lỗi khi cập nhật.");
         }
+
+        // Approve và reject payment
+        public async Task<(bool IsSuccess, string Message)> ApprovePaymentAsync(int transactionId, int currentUserId)
+    {
+        var transaction = await _context.PaymentTransactions
+            .Include(t => t.Invoice)
+            .FirstOrDefaultAsync(t => t.TransactionId == transactionId && t.IsDeleted == false);
+
+        if (transaction == null) return (false, "Không tìm thấy giao dịch thanh toán này.");
+
+        // chỉ duyệt khi đang ở trạng thái Pending 
+        if (transaction.Status != PaymentTransactionStatus.Pending)
+            return (false, "Giao dịch này đã được xử lý trước đó.");
+
+        transaction.Status = PaymentTransactionStatus.Approved;
+        transaction.UpdatedBy = currentUserId;
+        transaction.UpdatedAt = DateTime.Now;
+
+        if (transaction.Invoice != null)
+        {
+            transaction.Invoice.Status = InvoiceStatus.Paid;
+            transaction.Invoice.DayPay = DateTime.Now;
+            transaction.Invoice.Debt = 0;
+        }
+
+        bool isSaved = await _context.SaveChangesAsync() > 0;
+        return isSaved ? (true, "Đã duyệt thanh toán thành công. Hóa đơn chuyển sang Đã thanh toán.")
+                       : (false, "Lỗi hệ thống khi lưu dữ liệu.");
     }
+
+    public async Task<(bool IsSuccess, string Message)> RejectPaymentAsync(int transactionId, RejectPaymentDto request, int currentUserId)
+    {
+        var transaction = await _context.PaymentTransactions
+            .Include(t => t.Invoice)
+            .FirstOrDefaultAsync(t => t.TransactionId == transactionId && t.IsDeleted == false);
+
+        if (transaction == null) return (false, "Không tìm thấy giao dịch thanh toán này.");
+        if (transaction.Status != PaymentTransactionStatus.Pending)
+            return (false, "Giao dịch này đã được xử lý trước đó.");
+
+        transaction.Status = PaymentTransactionStatus.Rejected;
+        transaction.Note = request.Reason; // lí do từ chối
+        transaction.UpdatedBy = currentUserId;
+        transaction.UpdatedAt = DateTime.Now;
+
+        if (transaction.Invoice != null)
+        {
+            transaction.Invoice.Status = InvoiceStatus.Unpaid;
+            transaction.Invoice.DayPay = null;
+        }
+
+        bool isSaved = await _context.SaveChangesAsync() > 0;
+        return isSaved ? (true, "Đã từ chối thanh toán thành công.")
+                       : (false, "Lỗi hệ thống khi lưu dữ liệu.");
+    }
+}
 }

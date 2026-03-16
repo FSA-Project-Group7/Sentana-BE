@@ -1,7 +1,9 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Common;
 using Sentana.API.DTOs.Invoice;
+using Sentana.API.DTOs.Payment;
 using Sentana.API.Helpers;
 using Sentana.API.Services.SInvoice;
 
@@ -109,5 +111,50 @@ namespace Sentana.API.Controllers
             }
             return Ok(ApiResponse<string>.Success(null, result.Message));
         }
+        // Approve payment
+        [HttpPut("transaction/{id}/approve")]
+    [Authorize(Roles = "Manager")]
+    public async Task<IActionResult> ApprovePayment(int id)
+    {
+        // Lấy ID người dùng từ Token (ClaimType NameIdentifier thường dùng lưu ID)
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int currentUserId))
+        {
+            return Unauthorized(ApiResponse<string>.Fail(401, "Không xác định được danh tính người dùng."));
+        }
+
+        // Gọi Service với UserId thực tế
+        var result = await _invoiceService.ApprovePaymentAsync(id, currentUserId);
+
+        if (!result.IsSuccess)
+        {
+            if (result.Message.Contains("Không tìm thấy")) return NotFound(ApiResponse<string>.Fail(404, result.Message));
+            return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+        }
+        return Ok(ApiResponse<string>.Success(null, result.Message));
     }
+
+    // Reject Payment
+    [HttpPut("transaction/{id}/reject")]
+    [Authorize(Roles = "Manager")]
+    public async Task<IActionResult> RejectPayment(int id, [FromBody] RejectPaymentDto request)
+    {
+        // Lấy ID người dùng từ Token
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int currentUserId))
+        {
+            return Unauthorized(ApiResponse<string>.Fail(401, "Không xác định được danh tính người dùng."));
+        }
+
+        // Gọi Service với UserId thực tế
+        var result = await _invoiceService.RejectPaymentAsync(id, request, currentUserId);
+
+        if (!result.IsSuccess)
+        {
+            if (result.Message.Contains("Không tìm thấy")) return NotFound(ApiResponse<string>.Fail(404, result.Message));
+            return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+        }
+        return Ok(ApiResponse<string>.Success(null, result.Message));
+    }
+}
 }
