@@ -209,19 +209,19 @@ namespace Sentana.API.Services
         {
             if (file == null || file.Length == 0) return (false, "File không được để trống.");
 
-            ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
-            using var stream = new MemoryStream();
-            await file.CopyToAsync(stream);
-            using var package = new ExcelPackage(stream);
+            ExcelPackage.License.SetNonCommercialPersonal("Sentana Project");
 
+            using var stream = file.OpenReadStream();
+            using var package = new ExcelPackage(stream);
             var worksheet = package.Workbook.Worksheets.FirstOrDefault();
-            if (worksheet == null) return (false, "File Excel trống.");
+            if (worksheet == null || worksheet.Dimension == null)
+                return (false, "File Excel trống hoặc không đúng định dạng.");
 
             int rowCount = worksheet.Dimension.Rows;
             int successCount = 0;
 
             // cột 1: ApartmentId, cột 2: NewIndex, cột 3: Ngày chốt (yyyy-MM-dd)
-            for (int row = 2; row <= rowCount; row++) 
+            for (int row = 2; row <= rowCount; row++)
             {
                 if (int.TryParse(worksheet.Cells[row, 1].Text, out int aptId) &&
                     decimal.TryParse(worksheet.Cells[row, 2].Text, out decimal newIndex) &&
@@ -241,6 +241,10 @@ namespace Sentana.API.Services
                     }
                 }
             }
+
+            if (successCount == 0)
+                return (false, "Không có bản ghi nào hợp lệ được import. Vui lòng kiểm tra lại định dạng dữ liệu trong file Excel.");
+
             return (true, $"Import thành công {successCount} bản ghi.");
         }
     }
