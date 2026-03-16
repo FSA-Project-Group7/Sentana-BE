@@ -7,6 +7,9 @@ namespace Sentana.API.Repositories
         Task<Invoice?> GetInvoiceAsync(int invoiceId);
 
         Task AddPaymentTransactionAsync(PaymentTransaction transaction);
+        Task<List<PaymentTransaction>> GetPaymentsByInvoiceAsync(int invoiceId);
+
+        Task<PaymentTransaction?> GetTransactionAsync(int transactionId);
 
         Task SaveAsync();
     }
