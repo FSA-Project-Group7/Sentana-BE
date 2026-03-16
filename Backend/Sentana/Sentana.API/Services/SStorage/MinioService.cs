@@ -25,12 +25,12 @@ namespace Sentana.API.Services.SStorage
                 new PutObjectArgs()
                     .WithBucket(_bucketName)
                     .WithObject(objectName)
-                    .WithStreamData(stream)
-                    .WithObjectSize(stream.Length)
+                    .WithStreamData(stream) 
+                    .WithObjectSize(file.Length)
                     .WithContentType(file.ContentType)
             );
 
-            return $"https://minio.yourdomain.com/{_bucketName}/{objectName}";
+            return $"http://localhost:9000/{_bucketName}/{objectName}";
         }
     }
 }
