@@ -183,14 +183,14 @@ namespace Sentana.API.Controllers
             return Ok(ApiResponse<RemoveResidentResponseDto>.Success(dto, dto.Message));
         }
 
-        [HttpPut("toggleResidentStatus/{id}")]
+        [HttpPut("toggleStatus/{id}")]
         [Authorize(Roles = "Manager")]
         public async Task<IActionResult> ToggleResidentStatus(int id)
         {
             try
             {
-                string message = await _residentService.ToggleResidentStatus(id);
-                return Ok(ApiResponse<object>.Success(null, message));
+				var message = await _residentService.ToggleResidentStatus(id);
+				return Ok(ApiResponse<object>.Success(null, message));
             }
             catch (Exception ex)
             {
