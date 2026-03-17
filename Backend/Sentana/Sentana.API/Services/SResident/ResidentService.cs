@@ -456,7 +456,6 @@ public class ResidentService : IResidentService
 
         return response;
     }
-
 	public async Task<string> ToggleResidentStatus(int residentId)
 	{
 		var account = await GetResidentById(residentId);
@@ -492,5 +491,95 @@ public class ResidentService : IResidentService
 		return message;
 	}
 
+    public async Task<bool> DeleteResident(int residentId, int managerId)
+    {
+        var account = await GetResidentById(residentId);
+        if (account == null || account.IsDeleted == true)
+            throw new Exception("Cư dân không tồn tại trong hệ thống.");
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        var hasActiveContract = await _context.ApartmentResidents
+            .Include(ar => ar.Apartment)
+            .ThenInclude(a => a.Contracts)
+            .AnyAsync(ar => ar.ResidentId == residentId
+                         && ar.Apartment.Contracts.Any(c => c.Status == GeneralStatus.Active && c.EndDay >= today));
+        if (hasActiveContract)
+        {
+            throw new Exception("Không thể xóa vì cư dân đang ở trong phòng còn hạn thuê.");
+        }
+        account.IsDeleted = true;
+        account.UpdatedAt = DateTime.Now;
+        account.UpdatedBy = managerId;
+        _context.Accounts.Update(account);
+        return await _context.SaveChangesAsync() > 0;
+    }
 
+    public async Task<IEnumerable<ResidentResponseDto>> GetDeletedResidents()
+    {
+        return await _context.Accounts
+               .Where(a => a.RoleId == 2 && a.IsDeleted == true)
+               .Select(a => new ResidentResponseDto
+               {
+                   AccountId = a.AccountId,
+                   Code = a.Code,
+                   UserName = a.UserName,
+                   FullName = a.Info != null ? a.Info.FullName : null,
+                   Email = a.Email,
+                   PhoneNumber = a.Info != null ? a.Info.PhoneNumber : null,
+                   IdentityCard = a.Info != null ? a.Info.CmndCccd : null,
+                   Status = a.Status,
+                   Country = a.Info != null ? a.Info.Country : null,
+                   City = a.Info != null ? a.Info.City : null,
+                   Address = a.Info != null ? a.Info.Address : null,
+                   IsDeleted = a.IsDeleted
+               })
+               .ToListAsync();
+    }
+
+
+    public async Task<bool> RestoreResident(int residentId, int managerId)
+    {
+        var resident = await GetResidentById(residentId);
+        if(resident == null)
+        {
+            throw new Exception("Cư dân không tồn tại trong hệ thống.");
+        }
+        if(resident.IsDeleted == false)
+        {
+            throw new Exception("Cư dân này đang hoạt động không thể khôi phục.");
+        }
+        var emailExist = await _context.Accounts.AnyAsync(a =>
+        a.Email.ToLower() == resident.Email.ToLower()
+        && a.AccountId != residentId
+        && a.IsDeleted == false);
+        if (emailExist)
+        {
+            throw new Exception("Email này đã được sử dụng cho một tài khoản khác.");
+        }
+        resident.IsDeleted = false;
+        resident.UpdatedAt = DateTime.Now;
+        resident.UpdatedBy = managerId;
+        _context.Accounts.Update(resident);
+        return await _context.SaveChangesAsync() > 0;
+    }
+
+    public async Task<bool> HardDeleteResident(int residentId)
+    {
+        var resident = await _context.Accounts
+         .FirstOrDefaultAsync(a => a.AccountId == residentId && a.RoleId == 2 && a.IsDeleted == true);
+        if (resident == null)
+        {
+            throw new Exception("Không tìm thấy cư dân này trong danh sách đã xóa.");
+        }
+        var hasApartmentHistory = await _context.ApartmentResidents
+            .AnyAsync(ar => ar.ResidentId == residentId);
+        var hasContractHistory = await _context.Contracts
+            .AnyAsync(c => c.AccountId == residentId);
+        if (hasApartmentHistory || hasContractHistory)
+        {
+            throw new Exception("Không thể xóa vĩnh viễn! Cư dân này đã có lịch sử thuê phòng hoặc hợp đồng trong hệ thống.");
+        }
+        _context.Accounts.Remove(resident);
+        return await _context.SaveChangesAsync() > 0;
+    }
+   
 }
