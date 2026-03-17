@@ -15,24 +15,27 @@ namespace Sentana.API.Services.SApartment
             _context = context;
         }
 
-        public async Task<IEnumerable<ApartmentDto>> GetApartmentListAsync()
-        {
-            return await _context.Apartments
-                .Where(a => a.IsDeleted == false)
-                .Select(a => new ApartmentDto
-                {
-                    ApartmentId = a.ApartmentId,
-                    ApartmentCode = a.ApartmentCode,
-                    ApartmentName = a.ApartmentName,
-                    FloorNumber = a.FloorNumber,
-                    Area = a.Area,
-                    Status = (byte?)a.Status
-                })
-                .OrderByDescending(a => a.ApartmentId)
-                .ToListAsync();
-        }
+		public async Task<IEnumerable<ApartmentDto>> GetApartmentListAsync()
+		{
+			var today = DateOnly.FromDateTime(DateTime.Now);
+			return await _context.Apartments
+				.Include(a => a.Contracts) 
+				.Where(a => a.IsDeleted == false)
+				.Select(a => new ApartmentDto
+				{
+					ApartmentId = a.ApartmentId,
+					ApartmentCode = a.ApartmentCode,
+					ApartmentName = a.ApartmentName,
+					FloorNumber = a.FloorNumber,
+					Area = a.Area,
+					Status = (byte?)a.Status,
+					HasTenant = a.Contracts.Any(c => c.Status == GeneralStatus.Active && c.EndDay >= today)
+				})
+				.OrderByDescending(a => a.ApartmentId)
+				.ToListAsync();
+		}
 
-        public async Task<ApartmentDto> CreateApartmentAsync(CreateApartmentDto dto)
+		public async Task<ApartmentDto> CreateApartmentAsync(CreateApartmentDto dto)
         {
             var building = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == dto.BuildingId && b.IsDeleted == false);
             if (building == null) throw new ArgumentException("Tòa nhà này không tồn tại hoặc đã bị xóa.");
@@ -61,7 +64,7 @@ namespace Sentana.API.Services.SApartment
 
             // Gắn thêm mã tòa nhà để chống trùng lặp toàn hệ thống (VD: A-709)
             string generatedCode = $"{building.BuildingCode}-{generatedNumberStr}";
-            string generatedName = $"Phòng {generatedNumberStr} tòa {building.BuildingName}";
+            string generatedName = $"Phòng {generatedNumberStr} Chung cư SENTANA Tòa {building.BuildingName}";
 
             // 3. Validation: Kiểm tra trùng Mã và Số phòng
             bool isCodeExist = await _context.Apartments.AnyAsync(a => a.ApartmentCode == generatedCode && a.IsDeleted == false);
@@ -115,11 +118,11 @@ namespace Sentana.API.Services.SApartment
 
                 if (building != null)
                 {
-                    // Validation: Tầng nội suy ra không được vượt số tầng tòa nhà
+                    
                     if (building.FloorNumber.HasValue && floor > building.FloorNumber.Value)
                         throw new ArgumentException($"Tầng phân tích được ({floor}) vượt quá số tầng của tòa nhà ({building.FloorNumber.Value}).");
 
-                    // --- [MỚI] CHỐT CHẶN: Kiểm tra logic số phòng khi Update ---
+                    
                     if (building.ApartmentNumber.HasValue && room > building.ApartmentNumber.Value)
                         throw new ArgumentException($"Số phòng phân tích được ({room}) vượt quá tổng số phòng của tòa nhà ({building.ApartmentNumber.Value} phòng).");
                 }
@@ -129,7 +132,7 @@ namespace Sentana.API.Services.SApartment
 
                 string generatedNumberStr = $"{floor}{room:D2}";
                 string generatedCode = $"{building?.BuildingCode}-{generatedNumberStr}";
-                string generatedName = $"Phòng {generatedNumberStr} tòa {building?.BuildingName}";
+                string generatedName = $"Phòng {generatedNumberStr} Chung cư SENTANA Tòa {building?.BuildingName}";
 
                 bool isAppNumberExist = await _context.Apartments.AnyAsync(a => a.ApartmentId != id && a.BuildingId == apartment.BuildingId && a.ApartmentNumber == fullAppNumber && a.IsDeleted == false);
                 if (isAppNumberExist) throw new ArgumentException($"Số căn hộ {fullAppNumber} đã tồn tại trong tòa nhà này.");

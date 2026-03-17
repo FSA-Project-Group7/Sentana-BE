@@ -8,5 +8,6 @@
 		public int? FloorNumber { get; set; }
 		public double? Area { get; set; }
 		public byte? Status { get; set; }
+		public bool HasTenant { get; set; }
 	}
 }

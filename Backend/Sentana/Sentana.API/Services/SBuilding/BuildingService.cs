@@ -104,17 +104,19 @@ namespace Sentana.API.Services.SBuilding
 			if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
 				accountId = parsedAccountId;
 
-			var existingBuilding = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == false);
+			var existingBuilding = await _context.Buildings
+				.Include(b => b.Apartments)
+					.ThenInclude(a => a.Contracts) 
+				.FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == false);
+
 			if (existingBuilding == null) throw new InvalidOperationException("Không tìm thấy tòa nhà.");
 
-			// Giữ nguyên Tên và Mã (Vì FE gửi lại cái cũ để vượt qua Validate)
 			if (!string.IsNullOrWhiteSpace(dto.BuildingName) && dto.BuildingName != existingBuilding.BuildingName)
 				existingBuilding.BuildingName = dto.BuildingName;
 
 			if (!string.IsNullOrWhiteSpace(dto.BuildingCode) && dto.BuildingCode != existingBuilding.BuildingCode)
 				existingBuilding.BuildingCode = dto.BuildingCode;
 
-			// 1. Cập nhật Địa chỉ
 			if (dto.Address != null) existingBuilding.Address = dto.Address;
 			if (dto.City != null) existingBuilding.City = dto.City;
 
@@ -126,17 +128,41 @@ namespace Sentana.API.Services.SBuilding
 			}
 
 			// 2. Ép Trạng thái nhận giá trị từ giao diện
-			if (dto.Status.HasValue)
+			if (dto.Status.HasValue && existingBuilding.Status != (GeneralStatus)dto.Status.Value)
 			{
-				existingBuilding.Status = (GeneralStatus)dto.Status.Value;
+				var newStatus = (GeneralStatus)dto.Status.Value;
+				existingBuilding.Status = newStatus;
+
+				// Cập nhật trạng thái các căn hộ bên trong
+				if (newStatus == GeneralStatus.Inactive) // Giả sử Inactive (0) hoặc 2 là Bảo trì (Tùy thuộc GeneralStatus của bạn)
+				{
+					// Nếu tòa nhà bảo trì -> Mọi phòng thành bảo trì (3)
+					foreach (var apt in existingBuilding.Apartments.Where(a => a.IsDeleted == false))
+					{
+						apt.Status = ApartmentStatus.Maintenance;
+					}
+				}
+				else if (newStatus == GeneralStatus.Active) // Tòa nhà hoạt động lại (1)
+				{
+					// Kiểm tra hợp đồng để quyết định phòng Trống (1) hay Đang ở (2)
+					var today = DateOnly.FromDateTime(DateTime.Now);
+					foreach (var apt in existingBuilding.Apartments.Where(a => a.IsDeleted == false))
+					{
+						bool hasActiveContract = apt.Contracts.Any(c => c.Status == GeneralStatus.Active && c.EndDay >= today);
+
+						if (hasActiveContract)
+						{
+							apt.Status = ApartmentStatus.Occupied; 
+						}
+						else
+						{
+							apt.Status = ApartmentStatus.Vacant;  
+						}
+					}
+				}
 			}
 
-			if (!string.IsNullOrEmpty(dto.Address)) existingBuilding.Address = dto.Address;
-			if (!string.IsNullOrEmpty(dto.City)) existingBuilding.City = dto.City;
-
 			existingBuilding.UpdatedAt = DateTime.UtcNow;
-
-			// === KẾT THÚC ĐOẠN ÉP KIỂU ===
 
 			_context.Buildings.Update(existingBuilding);
 			await _context.SaveChangesAsync();

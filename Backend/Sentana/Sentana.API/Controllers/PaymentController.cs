@@ -71,5 +71,13 @@ namespace Sentana.API.Controllers
             var result = await _paymentService.GetPaymentHistoryAsync(User);
             return StatusCode(result.StatusCode, result);
         }
-    }
+
+		[HttpGet("all")]
+		[Authorize(Roles = "Manager")]
+		public async Task<IActionResult> GetAllTransactions()
+		{
+			var result = await _paymentService.GetAllTransactionsAsync();
+			return StatusCode(result.StatusCode, result);
+		}
+	}
 }
