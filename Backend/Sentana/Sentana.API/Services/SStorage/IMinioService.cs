@@ -4,6 +4,6 @@ namespace Sentana.API.Services.SStorage
 {
     public interface IMinioService
     {
-        Task<string> UploadFileAsync(IFormFile file, string folder);
+        Task<string> UploadContractAsync(IFormFile file, int contractId, decimal version);
     }
 }

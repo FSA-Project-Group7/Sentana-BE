@@ -412,9 +412,29 @@ public partial class SentanaContext : DbContext
                 .HasForeignKey(d => d.ApartmentId)
                 .HasConstraintName("FK_WaterMeter_Apartment");
         });
+        modelBuilder.Entity<ContractVersion>(entity =>
+        {
+            entity.HasKey(e => e.VersionId);
 
+            entity.Property(e => e.File)
+                .HasMaxLength(1000);
+
+            entity.Property(e => e.VersionNumber)
+                .HasPrecision(3, 1);
+
+            entity.HasOne(d => d.Contract)
+                .WithMany(p => p.ContractVersions)
+                .HasForeignKey(d => d.ContractId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<Contract>()
+            .HasOne(c => c.CurrentVersion)
+            .WithMany()
+            .HasForeignKey(c => c.CurrentVersionId)
+            .OnDelete(DeleteBehavior.Restrict);
         OnModelCreatingPartial(modelBuilder);
     }
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
+    public virtual DbSet<ContractVersion> ContractVersions { get; set; }
 }

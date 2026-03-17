@@ -13,9 +13,13 @@ namespace Sentana.API.Services.SStorage
             _minioClient = minioClient;
         }
 
-        public async Task<string> UploadFileAsync(IFormFile file, string folder)
+        public async Task<string> UploadContractAsync(IFormFile file, int contractId, decimal version)
         {
-            var fileName = Guid.NewGuid() + Path.GetExtension(file.FileName);
+            var extension = Path.GetExtension(file.FileName);
+
+            var folder = $"contracts/contract_{contractId}";
+
+            var fileName = $"contract_{contractId}_v{version}{extension}";
 
             var objectName = $"{folder}/{fileName}";
 
@@ -25,7 +29,7 @@ namespace Sentana.API.Services.SStorage
                 new PutObjectArgs()
                     .WithBucket(_bucketName)
                     .WithObject(objectName)
-                    .WithStreamData(stream) 
+                    .WithStreamData(stream)
                     .WithObjectSize(file.Length)
                     .WithContentType(file.ContentType)
             );
