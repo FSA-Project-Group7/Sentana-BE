@@ -18,5 +18,13 @@ namespace Sentana.API.Services.SResident
         Task<RemoveResidentResponseDto> RemoveResidentFromRoomAsync(AssignResidentRequestDto request, int managerId);
 
         Task<string> ToggleResidentStatus(int residentId);
+
+        Task<bool> DeleteResident(int residentId, int managerId);
+
+        Task<IEnumerable<ResidentResponseDto>> GetDeletedResidents();
+
+        Task<bool> RestoreResident(int residentId, int managerId);
+
+        Task<bool> HardDeleteResident(int residentId, int managerId);
     }
 }

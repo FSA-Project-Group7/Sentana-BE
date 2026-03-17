@@ -197,5 +197,70 @@ namespace Sentana.API.Controllers
                 return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
             }
         }
+
+        [HttpDelete("DeleteResident/{id}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> DeleteResident(int id)
+        {
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+            }
+            try
+            {
+                var result = await _residentService.DeleteResident(id, managerId);
+                if (result)
+                {
+                    return Ok(ApiResponse<object>.Success(null, "Đã xóa cư dân thành công."));
+                }
+                return BadRequest(ApiResponse<object>.Fail(400, "Xóa cư dân thất bại."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
+            }
+        }
+
+        [HttpGet("DeletedResident")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetDeletedResidents()
+        {
+            try
+            {
+                var residents = await _residentService.GetDeletedResidents();
+                return Ok(ApiResponse<IEnumerable<ResidentResponseDto>>.Success(residents, "Lấy danh sách kỹ thuật viên đã xóa thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(500, $"Lỗi: {ex.Message}"));
+            }
+        }
+
+        [HttpPut("RestoreResident/{id}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> RestoreResident(int id)
+        {
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+            }
+            try
+            {
+                var result = await _residentService.RestoreResident(id, managerId);
+                if (result)
+                {
+                    return Ok(ApiResponse<object>.Success(null, "Khôi phục tài khoản kỹ thuật viên thành công!"));
+                }
+                return BadRequest(ApiResponse<object>.Fail(400, "Khôi phục tài khoản thất bại."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
+            }
+        }
+
+
     }
 }
