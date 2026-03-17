@@ -242,4 +242,28 @@ public class PaymentService : IPaymentService
 
         return residentContract?.ApartmentId;
     }
+
+	public async Task<ApiResponse<object>> GetAllTransactionsAsync()
+	{
+		var transactions = await _context.PaymentTransactions
+			.Include(t => t.Invoice)
+				.ThenInclude(i => i.Apartment)
+			.Where(t => t.IsDeleted == false)
+			.OrderByDescending(t => t.SubmitDate)
+			.Select(t => new {
+				transactionId = t.TransactionId,
+				invoiceId = t.InvoiceId,
+				apartmentCode = t.Invoice.Apartment != null ? t.Invoice.Apartment.ApartmentCode : "N/A",
+				billingMonth = t.Invoice != null ? t.Invoice.BillingMonth : 0,
+				billingYear = t.Invoice != null ? t.Invoice.BillingYear : 0,
+				amountPaid = t.AmountPaid,
+				submitDate = t.SubmitDate,
+				proofUrl = t.PaymentProofImage,
+				status = (int)t.Status, // 0: Pending, 1: Approved, 2: Rejected
+				note = t.Note
+			})
+			.ToListAsync();
+
+		return ApiResponse<object>.Success(transactions, "Lấy danh sách giao dịch thành công.");
+	}
 }

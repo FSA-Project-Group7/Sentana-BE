@@ -13,4 +13,5 @@ public interface IPaymentService
     Task<ApiResponse<object>> GetPaymentDetailAsync(int transactionId);
 
     Task<ApiResponse<object>> GetPaymentHistoryAsync(ClaimsPrincipal user, int? apartmentId = null, int? accountId = null);
+	Task<ApiResponse<object>> GetAllTransactionsAsync();
 }
