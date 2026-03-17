@@ -26,6 +26,6 @@ namespace Sentana.API.Services.SResident
         Task<bool> RestoreResident(int residentId, int managerId);
 
         Task<bool> HardDeleteResident(int residentId);
-    }
+    
 	}
 }
