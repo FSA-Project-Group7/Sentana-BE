@@ -183,7 +183,7 @@ namespace Sentana.API.Controllers
             return Ok(ApiResponse<RemoveResidentResponseDto>.Success(dto, dto.Message));
         }
 
-        [HttpPut("toggleResidentStatus/{id}")]
+        [HttpPut("toggleStatus/{id}")]
         [Authorize(Roles = "Manager")]
         public async Task<IActionResult> ToggleResidentStatus(int id)
         {
@@ -222,14 +222,14 @@ namespace Sentana.API.Controllers
             }
         }
 
-        [HttpGet("DeletedResident")]
+        [HttpGet("Deleted")]
         [Authorize(Roles = "Manager")]
         public async Task<IActionResult> GetDeletedResidents()
         {
             try
             {
                 var residents = await _residentService.GetDeletedResidents();
-                return Ok(ApiResponse<IEnumerable<ResidentResponseDto>>.Success(residents, "Lấy danh sách kỹ thuật viên đã xóa thành công."));
+                return Ok(ApiResponse<IEnumerable<ResidentResponseDto>>.Success(residents, "Lấy danh sách cư dân đã xóa thành công."));
             }
             catch (Exception ex)
             {
@@ -237,7 +237,7 @@ namespace Sentana.API.Controllers
             }
         }
 
-        [HttpPut("RestoreResident/{id}")]
+        [HttpPut("Restore/{id}")]
         [Authorize(Roles = "Manager")]
         public async Task<IActionResult> RestoreResident(int id)
         {
@@ -251,7 +251,7 @@ namespace Sentana.API.Controllers
                 var result = await _residentService.RestoreResident(id, managerId);
                 if (result)
                 {
-                    return Ok(ApiResponse<object>.Success(null, "Khôi phục tài khoản kỹ thuật viên thành công!"));
+                    return Ok(ApiResponse<object>.Success(null, "Khôi phục tài khoản cư dân thành công!"));
                 }
                 return BadRequest(ApiResponse<object>.Fail(400, "Khôi phục tài khoản thất bại."));
             }
@@ -261,6 +261,24 @@ namespace Sentana.API.Controllers
             }
         }
 
+        [HttpDelete("HardDelete/{id}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> HardDeleteResident(int id)
+        {
+            try
+            {
+                var result = await _residentService.HardDeleteResident(id);
+                if (result)
+                {
+                    return Ok(ApiResponse<object>.Success(null, "Đã xóa vĩnh viễn cư dân khỏi hệ thống."));
+                }
+                return BadRequest(ApiResponse<object>.Fail(400, "Xóa vĩnh viễn thất bại."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
+            }
+        }
 
     }
 }

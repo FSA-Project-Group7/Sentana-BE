@@ -478,12 +478,12 @@ public class ResidentService : IResidentService
                 throw new Exception("Không thể vô hiệu hóa vì cư dân đang ở trong phòng còn hạn thuê.");
             }
             account.Status = GeneralStatus.Inactive;
-            message = "Khóa tài khoản Cư dân thành công!";
+            message = "Khóa tài khoản cư dân thành công!";
         }
         else
         {
             account.Status = GeneralStatus.Active;
-            message = "Mở khóa tài khoản Cư dân thành công!";
+            message = "Mở khóa tài khoản cư dân thành công!";
         }
         _context.Accounts.Update(account);
         await _context.SaveChangesAsync();
@@ -561,7 +561,7 @@ public class ResidentService : IResidentService
         return await _context.SaveChangesAsync() > 0;
     }
 
-    public async Task<bool> HardDeleteResident(int residentId, int managerId)
+    public async Task<bool> HardDeleteResident(int residentId)
     {
         var resident = await _context.Accounts
          .FirstOrDefaultAsync(a => a.AccountId == residentId && a.RoleId == 2 && a.IsDeleted == true);
@@ -580,6 +580,5 @@ public class ResidentService : IResidentService
         _context.Accounts.Remove(resident);
         return await _context.SaveChangesAsync() > 0;
     }
-
    
 }
