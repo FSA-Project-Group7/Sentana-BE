@@ -9,6 +9,7 @@ using Sentana.API.Enums;
 using Sentana.API.DTOs.Common;
 using Sentana.API.DTOs.Payment;
 using Sentana.API.Services.SEmail;
+using Sentana.API.Helpers;
 
 namespace Sentana.API.Services.SInvoice
 {
@@ -164,6 +165,12 @@ namespace Sentana.API.Services.SInvoice
         // generate monthly invoices 
         public async Task<(bool IsSuccess, string Message, int GeneratedCount)> GenerateMonthlyInvoicesAsync(GenerateInvoiceRequestDto request, int currentUserId)
         {
+            //validate time 
+            var validation = ValidationHelper.ValidateMonthYear(request.Month, request.Year);
+            if (!validation.IsValid)
+            {
+                return (false, validation.ErrorMessage, 0);
+            }
             var query = _context.Apartments.Where(a => a.Status == ApartmentStatus.Occupied && a.IsDeleted == false);
 
             if (request.ApartmentId.HasValue)

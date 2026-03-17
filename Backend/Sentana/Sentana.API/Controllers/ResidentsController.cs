@@ -189,8 +189,8 @@ namespace Sentana.API.Controllers
         {
             try
             {
-                string message = await _residentService.ToggleResidentStatus(id);
-                return Ok(ApiResponse<object>.Success(null, message));
+				var message = await _residentService.ToggleResidentStatus(id);
+				return Ok(ApiResponse<object>.Success(null, message));
             }
             catch (Exception ex)
             {

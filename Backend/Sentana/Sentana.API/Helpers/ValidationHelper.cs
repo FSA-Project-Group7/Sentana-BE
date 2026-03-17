@@ -51,6 +51,14 @@
             {
                 return (false, "Năm không hợp lệ (phải lớn hơn 0).");
             }
+            if (month.HasValue && year.HasValue)
+            {
+                var currentDate = DateTime.Now;
+                if (year > currentDate.Year || (year == currentDate.Year && month > currentDate.Month))
+                {
+                    return (false, "Không thể thao tác với thời gian trong tương lai.");
+                }
+            }
             return (true, string.Empty);
         }
     }

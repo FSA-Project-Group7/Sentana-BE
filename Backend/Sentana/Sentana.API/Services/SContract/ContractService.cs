@@ -140,12 +140,15 @@ namespace Sentana.API.Services
 
             await _contractRepository.AddContractAsync(contract);
 
-            apartment.Status = ApartmentStatus.Occupied;
+			apartment.Status = ApartmentStatus.Occupied;
+			await _contractRepository.SaveAsync();
 
-            await _contractRepository.SaveAsync();
-
-            return ApiResponse<object>.Success(contract, "Tạo hợp đồng thành công.");
-        }
+			return ApiResponse<object>.Success(new
+			{
+				contractId = contract.ContractId,
+				contractCode = contract.ContractCode
+			}, "Tạo hợp đồng thành công.");
+		}
 
         public async Task<ApiResponse<object>> UpdateContractAsync(int contractId, UpdateContractDto request)
         {
@@ -162,12 +165,15 @@ namespace Sentana.API.Services
             contract.MonthlyRent = request.MonthlyRent;
             contract.Deposit = request.Deposit;
             contract.File = request.File;
-            contract.UpdatedAt = DateTime.Now;
+			contract.UpdatedAt = DateTime.Now;
 
-            await _contractRepository.SaveAsync();
-
-            return ApiResponse<object>.Success(contract, "Cập nhật hợp đồng thành công.");
-        }
+			await _contractRepository.SaveAsync();
+			return ApiResponse<object>.Success(new
+			{
+				contractId = contract.ContractId,
+				contractCode = contract.ContractCode
+			}, "Cập nhật hợp đồng thành công.");
+		}
 
         public async Task<ApiResponse<object>> GetContractDetailAsync(int contractId)
         {
@@ -194,11 +200,28 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(dto, "Lấy chi tiết hợp đồng thành công.");
         }
 
-        public async Task<ApiResponse<object>> GetContractListAsync()
-        {
-            var contracts = await _contractRepository.GetContractListAsync();
+		public async Task<ApiResponse<object>> GetContractListAsync()
+		{
+			var contracts = await _contractRepository.GetContractListAsync();
 
-            return ApiResponse<object>.Success(contracts, "Lấy danh sách hợp đồng thành công.");
-        }
-    }
+			var contractDtos = contracts.Select(c => new ContractDetailDto
+			{
+				ContractId = c.ContractId,
+				ContractCode = c.ContractCode,
+				ApartmentId = c.ApartmentId,
+				ApartmentName = c.Apartment?.ApartmentName,
+				AccountId = c.AccountId,
+				TenantName = c.Account?.Info?.FullName ?? c.Account?.UserName,
+
+				StartDay = c.StartDay,
+				EndDay = c.EndDay,
+
+				MonthlyRent = c.MonthlyRent,
+				Deposit = c.Deposit,
+				Status = c.Status
+			}).ToList();
+
+			return ApiResponse<object>.Success(contractDtos, "Lấy danh sách hợp đồng thành công.");
+		}
+	}
 }

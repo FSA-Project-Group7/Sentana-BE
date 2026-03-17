@@ -489,6 +489,40 @@ public class ResidentService : IResidentService
         await _context.SaveChangesAsync();
         return message;
     } 
+	public async Task<string> ToggleResidentStatus(int residentId)
+	{
+		var account = await GetResidentById(residentId);
+		if (account == null || account.IsDeleted == true)
+		{
+			throw new Exception("Không thể thay đổi trạng thái tài khoản không tồn tại hoặc đã bị xóa.");
+		}
+
+		string message = "";
+		if (account.Status == GeneralStatus.Active)
+		{
+			var isAssignedToRoom = await _context.ApartmentResidents
+				.AnyAsync(ar => ar.AccountId == residentId
+							 && ar.Status == GeneralStatus.Active
+							 && ar.IsDeleted == false);
+
+			if (isAssignedToRoom)
+			{
+				throw new Exception("Không thể khóa tài khoản vì cư dân này đang được gán vào một căn hộ. Vui lòng gỡ cư dân khỏi phòng trước!");
+			}
+
+			account.Status = GeneralStatus.Inactive;
+			message = "Khóa tài khoản Cư dân thành công!";
+		}
+		else
+		{
+			account.Status = GeneralStatus.Active;
+			message = "Mở khóa tài khoản Cư dân thành công!";
+		}
+
+		_context.Accounts.Update(account);
+		await _context.SaveChangesAsync();
+		return message;
+	}
 
     public async Task<bool> DeleteResident(int residentId, int managerId)
     {
