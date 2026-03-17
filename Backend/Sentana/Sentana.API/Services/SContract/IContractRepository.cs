@@ -13,7 +13,13 @@ namespace Sentana.API.Repositories
         Task<bool> HasActiveContractAsync(int apartmentId);
 
         Task AddContractAsync(Contract contract);
+
+        Task AddContractVersionAsync(ContractVersion version);
+
+        Task<ContractVersion?> GetLatestContractVersionAsync(int contractId);
+
         Task<Contract?> GetContractDetailAsync(int contractId);
+
         Task<List<Contract>> GetContractListAsync();
 
         Task SaveAsync();

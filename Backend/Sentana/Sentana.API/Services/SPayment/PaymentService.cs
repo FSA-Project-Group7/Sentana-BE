@@ -13,7 +13,7 @@ public class PaymentService : IPaymentService
 {
     private readonly IPaymentRepository _paymentRepository;
     private readonly IMinioService _minioService;
-    private readonly SentanaContext _context; // Đã thêm Context vào đây
+    private readonly SentanaContext _context; 
 
     public PaymentService(
         IPaymentRepository paymentRepository,
@@ -66,8 +66,7 @@ public class PaymentService : IPaymentService
             return ApiResponse<object>.Fail(404, "Invoice không tồn tại.");
         }
 
-        // Giữ nguyên Upload lên MinIO
-        var proofUrl = await _minioService.UploadFileAsync(request.File, "payment-proofs");
+        var proofUrl = await _minioService.UploadContractAsync(request.File, 0, 0);
 
         var transaction = new PaymentTransaction
         {
@@ -120,7 +119,6 @@ public class PaymentService : IPaymentService
         return ApiResponse<object>.Success(transaction, "Lấy chi tiết payment thành công.");
     }
 
-    // US13 - View Payment History
     public async Task<ApiResponse<object>> GetPaymentHistoryAsync(ClaimsPrincipal user, int? apartmentId = null, int? accountId = null)
     {
         if (user == null)
@@ -150,7 +148,6 @@ public class PaymentService : IPaymentService
             return ApiResponse<object>.Success(new List<PaymentHistoryItemDto>(), "Không tìm thấy căn hộ để lấy lịch sử thanh toán.");
         }
 
-        // Đã sửa 'context' thành '_context'
         var invoices = await _context.Invoices
             .AsNoTracking()
             .Include(i => i.Apartment)
@@ -218,7 +215,7 @@ public class PaymentService : IPaymentService
 
             if (accountId.HasValue)
             {
-                // Đã sửa 'context' thành '_context'
+
                 var contract = await _context.Contracts
                     .AsNoTracking()
                     .Where(c => c.AccountId == accountId.Value &&
@@ -231,7 +228,7 @@ public class PaymentService : IPaymentService
             }
         }
 
-        // Đã sửa 'context' thành '_context'
+
         var residentContract = await _context.Contracts
             .AsNoTracking()
             .Where(c => c.AccountId == callerAccountId &&
@@ -259,7 +256,7 @@ public class PaymentService : IPaymentService
 				amountPaid = t.AmountPaid,
 				submitDate = t.SubmitDate,
 				proofUrl = t.PaymentProofImage,
-				status = (int)t.Status, // 0: Pending, 1: Approved, 2: Rejected
+				status = (int)t.Status, 
 				note = t.Note
 			})
 			.ToListAsync();

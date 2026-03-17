@@ -45,4 +45,10 @@ public partial class Contract
     public virtual Apartment? Apartment { get; set; }
 
     public virtual ICollection<Invoice> Invoices { get; set; } = new List<Invoice>();
+    public int? CurrentVersionId { get; set; }
+
+    public virtual ContractVersion? CurrentVersion { get; set; }
+
+    public virtual ICollection<ContractVersion> ContractVersions { get; set; }
+        = new List<ContractVersion>();
 }
