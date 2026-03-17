@@ -264,6 +264,8 @@ namespace Sentana.API.Services.STechnician
             var technician = await GetTechnicianById(technicianId);
             if (technician == null)
                 throw new Exception("Kỹ thuật viên không tồn tại hoặc đã bị xóa trước đó.");
+            if (technician.IsDeleted == false)
+                throw new Exception("Kỹ thuật viên này đang hoạt động, không thể khôi phục.");
             var emailExist = await _context.Accounts.AnyAsync(a =>
             a.Email.ToLower() == technician.Email.ToLower() && a.AccountId != technicianId && a.IsDeleted == false);
             if (emailExist) throw new Exception("Email của tài khoản này đã được sử dụng bởi một tài khoản đang hoạt động khác.");

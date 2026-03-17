@@ -543,7 +543,7 @@ public class ResidentService : IResidentService
         {
             throw new Exception("Cư dân không tồn tại trong hệ thống.");
         }
-        if(resident.IsDeleted == false)
+        if (resident.IsDeleted == false)
         {
             throw new Exception("Cư dân này đang hoạt động không thể khôi phục.");
         }
