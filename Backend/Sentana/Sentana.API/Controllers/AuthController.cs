@@ -84,6 +84,21 @@ namespace Sentana.API.Controllers
             return Ok(ApiResponse<string>.Success(null, "Cập nhật thông tin cá nhân thành công!"));
         }
 
+        //get profile for admin
+        [HttpGet("resident-profile/{id}")] 
+        [Authorize(Roles = "Manager")] 
+        public async Task<IActionResult> GetResidentProfileById(int id)
+        {
+            var profile = await _authService.GetUserProfileAsync(id);
+
+            if (profile == null)
+            {
+                return NotFound(ApiResponse<string>.Fail(404, "Không tìm thấy thông tin cư dân này hoặc tài khoản không hoạt động."));
+            }
+
+            return Ok(ApiResponse<UserProfileResponseDto>.Success(profile, "Lấy thông tin hồ sơ cư dân thành công."));
+        }
+
         //Reset and change password
         [HttpPost("send-otp")]
         public async Task<IActionResult> SendOtp([FromBody] SendOtpRequestDto request)

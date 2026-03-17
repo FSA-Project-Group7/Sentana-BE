@@ -94,24 +94,22 @@ namespace Sentana.API.Services.SInvoice
                     ContractId = invoice.ContractId,
                     BillingMonth = invoice.BillingMonth,
                     BillingYear = invoice.BillingYear,
-                    TotalMoney = invoice.TotalMoney,
+                    TotalMoney = invoice.TotalMoney, 
                     ServiceFee = invoice.ServiceFee,
                     Pay = invoice.Pay,
-                    Debt = invoice.Debt,
+                    Debt = invoice.Debt,             
                     WaterNumber = invoice.WaterNumber,
                     ElectricNumber = invoice.ElectricNumber,
                     DayCreat = invoice.DayCreat?.ToString("yyyy-MM-dd"),
                     DayPay = invoice.DayPay?.ToString("yyyy-MM-dd"),
                     StatusName = invoice.Status?.ToString() ?? string.Empty,
                     Payments = invoice.Payments,
-                    Details = new List<InvoiceDetailItemDto>() // khởi tạo list chi tiết
+                    Details = new List<InvoiceDetailItemDto>()
                 };
 
-                // tiền phòng
                 if (invoice.Contract != null)
                     dto.Details.Add(new InvoiceDetailItemDto { FeeName = "Tiền thuê phòng", Amount = invoice.Contract.MonthlyRent ?? 0 });
 
-                // tiền điện
                 if (invoice.ElectricMeter != null)
                 {
                     var usage = (invoice.ElectricMeter.NewIndex ?? 0) - (invoice.ElectricMeter.OldIndex ?? 0);
@@ -119,7 +117,6 @@ namespace Sentana.API.Services.SInvoice
                     dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền điện ({usage} kWh)", Amount = usage * price });
                 }
 
-                // tiền nước
                 if (invoice.WaterMeter != null)
                 {
                     var usage = (invoice.WaterMeter.NewIndex ?? 0) - (invoice.WaterMeter.OldIndex ?? 0);
@@ -127,19 +124,35 @@ namespace Sentana.API.Services.SInvoice
                     dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền nước ({usage} khối)", Amount = usage * price });
                 }
 
-                // tiền dịch vụ 
                 var services = await _context.ApartmentServices
                     .Include(s => s.Service)
                     .Where(s => s.ApartmentId == invoice.ApartmentId && s.Status == GeneralStatus.Active && s.IsDeleted == false)
                     .ToListAsync();
 
-                foreach (var svc in services)
+                decimal currentDynamicServiceTotal = services.Sum(s => s.ActualPrice ?? 0m);
+                decimal historicalServiceFee = invoice.ServiceFee ?? 0m;
+
+                if (currentDynamicServiceTotal == historicalServiceFee)
                 {
-                    dto.Details.Add(new InvoiceDetailItemDto
+                    foreach (var svc in services)
                     {
-                        FeeName = svc.Service?.ServiceName ?? "Phí dịch vụ",
-                        Amount = svc.ActualPrice ?? 0
-                    });
+                        dto.Details.Add(new InvoiceDetailItemDto
+                        {
+                            FeeName = svc.Service?.ServiceName ?? "Phí dịch vụ",
+                            Amount = svc.ActualPrice ?? 0
+                        });
+                    }
+                }
+                else
+                {
+                    if (historicalServiceFee > 0)
+                    {
+                        dto.Details.Add(new InvoiceDetailItemDto
+                        {
+                            FeeName = "Phí dịch vụ (Đã chốt theo kỳ hóa đơn)",
+                            Amount = historicalServiceFee
+                        });
+                    }
                 }
 
                 result.Add(dto);
