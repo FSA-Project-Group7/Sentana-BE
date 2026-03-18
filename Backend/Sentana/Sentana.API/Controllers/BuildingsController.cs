@@ -96,7 +96,7 @@ namespace Sentana.API.Controllers
 
         // View Building List - để kiểm tra building mới tạo
         [HttpGet]
-        [Authorize(Roles = "Manager")]
+        [Authorize(Roles = "Manager,Technician")] // Thêm role Technician cách nhau bởi dấu phẩy
         [ProducesResponseType(StatusCodes.Status200OK)]
         public async Task<IActionResult> GetBuildingList()
         {

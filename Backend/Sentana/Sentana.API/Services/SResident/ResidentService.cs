@@ -123,7 +123,7 @@ public class ResidentService : IResidentService
     public async Task<IEnumerable<ResidentResponseDto>> GetAllResidents()
     {
         return await _context.Accounts
-            .Where(a => a.RoleId == 2 || a.IsDeleted == false)
+            .Where(a => a.RoleId == 2 && a.IsDeleted == false)
             .Select(a => new ResidentResponseDto
             {
                 AccountId = a.AccountId,
@@ -358,105 +358,76 @@ public class ResidentService : IResidentService
         return MapToResponse(resident);
     }
 
+
+
     // Remove resident from room (Manager only)
-    public async Task<RemoveResidentResponseDto> RemoveResidentFromRoomAsync(AssignResidentRequestDto request, int managerId)
+    public async Task<RemoveResidentResponseDto> RemoveResidentFromRoomAsync(RemoveResidentRequestDto request, int managerId)
     {
         var now = DateTime.UtcNow;
-
         var response = new RemoveResidentResponseDto
         {
-            IsSuccess = false,
-            Message = string.Empty,
-            RemovedAt = now,
-            RemovedBy = managerId,
-            ApartmentResidentId = null,
-            ApartmentId = request.ApartmentId,
             AccountId = request.AccountId,
-            ContractId = null,
-            ApartmentStatus = null,
-            ResidentStatus = null,
-            ContractStatus = null
+            ApartmentId = request.ApartmentId,
+            RemovedAt = now
         };
 
-        if (request == null || request.AccountId <= 0 || request.ApartmentId <= 0)
-        {
-            response.Message = "Request không hợp lệ.";
-            return response;
-        }
-
-        var residentAccount = await _context.Accounts
-            .FirstOrDefaultAsync(a => a.AccountId == request.AccountId && a.RoleId == 2 && a.IsDeleted == false);
-
-        if (residentAccount == null)
-        {
-            response.Message = "Không tìm thấy cư dân trong hệ thống.";
-            return response;
-        }
-
+        // 1. Tìm bản ghi cư dân trong phòng
         var aptResident = await _context.ApartmentResidents
             .FirstOrDefaultAsync(ar => ar.AccountId == request.AccountId
-                                       && ar.ApartmentId == request.ApartmentId
-                                       && ar.IsDeleted == false
-                                       && ar.Status == GeneralStatus.Active);
+                                    && ar.ApartmentId == request.ApartmentId
+                                    && ar.IsDeleted == false);
 
         if (aptResident == null)
         {
-            response.Message = "Cư dân này không được gán vào căn hộ được chỉ định hoặc đã rời phòng.";
+            response.Message = "Cư dân không tồn tại trong căn hộ này.";
             return response;
         }
 
-        var contract = await _context.Contracts
-            .FirstOrDefaultAsync(c => c.AccountId == request.AccountId
-                                       && c.ApartmentId == request.ApartmentId
-                                       && c.IsDeleted == false
-                                       && c.Status == GeneralStatus.Active);
-
-        if (contract == null)
+        // 2. Fix BUG 35: Chặn xóa nếu là Chủ hợp đồng (RelationshipId = 1) mà hợp đồng còn hiệu lực
+        if (aptResident.RelationshipId == 1)
         {
-            response.Message = "Chỉ cho phép gỡ khi hợp đồng đang ở trạng thái Active.";
-            return response;
+            var hasActiveContract = await _context.Contracts
+                .AnyAsync(c => c.ApartmentId == request.ApartmentId && c.Status == GeneralStatus.Active);
+
+            if (hasActiveContract)
+            {
+                response.Message = "Không thể gỡ chủ hộ khi hợp đồng vẫn còn hiệu lực. Hãy tất toán hợp đồng trước.";
+                return response;
+            }
         }
 
-        // Update contract status -> mark terminated (use Inactive)
-        contract.Status = GeneralStatus.Inactive;
-        contract.UpdatedAt = DateTime.UtcNow;
-        contract.UpdatedBy = managerId;
-        response.ContractId = contract.ContractId;
-        response.ContractStatus = contract.Status?.ToString();
-
-        // Update apartment status -> Vacant
-        var apartment = await _context.Apartments
-            .FirstOrDefaultAsync(a => a.ApartmentId == request.ApartmentId && a.IsDeleted == false);
-
-        if (apartment != null)
-        {
-            apartment.Status = ApartmentStatus.Vacant;
-            apartment.UpdatedAt = DateTime.UtcNow;
-            apartment.UpdatedBy = managerId;
-            response.ApartmentStatus = apartment.Status.ToString();
-        }
-
-        // Update apartment-resident status to Inactive (keep record for history)
+        // 3. Thực hiện xóa mềm cư dân
+        aptResident.IsDeleted = true;
         aptResident.Status = GeneralStatus.Inactive;
-        // Do NOT set aptResident.UpdatedAt/UpdatedBy here (model lacks fields)
-        response.ApartmentResidentId = aptResident.ResidentId;
-        response.ResidentStatus = aptResident.Status?.ToString();
 
-        // Update account status to Inactive (if desired)
-        residentAccount.Status = GeneralStatus.Inactive;
-        residentAccount.UpdatedAt = DateTime.UtcNow;
-        residentAccount.UpdatedBy = managerId;
-        response.AccountId = residentAccount.AccountId;
-        response.ResidentStatus = residentAccount.Status?.ToString();
+        // 4. Cập nhật trạng thái phòng (Nếu không còn ai ở thì chuyển về Vacant)
+        var otherPeople = await _context.ApartmentResidents
+            .AnyAsync(ar => ar.ApartmentId == request.ApartmentId && ar.AccountId != request.AccountId && ar.IsDeleted == false);
+
+        if (!otherPeople)
+        {
+            var apartment = await _context.Apartments.FindAsync(request.ApartmentId);
+            if (apartment != null) apartment.Status = ApartmentStatus.Vacant;
+            response.ApartmentStatus = "Vacant";
+        }
+
+        // 5. Lưu lý do gỡ (Reason từ Request) vào bảng History/Info
+        //_context.Histories.Add(new History
+        //{
+        //    AccountId = request.AccountId,
+        //    Action = "Remove",
+        //    Description = request.Reason ?? "Gỡ cư dân khỏi phòng",
+        //    CreatedAt = now,
+        //    CreatedBy = managerId
+        //});
 
         await _context.SaveChangesAsync();
 
         response.IsSuccess = true;
-        response.Message = $"Đã gỡ cư dân {residentAccount.UserName} khỏi căn hộ {apartment?.ApartmentCode}.";
-
+        response.Message = "Gỡ cư dân thành công.";
         return response;
     }
-	public async Task<string> ToggleResidentStatus(int residentId)
+    public async Task<string> ToggleResidentStatus(int residentId)
 	{
 		var account = await GetResidentById(residentId);
 		if (account == null || account.IsDeleted == true)
