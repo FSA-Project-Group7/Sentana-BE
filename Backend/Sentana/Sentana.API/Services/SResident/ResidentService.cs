@@ -123,7 +123,7 @@ public class ResidentService : IResidentService
     public async Task<IEnumerable<ResidentResponseDto>> GetAllResidents()
     {
         return await _context.Accounts
-            .Where(a => a.RoleId == 2 || a.IsDeleted == false)
+            .Where(a => a.RoleId == 2 && a.IsDeleted == false)
             .Select(a => new ResidentResponseDto
             {
                 AccountId = a.AccountId,
