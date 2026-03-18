@@ -95,20 +95,22 @@ namespace Sentana.API.Controllers
             if (roomId <= 0)
                 return BadRequest(new { message = "Mã phòng không hợp lệ." });
 
+            var accountIdClaim = User.FindFirst("AccountId");
+            int accountId = int.Parse(accountIdClaim!.Value);
+
+            var isOwner = await _serviceService.IsResidentRoomAsync(accountId, roomId);
+
+            if (!isOwner && User.IsInRole("Resident"))
+                return Forbid();
+
             var apartmentExists = await _serviceService.ApartmentExistsAsync(roomId);
 
             if (!apartmentExists)
                 return NotFound(new { message = "Không tìm thấy căn hộ." });
 
-            try
-            {
-                var services = await _serviceService.GetRoomServiceListAsync(roomId);
-                return Ok(services);
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
+            var services = await _serviceService.GetRoomServiceListAsync(roomId);
+
+            return Ok(services);
         }
         [HttpPost("room")]
         public async Task<IActionResult> AssignServiceToRoom(AssignRoomServiceRequestDto request)

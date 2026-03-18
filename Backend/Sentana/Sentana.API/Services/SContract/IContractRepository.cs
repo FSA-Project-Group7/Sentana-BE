@@ -21,6 +21,7 @@ namespace Sentana.API.Repositories
         Task<Contract?> GetContractDetailAsync(int contractId);
 
         Task<List<Contract>> GetContractListAsync();
+        Task<Contract?> GetContractByAccountIdAsync(int accountId);
 
         Task SaveAsync();
     }
