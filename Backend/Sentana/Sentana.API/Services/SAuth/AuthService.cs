@@ -85,36 +85,50 @@ namespace Sentana.API.Services.SBuilding
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
 
-        //get user profile
-        public async Task<UserProfileResponseDto?> GetUserProfileAsync(int accountId)
-        {
-            var user = await _context.Accounts
-                .Include(a => a.Role)
-                .Include(a => a.Info)
-                .FirstOrDefaultAsync(a => a.AccountId == accountId && a.Status == GeneralStatus.Active);
+		//get user profile
+		public async Task<UserProfileResponseDto?> GetUserProfileAsync(int accountId)
+		{
+			
+			var user = await _context.Accounts
+				.Include(a => a.Role)
+				.Include(a => a.Info)
+				.FirstOrDefaultAsync(a => a.AccountId == accountId && a.Status == GeneralStatus.Active);
 
-            if (user == null)
-            {
-                return null;
-            }
+			if (user == null)
+			{
+				return null;
+			}
 
-            // gán dữ liệu sang cho UserProfileResponseDto
-            return new UserProfileResponseDto
-            {
-                AccountId = user.AccountId,
-                UserName = user.UserName,
-                Email = user.Email,
-                Role = user.Role?.RoleName ?? "Resident",
-                FullName = user.Info?.FullName,
-                PhoneNumber = user.Info?.PhoneNumber,
-                BirthDay = user.Info?.BirthDay,
-                Address = user.Info?.Address,
-                CmndCccd = user.Info?.CmndCccd
-            };
-        }
+			
+			var activeContract = await _context.Contracts
+				.Include(c => c.Apartment)          
+					.ThenInclude(a => a.Building)   
+				.FirstOrDefaultAsync(c => c.AccountId == accountId && c.Status == GeneralStatus.Active);
 
-        //update profile
-        public async Task<(bool IsSuccess, string Message)> UpdateUserProfileAsync(int accountId, UpdateProfileRequestDto request)
+			
+			return new UserProfileResponseDto
+			{
+				AccountId = user.AccountId,
+				UserName = user.UserName,
+				Email = user.Email,
+				Role = user.Role?.RoleName ?? "Resident",
+				FullName = user.Info?.FullName,
+				PhoneNumber = user.Info?.PhoneNumber,
+				BirthDay = user.Info?.BirthDay,
+				Address = user.Info?.Address,
+				CmndCccd = user.Info?.CmndCccd,
+
+				
+				ApartmentCode = activeContract?.Apartment?.ApartmentCode,
+				BuildingName = activeContract?.Apartment?.Building?.BuildingName ?? "Tòa nhà SENTANA",
+				ContractStart = activeContract?.StartDay, 
+				ContractEnd = activeContract?.EndDay,     
+				Status = activeContract != null ? "Đang cư trú" : "Chưa có hợp đồng"
+			};
+		}
+
+		//update profile
+		public async Task<(bool IsSuccess, string Message)> UpdateUserProfileAsync(int accountId, UpdateProfileRequestDto request)
         {
             if (await _context.Accounts.AnyAsync(a => a.Email == request.Email && a.AccountId != accountId))
             {
