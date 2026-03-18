@@ -1,3 +1,4 @@
+using OfficeOpenXml;
 using DotNetEnv;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -122,6 +123,8 @@ namespace Sentana.API
             });
 
             var app = builder.Build();
+
+            ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
 
             if (app.Environment.IsDevelopment())
             {
