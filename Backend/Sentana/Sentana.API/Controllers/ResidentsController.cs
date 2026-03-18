@@ -173,9 +173,7 @@ namespace Sentana.API.Controllers
                 return Unauthorized(ApiResponse<object>.Fail(401, "Không thể xác định danh tính Manager. Vui lòng đăng nhập lại."));
             }
 
-            var dto = await _residentService.RemoveResidentFromRoomAsync(
-                new AssignResidentRequestDto { AccountId = request.AccountId, ApartmentId = request.ApartmentId, RelationshipId = request.RelationshipId },
-                managerId);
+            var dto = await _residentService.RemoveResidentFromRoomAsync(request, managerId);
 
             if (!dto.IsSuccess)
                 return BadRequest(ApiResponse<RemoveResidentResponseDto>.Fail(400, dto.Message));
