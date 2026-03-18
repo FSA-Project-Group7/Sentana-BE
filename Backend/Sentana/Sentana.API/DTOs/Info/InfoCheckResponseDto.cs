@@ -11,6 +11,6 @@ namespace Sentana.API.DTOs.Info
         public string? City { get; set; }
         public string? Address { get; set; }
         public Gender? Sex { get; set; }
-        public DateTime? birthday { get; set; }
+        public DateTime? Birthday { get; set; }
     }
 }

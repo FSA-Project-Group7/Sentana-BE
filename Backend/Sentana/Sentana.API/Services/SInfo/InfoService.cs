@@ -26,7 +26,7 @@ namespace Sentana.API.Services.SInfo
                 City = info.City,
                 Address = info.Address,
                 Sex = info.Sex,
-                birthday = info.BirthDay
+                Birthday = info.BirthDay
             };
         }
     }
