@@ -14,8 +14,9 @@ namespace Sentana.API.Repositories
 
         public async Task<List<Service>> GetRoomServicesAsync(int apartmentId)
         {
-            return await _context.RoomServices
-                .Where(r => r.ApartmentId == apartmentId)
+            return await _context.ApartmentServices
+                .Where(r => r.ApartmentId == apartmentId && r.IsDeleted == false)
+                .Include(r => r.Service)
                 .Select(r => r.Service!)
                 .ToListAsync();
         }

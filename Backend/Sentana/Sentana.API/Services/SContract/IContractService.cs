@@ -16,8 +16,6 @@ namespace Sentana.API.Services
         Task<ApiResponse<object>> GetContractDetailAsync(int contractId);
 
         Task<ApiResponse<object>> GetContractListAsync();
-
-        // FIX BUG34
         Task<ApiResponse<object>> GetMyContractAsync(int accountId);
     }
 }
