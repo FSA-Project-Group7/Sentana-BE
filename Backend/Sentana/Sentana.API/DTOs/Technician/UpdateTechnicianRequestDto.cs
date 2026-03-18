@@ -17,6 +17,12 @@ namespace Sentana.API.DTOs.Technician
         [RegularExpression(ValidationHelper.PhoneRegex, ErrorMessage = "Số điện thoại không hợp lệ. Phải là định dạng VN 10 số")] 
         public string? PhoneNumber { get; set; }
 
+        [EnumDataType(typeof(Gender), ErrorMessage = "Giới tính không hợp lệ (0: Nam, 1: Nữ, 2: Khác).")]
+        public Gender? Sex { get; set; }
+
+        [PastDate(ErrorMessage = "Ngày sinh phải là một ngày trong quá khứ.")]
+        public DateTime? BirthDay { get; set; }
+
         [Required(ErrorMessage = "CCCD không được để trống!")]
         [RegularExpression(ValidationHelper.CccdRegex, ErrorMessage = "CCCD bắt buộc phải có đúng 12 chữ số.")]
         public string IdentityCard { get; set; }

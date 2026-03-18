@@ -108,6 +108,8 @@ public class ResidentService : IResidentService
             {
                 FullName = request.FullName,
                 PhoneNumber = request.PhoneNumber,
+                BirthDay = request.BirthDay,
+                Sex = request.Sex,
                 CmndCccd = request.IdentityCard,
                 Country = request.Country,
                 City = request.City,
@@ -347,6 +349,8 @@ public class ResidentService : IResidentService
         {
             resident.Info.FullName = request.FullName;
             resident.Info.PhoneNumber = request.PhoneNumber;
+            resident.Info.BirthDay = request.BirthDay;
+            resident.Info.Sex = request.Sex;
             resident.Info.CmndCccd = request.IdentityCard;
             resident.Info.Country = request.Country;
             resident.Info.City = request.City;

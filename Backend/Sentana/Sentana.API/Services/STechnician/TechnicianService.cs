@@ -108,6 +108,8 @@ namespace Sentana.API.Services.STechnician
                 {
                     FullName = technicianRequest.FullName,
                     PhoneNumber = technicianRequest.PhoneNumber,
+                    BirthDay = technicianRequest.BirthDay,
+                    Sex = technicianRequest.Sex,
                     CmndCccd = technicianRequest.IdentityCard,
                     Country = technicianRequest.Country,
                     City = technicianRequest.City,
@@ -162,6 +164,8 @@ namespace Sentana.API.Services.STechnician
             {
                 technician.Info.FullName = technicianRequest.FullName;
                 technician.Info.PhoneNumber = technicianRequest.PhoneNumber;
+                technician.Info.BirthDay = technicianRequest.BirthDay;
+                technician.Info.Sex = technicianRequest.Sex;
                 technician.Info.CmndCccd = technicianRequest.IdentityCard;
                 technician.Info.Country = technicianRequest.Country;
                 technician.Info.City = technicianRequest.City;
