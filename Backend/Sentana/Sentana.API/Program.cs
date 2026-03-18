@@ -12,6 +12,7 @@ using Sentana.API.Services.SBuilding;
 using Sentana.API.Services.SEmail;
 using Sentana.API.Services.SInfo;
 using Sentana.API.Services.SInvoice;
+using Sentana.API.Services.SNotification;
 using Sentana.API.Services.SPayment;
 using Sentana.API.Services.SService;
 using Sentana.API.Services.SStorage;
@@ -84,6 +85,7 @@ namespace Sentana.API
 			});
             builder.Services.AddScoped<IInvoiceService, InvoiceService>();
             builder.Services.AddScoped<IUtilityService, UtilityService>();
+            builder.Services.AddScoped<INotificationService, NotificationService>();
 
             builder.Services.AddControllers();
             // build ram để lưu otp
