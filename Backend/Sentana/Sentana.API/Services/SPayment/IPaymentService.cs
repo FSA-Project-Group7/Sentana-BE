@@ -14,4 +14,5 @@ public interface IPaymentService
 
     Task<ApiResponse<object>> GetPaymentHistoryAsync(ClaimsPrincipal user, int? apartmentId = null, int? accountId = null);
 	Task<ApiResponse<object>> GetAllTransactionsAsync();
+    Task<ApiResponse<object>> UploadPaymentProofAutoAsync(UploadPaymentProofDto request);
 }

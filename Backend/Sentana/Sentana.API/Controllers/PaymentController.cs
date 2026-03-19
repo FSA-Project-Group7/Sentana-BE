@@ -12,7 +12,16 @@ namespace Sentana.API.Controllers
     {
         private readonly IPaymentService _paymentService = paymentService;
 
-        // Upload payment proof
+        // ✅ NEW: Upload proof KHÔNG cần invoiceId
+        [HttpPost("upload-proof")]
+        [Authorize(Roles = "Resident")]
+        public async Task<IActionResult> UploadPaymentProofAuto([FromForm] UploadPaymentProofDto request)
+        {
+            var result = await _paymentService.UploadPaymentProofAutoAsync(request);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        // 🔹 GIỮ NGUYÊN API CŨ (để team khác không bị ảnh hưởng)
         [HttpPost("{invoiceId}/upload-proof")]
         public async Task<IActionResult> UploadPaymentProof(int invoiceId, [FromForm] UploadPaymentProofDto request)
         {
@@ -29,7 +38,6 @@ namespace Sentana.API.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        // Lấy danh sách payment theo invoice
         [HttpGet("invoice/{invoiceId}")]
         public async Task<IActionResult> GetPaymentsByInvoice(int invoiceId)
         {
@@ -46,7 +54,6 @@ namespace Sentana.API.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        // Lấy chi tiết transaction
         [HttpGet("transaction/{transactionId}")]
         public async Task<IActionResult> GetPaymentDetail(int transactionId)
         {
@@ -63,7 +70,6 @@ namespace Sentana.API.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        // Lấy lịch sử payment của resident
         [HttpGet("history")]
         [Authorize(Roles = "Resident")]
         public async Task<IActionResult> GetPaymentHistory()
@@ -72,12 +78,12 @@ namespace Sentana.API.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-		[HttpGet("all")]
-		[Authorize(Roles = "Manager")]
-		public async Task<IActionResult> GetAllTransactions()
-		{
-			var result = await _paymentService.GetAllTransactionsAsync();
-			return StatusCode(result.StatusCode, result);
-		}
-	}
+        [HttpGet("all")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetAllTransactions()
+        {
+            var result = await _paymentService.GetAllTransactionsAsync();
+            return StatusCode(result.StatusCode, result);
+        }
+    }
 }
