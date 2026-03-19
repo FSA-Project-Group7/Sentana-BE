@@ -1,4 +1,5 @@
-﻿using Sentana.API.Helpers;
+﻿using Sentana.API.Enums;
+using Sentana.API.Helpers;
 using System.ComponentModel.DataAnnotations;
 
 namespace Sentana.API.DTOs.Resident
@@ -22,6 +23,12 @@ namespace Sentana.API.DTOs.Resident
 
         [RegularExpression(ValidationHelper.PhoneRegex, ErrorMessage = "Số điện thoại không hợp lệ. Phải là định dạng Việt Nam 10 số")]
         public string? PhoneNumber { get; set; }
+
+        [EnumDataType(typeof(Gender), ErrorMessage = "Giới tính không hợp lệ (0: Nam, 1: Nữ, 2: Khác).")]
+        public Gender? Sex { get; set; }
+
+        [PastDate(ErrorMessage = "Ngày sinh phải là một ngày trong quá khứ.")] 
+        public DateTime? BirthDay { get; set; }
 
         [Required(ErrorMessage = "CCCD không được để trống!")]
         [RegularExpression(ValidationHelper.CccdRegex, ErrorMessage = "CCCD bắt buộc phải có đúng 12 chữ số.")]
