@@ -1,4 +1,4 @@
-﻿using Sentana.API.DTOs.Contracts;
+using Sentana.API.DTOs.Contracts;
 using Sentana.API.Enums;
 using Sentana.API.Helpers;
 using Sentana.API.Models;
@@ -67,6 +67,7 @@ namespace Sentana.API.Services
             await _contractRepository.AddContractAsync(contract);
             await _contractRepository.SaveAsync();
 
+            // upload file
             var fileUrl = await _minioService.UploadContractAsync(request.File, contract.ContractId, 1);
 
             contract.File = fileUrl;
@@ -77,6 +78,7 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(contract, "Tạo thành công");
         }
 
+        // ================= TERMINATE =================
         public async Task<ApiResponse<object>> TerminateContractAsync(int contractId, TerminateContractDto request)
         {
             var contract = await _contractRepository.GetContractWithApartmentAsync(contractId);
@@ -88,6 +90,7 @@ namespace Sentana.API.Services
                 return ApiResponse<object>.Fail(400, "Contract không active");
 
             contract.Status = GeneralStatus.Inactive;
+            contract.UpdatedAt = DateTime.Now;
 
             if (contract.Apartment != null)
                 contract.Apartment.Status = ApartmentStatus.Vacant;
@@ -97,6 +100,7 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(null, "Terminate thành công");
         }
 
+        // ================= EXTEND =================
         public async Task<ApiResponse<object>> ExtendContractAsync(int contractId, ExtendContractDto request)
         {
             var contract = await _contractRepository.GetContractWithApartmentAsync(contractId);
