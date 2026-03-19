@@ -374,7 +374,6 @@ namespace Sentana.API.Services.SInvoice
         // gửi email nhắc nợ hóa đơn
         public async Task<(bool IsSuccess, string Message)> SendInvoiceNotificationAsync(int invoiceId)
         {
-            // Tóm Hóa đơn, nối sang bảng Contract để lấy Account (chứa Email)
             var invoice = await _context.Invoices
                 .Include(i => i.Contract)
                     .ThenInclude(c => c.Account)
@@ -382,7 +381,14 @@ namespace Sentana.API.Services.SInvoice
                 .FirstOrDefaultAsync(i => i.InvoiceId == invoiceId && i.IsDeleted == false);
 
             if (invoice == null) return (false, "Không tìm thấy hóa đơn.");
-            if (invoice.Status == InvoiceStatus.Paid) return (false, "Hóa đơn này đã được thanh toán, không cần nhắc nợ.");
+
+            if ((int)invoice.Status == 0)
+                return (false, "Hóa đơn đang ở trạng thái Nháp, chưa được ban hành. Không thể gửi thông báo.");
+
+            if (invoice.Status == InvoiceStatus.Paid || invoice.Pay >= invoice.TotalMoney || invoice.Debt <= 0)
+            {
+                return (false, "Hóa đơn đã được thanh toán. Không thể gửi thông báo.");
+            }
 
             var account = invoice.Contract?.Account;
             if (account == null || string.IsNullOrEmpty(account.Email))
@@ -393,18 +399,18 @@ namespace Sentana.API.Services.SInvoice
             // template mail 
             string subject = $"[SENTANA] Thông báo cước phí tháng {invoice.BillingMonth}/{invoice.BillingYear}";
             string body = $@"
-        <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 8px; max-width: 600px;'>
-            <h2 style='color: #122240; border-bottom: 2px solid #00c292; padding-bottom: 10px;'>THÔNG BÁO HÓA ĐƠN ĐỊNH KỲ</h2>
-            <p>Kính gửi <strong>{residentName}</strong>,</p>
-            <p>Ban quản lý Sentana xin gửi thông báo cước phí dịch vụ tháng <strong>{invoice.BillingMonth}/{invoice.BillingYear}</strong> của quý khách.</p>
-            <div style='background-color: #f8f9fa; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0;'>
-                <h3 style='color: #dc3545; margin: 0;'>Tổng số tiền: {invoice.TotalMoney:N0} VNĐ</h3>
-                <p style='margin: 5px 0 0 0;'>Trạng thái: <strong>Chưa thanh toán</strong></p>
-            </div>
-            <p>Quý khách vui lòng đăng nhập vào <b>Cổng thông tin Cư dân Sentana</b> để xem chi tiết hóa đơn (Điện, Nước, Phí dịch vụ) và tải lên biên lai chuyển khoản.</p>
-            <br/>
-            <p>Trân trọng,<br/><strong>Ban Quản Lý Tòa Nhà Sentana</strong></p>
-        </div>";
+            <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 8px; max-width: 600px;'>
+                <h2 style='color: #122240; border-bottom: 2px solid #00c292; padding-bottom: 10px;'>THÔNG BÁO HÓA ĐƠN ĐỊNH KỲ</h2>
+                <p>Kính gửi <strong>{residentName}</strong>,</p>
+                <p>Ban quản lý Sentana xin gửi thông báo cước phí dịch vụ tháng <strong>{invoice.BillingMonth}/{invoice.BillingYear}</strong> của quý khách.</p>
+                <div style='background-color: #f8f9fa; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0;'>
+                    <h3 style='color: #dc3545; margin: 0;'>Tổng số tiền: {invoice.TotalMoney:N0} VNĐ</h3>
+                    <p style='margin: 5px 0 0 0;'>Trạng thái: <strong>Chưa thanh toán</strong></p>
+                </div>
+                <p>Quý khách vui lòng đăng nhập vào <b>Cổng thông tin Cư dân Sentana</b> để xem chi tiết hóa đơn (Điện, Nước, Phí dịch vụ) và tải lên biên lai chuyển khoản.</p>
+                <br/>
+                <p>Trân trọng,<br/><strong>Ban Quản Lý Tòa Nhà Sentana</strong></p>
+            </div>";
 
             await _emailService.SendEmailAsync(account.Email, subject, body);
 
