@@ -113,6 +113,17 @@ namespace Sentana.API.Repositories
                 .OrderByDescending(c => c.CreatedAt)
                 .ToListAsync();
         }
+        public async Task<Contract?> GetContractByAccountIdAsync(int accountId)
+        {
+            return await _context.Contracts
+                .Include(c => c.Apartment)
+                .Include(c => c.Account)
+                .Include(c => c.CurrentVersion)
+                .FirstOrDefaultAsync(c =>
+                    c.AccountId == accountId &&
+                    c.Status == GeneralStatus.Active &&
+                    c.IsDeleted == false);
+        }
 
         public async Task SaveAsync()
         {
