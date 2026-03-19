@@ -124,31 +124,41 @@ public class ResidentService : IResidentService
         return MapToResponse(newAccount, existingInfo);
     }
 
-    public async Task<IEnumerable<ResidentResponseDto>> GetAllResidents()
-    {
-        return await _context.Accounts
-            .Where(a => a.RoleId == 2 && a.IsDeleted == false)
-            .Select(a => new ResidentResponseDto
-            {
-                AccountId = a.AccountId,
-                Code = a.Code,
-                UserName = a.UserName,
-                FullName = a.Info != null ? a.Info.FullName : null,
-                Email = a.Email,
-                PhoneNumber = a.Info != null ? a.Info.PhoneNumber : null,
-                IdentityCard = a.Info != null ? a.Info.CmndCccd : null,
-                Status = a.Status,
-                Country = a.Info != null ? a.Info.Country : null,
-                City = a.Info != null ? a.Info.City : null,
-                Address = a.Info != null ? a.Info.Address : null,
-                IsDeleted = a.IsDeleted,
-                Sex = a.Info != null ? a.Info.Sex : null,
-                BirthDay = a.Info != null ? a.Info.BirthDay : null
-            })
-            .ToListAsync();
-    }
+	public async Task<IEnumerable<ResidentResponseDto>> GetAllResidents()
+	{
+		return await _context.Accounts
+			.Where(a => a.RoleId == 2 && a.IsDeleted == false)
+			.Select(a => new ResidentResponseDto
+			{
+				AccountId = a.AccountId,
+				Code = a.Code,
+				UserName = a.UserName,
+				FullName = a.Info != null ? a.Info.FullName : null,
+				Email = a.Email,
+				PhoneNumber = a.Info != null ? a.Info.PhoneNumber : null,
+				IdentityCard = a.Info != null ? a.Info.CmndCccd : null,
+				Status = a.Status,
+				Country = a.Info != null ? a.Info.Country : null,
+				City = a.Info != null ? a.Info.City : null,
+				Address = a.Info != null ? a.Info.Address : null,
+				IsDeleted = a.IsDeleted,
+				Sex = a.Info != null ? a.Info.Sex : null,
+				BirthDay = a.Info != null ? a.Info.BirthDay : null,
 
-    public async Task<ImportResidentsResultDto> ImportResidentsFromExcelAsync(Stream fileStream, int managerId)
+				ApartmentId = a.ApartmentResidents
+					.Where(ar => ar.Status == GeneralStatus.Active && ar.IsDeleted == false)
+					.Select(ar => ar.ApartmentId)
+					.FirstOrDefault(),
+
+				ApartmentCode = a.ApartmentResidents
+					.Where(ar => ar.Status == GeneralStatus.Active && ar.IsDeleted == false)
+					.Select(ar => ar.Apartment.ApartmentCode)
+					.FirstOrDefault()
+			})
+			.ToListAsync();
+	}
+
+	public async Task<ImportResidentsResultDto> ImportResidentsFromExcelAsync(Stream fileStream, int managerId)
     {
         ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
 

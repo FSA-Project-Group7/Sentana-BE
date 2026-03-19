@@ -128,7 +128,7 @@ namespace Sentana.API
 
             //ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
 
-            if (app.Environment.IsDevelopment())
+			if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
