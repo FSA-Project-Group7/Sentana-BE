@@ -425,17 +425,22 @@ namespace Sentana.API.Services.SInvoice
             if (transaction.Status != PaymentTransactionStatus.Pending)
                 return (false, "Giao dịch này đã được xử lý trước đó.");
 
+            // Cập nhật bảng PaymentTransaction
             transaction.Status = PaymentTransactionStatus.Approved;
             transaction.UpdatedBy = currentUserId;
             transaction.UpdatedAt = DateTime.Now;
 
             if (transaction.Invoice != null)
             {
+                // Cập nhật bảng Invoice
                 transaction.Invoice.Status = InvoiceStatus.Paid;
                 transaction.Invoice.DayPay = DateOnly.FromDateTime(DateTime.Now);
+                transaction.Invoice.Pay = transaction.AmountPaid;
                 transaction.Invoice.Debt = 0;
 
-                // Tạo notification
+                _context.Invoices.Update(transaction.Invoice);
+
+                // Tạo thông báo
                 if (transaction.Invoice.Contract?.AccountId != null)
                 {
                     var notification = new Notification
