@@ -69,6 +69,7 @@ namespace Sentana.API
             builder.Services.AddScoped<IContractRepository, ContractRepository>();
             builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
             builder.Services.AddScoped<IPaymentService, PaymentService>();
+            builder.Services.AddHttpContextAccessor();
             builder.Services.AddScoped<ResidentService>();
             builder.Services.AddScoped<IBuildingService, BuildingService>();
             builder.Services.AddScoped<ITechnicianService, TechnicianService>();

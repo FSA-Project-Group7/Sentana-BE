@@ -42,6 +42,7 @@ namespace Sentana.API.Repositories
                 return null;
 
             return await _context.Accounts
+                .Include(a => a.Role) // 🔥 FIX QUAN TRỌNG
                 .FirstOrDefaultAsync(a =>
                     a.AccountId == accountId &&
                     a.IsDeleted == false);
