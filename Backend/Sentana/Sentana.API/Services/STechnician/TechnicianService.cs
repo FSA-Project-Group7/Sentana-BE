@@ -277,6 +277,14 @@ namespace Sentana.API.Services.STechnician
             var emailExist = await _context.Accounts.AnyAsync(a =>
             a.Email.ToLower() == technician.Email.ToLower() && a.AccountId != technicianId && a.IsDeleted == false);
             if (emailExist) throw new Exception("Email của tài khoản này đã được sử dụng bởi một tài khoản đang hoạt động khác.");
+            var userNameExist = await _context.Accounts.AnyAsync(a =>
+            a.UserName.ToLower() == technician.UserName.ToLower()
+            && a.AccountId != technicianId
+            && a.IsDeleted == false);
+            if (userNameExist)
+            {
+                throw new Exception("Tên đăng nhập này đã được sử dụng cho một tài khoản khác đang hoạt động.");
+            }
             technician.IsDeleted = false;
             technician.Status = GeneralStatus.Active;
             technician.UpdatedAt = DateTime.Now;

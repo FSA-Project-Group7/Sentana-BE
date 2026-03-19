@@ -509,7 +509,17 @@ public class ResidentService : IResidentService
         {
             throw new Exception("Không thể xóa vì cư dân đang ở trong phòng còn hạn thuê.");
         }
+        var isAssignedToRoom = await _context.ApartmentResidents
+        .AnyAsync(ar => ar.AccountId == residentId
+                     && ar.Status == GeneralStatus.Active
+                     && ar.IsDeleted == false);
+
+        if (isAssignedToRoom)
+        {
+            throw new Exception("Không thể xóa tài khoản vì cư dân vẫn đang ở trong một căn hộ. Vui lòng gỡ cư dân khỏi phòng trước.");
+        }
         account.IsDeleted = true;
+        account.Status = GeneralStatus.Inactive;
         account.UpdatedAt = DateTime.Now;
         account.UpdatedBy = managerId;
         _context.Accounts.Update(account);
@@ -558,7 +568,17 @@ public class ResidentService : IResidentService
         {
             throw new Exception("Email này đã được sử dụng cho một tài khoản khác.");
         }
+        var userNameExist = await _context.Accounts.AnyAsync(a =>
+        a.UserName.ToLower() == resident.UserName.ToLower()
+        && a.AccountId != residentId
+        && a.IsDeleted == false);
+
+        if (userNameExist)
+        {
+            throw new Exception("Tên đăng nhập này đã được sử dụng cho một tài khoản khác đang hoạt động.");
+        }
         resident.IsDeleted = false;
+        resident.Status = GeneralStatus.Active;
         resident.UpdatedAt = DateTime.Now;
         resident.UpdatedBy = managerId;
         _context.Accounts.Update(resident);
@@ -574,7 +594,7 @@ public class ResidentService : IResidentService
             throw new Exception("Không tìm thấy cư dân này trong danh sách đã xóa.");
         }
         var hasApartmentHistory = await _context.ApartmentResidents
-            .AnyAsync(ar => ar.ResidentId == residentId);
+            .AnyAsync(ar => ar.AccountId == residentId);
         var hasContractHistory = await _context.Contracts
             .AnyAsync(c => c.AccountId == residentId);
         if (hasApartmentHistory || hasContractHistory)
