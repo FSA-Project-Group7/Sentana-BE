@@ -161,16 +161,16 @@ namespace Sentana.API.Services.SInvoice
 
             return result;
         }
-
         // generate monthly invoices 
         public async Task<(bool IsSuccess, string Message, int GeneratedCount)> GenerateMonthlyInvoicesAsync(GenerateInvoiceRequestDto request, int currentUserId)
         {
-            //validate time 
+            // validate time 
             var validation = ValidationHelper.ValidateMonthYear(request.Month, request.Year);
             if (!validation.IsValid)
             {
                 return (false, validation.ErrorMessage, 0);
             }
+
             var query = _context.Apartments.Where(a => a.Status == ApartmentStatus.Occupied && a.IsDeleted == false);
 
             if (request.ApartmentId.HasValue)
@@ -184,6 +184,9 @@ namespace Sentana.API.Services.SInvoice
             int generatedCount = 0;
             int skippedCount = 0;
 
+            // BỔ SUNG: Khởi tạo danh sách chờ để gửi Email đồng thời (Parallel Execution)
+            var emailTasks = new List<Task>();
+
             foreach (var apt in activeApartments)
             {
                 var existingInvoice = await _context.Invoices
@@ -195,8 +198,8 @@ namespace Sentana.API.Services.SInvoice
                     continue;
                 }
 
-                // Lấy Hợp đồng bằng GeneralStatus.Active
                 var contract = await _context.Contracts
+                    .Include(c => c.Account)
                     .Where(c => c.ApartmentId == apt.ApartmentId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
                     .OrderByDescending(c => c.CreatedAt)
                     .FirstOrDefaultAsync();
@@ -244,11 +247,53 @@ namespace Sentana.API.Services.SInvoice
 
                 _context.Invoices.Add(invoice);
                 generatedCount++;
+
+                // lưu thông báo và gửi mail
+                if (contract != null && contract.AccountId.HasValue)
+                {
+                    // Tạo bản ghi Thông báo (Notification Record) lưu xuống Database
+                    var notification = new Notification
+                    {
+                        AccountId = contract.AccountId.Value,
+                        Title = "Hóa đơn dịch vụ mới",
+                        Message = $"Ban quản lý đã xuất hóa đơn tháng {request.Month}/{request.Year} cho căn hộ {apt.ApartmentCode}. Vui lòng kiểm tra và thanh toán.",
+                        IsRead = false,
+                        CreatedAt = DateTime.Now
+                    };
+                    _context.Notifications.Add(notification);
+
+                    // Chuẩn bị tác vụ gửi Email (Email Task) nạp vào hàng chờ
+                    if (contract.Account != null && !string.IsNullOrEmpty(contract.Account.Email))
+                    {
+                        string residentName = contract.Account.UserName ?? "Quý khách";
+                        string emailSubject = $"[SENTANA] Thông báo cước phí tháng {request.Month}/{request.Year}";
+                        string emailBody = $@"
+                            <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 8px;'>
+                                <h2 style='color: #00c292;'>THÔNG BÁO CƯỚC PHÍ DỊCH VỤ</h2>
+                                <p>Kính gửi {residentName} (Căn hộ {apt.ApartmentCode}),</p>
+                                <p>Hóa đơn dịch vụ tháng <strong>{request.Month}/{request.Year}</strong> của bạn đã được khởi tạo.</p>
+                                <p>Tổng số tiền cần thanh toán: <strong style='color:#dc3545; font-size: 1.2em;'>{totalAmount:N0} VNĐ</strong>.</p>
+                                <p>Vui lòng đăng nhập vào ứng dụng Sentana để xem chi tiết.</p>
+                                <br/>
+                                <p>Trân trọng,<br/>Ban Quản Lý Tòa Nhà Sentana.</p>
+                            </div>";
+
+                        emailTasks.Add(_emailService.SendEmailAsync(contract.Account.Email, emailSubject, emailBody));
+                    }
+                }
             }
 
             if (generatedCount > 0)
             {
+                // Lưu giao dịch cơ sở dữ liệu (Database Transaction) - Cả Hóa đơn và Thông báo sẽ được lưu cùng lúc
                 await _context.SaveChangesAsync();
+
+                // Kích hoạt gửi Email hàng loạt chạy ngầm (Fire-and-forget Parallel Execution)
+                if (emailTasks.Any())
+                {
+                    _ = Task.WhenAll(emailTasks);
+                }
+
                 return (true, $"Tạo thành công {generatedCount} hóa đơn. Bỏ qua {skippedCount} phòng do đã có hóa đơn.", generatedCount);
             }
 
@@ -366,7 +411,7 @@ namespace Sentana.API.Services.SInvoice
             return (true, "Đã gửi email thông báo nhắc nợ thành công.");
         }
 
-        // accpect thanh toán
+        // accept thanh toán
         public async Task<(bool IsSuccess, string Message)> ApprovePaymentAsync(int transactionId, int currentUserId)
         {
             var transaction = await _context.PaymentTransactions
@@ -389,6 +434,20 @@ namespace Sentana.API.Services.SInvoice
                 transaction.Invoice.Status = InvoiceStatus.Paid;
                 transaction.Invoice.DayPay = DateOnly.FromDateTime(DateTime.Now);
                 transaction.Invoice.Debt = 0;
+
+                // Tạo notification
+                if (transaction.Invoice.Contract?.AccountId != null)
+                {
+                    var notification = new Notification
+                    {
+                        AccountId = transaction.Invoice.Contract.AccountId.Value,
+                        Title = "Thanh toán thành công",
+                        Message = $"Giao dịch thanh toán {transaction.AmountPaid:N0} VNĐ cho hóa đơn tháng {transaction.Invoice.BillingMonth}/{transaction.Invoice.BillingYear} đã được xác nhận.",
+                        IsRead = false,
+                        CreatedAt = DateTime.Now
+                    };
+                    _context.Notifications.Add(notification);
+                }
             }
 
             bool isSaved = await _context.SaveChangesAsync() > 0;
@@ -399,11 +458,16 @@ namespace Sentana.API.Services.SInvoice
                 string residentName = account.Info?.FullName ?? account.UserName ?? "Quý khách";
                 string subject = "[SENTANA] Xác nhận thanh toán thành công";
                 string body = $@"
-                <h3>Kính gửi {residentName},</h3>
-                <p>Giao dịch thanh toán <strong>{transaction.AmountPaid:N0} VNĐ</strong> cho hóa đơn tháng {transaction.Invoice.BillingMonth}/{transaction.Invoice.BillingYear} của quý khách đã được Ban quản lý xác nhận thành công.</p>
-                <p>Trân trọng cảm ơn!</p>";
+                <div style='font-family: Arial, sans-serif; padding: 15px; border: 1px solid #28a745; border-radius: 8px;'>
+                    <h3 style='color: #28a745; margin-top: 0;'>XÁC NHẬN THANH TOÁN</h3>
+                    <p>Kính gửi <strong>{residentName}</strong>,</p>
+                    <p>Ban quản lý đã xác nhận khoản thanh toán <strong style='color:#28a745;'>{transaction.AmountPaid:N0} VNĐ</strong> cho hóa đơn tháng {transaction.Invoice.BillingMonth}/{transaction.Invoice.BillingYear}.</p>
+                    <p>Cảm ơn quý khách đã thanh toán đúng hạn!</p>
+                    <p style='font-size: 0.9em; color: #555;'>Trân trọng,<br/>Ban Quản Lý Tòa Nhà Sentana.</p>
+                </div>";
 
-                await _emailService.SendEmailAsync(account.Email, subject, body);
+                // Chạy ngầm (Fire-and-forget)
+                _ = _emailService.SendEmailAsync(account.Email, subject, body);
             }
 
             return isSaved ? (true, "Đã duyệt thanh toán thành công. Hóa đơn chuyển sang Đã thanh toán.")
@@ -429,29 +493,49 @@ namespace Sentana.API.Services.SInvoice
             transaction.UpdatedBy = currentUserId;
             transaction.UpdatedAt = DateTime.Now;
 
-            // Cập nhật Invoice trả về trạng thái Unpaid
             if (transaction.Invoice != null)
             {
+                // Cập nhật Invoice trả về trạng thái Unpaid
                 transaction.Invoice.Status = InvoiceStatus.Unpaid;
+
+                // tạo notification
+                if (transaction.Invoice.Contract?.AccountId != null)
+                {
+                    var notification = new Notification
+                    {
+                        AccountId = transaction.Invoice.Contract.AccountId.Value,
+                        Title = "Giao dịch bị từ chối",
+                        Message = $"Giao dịch thanh toán hóa đơn tháng {transaction.Invoice.BillingMonth}/{transaction.Invoice.BillingYear} bị từ chối. Lý do: {request.Reason}.",
+                        IsRead = false,
+                        CreatedAt = DateTime.Now
+                    };
+                    _context.Notifications.Add(notification);
+                }
             }
 
             bool isSaved = await _context.SaveChangesAsync() > 0;
+
             if (isSaved && transaction.Invoice?.Contract?.Account?.Email != null)
             {
                 var account = transaction.Invoice.Contract.Account;
                 string residentName = account.Info?.FullName ?? account.UserName ?? "Quý khách";
                 string subject = "[SENTANA] Lỗi giao dịch thanh toán hóa đơn";
                 string body = $@"
-                <h3>Kính gửi {residentName},</h3>
-                <p>Biên lai thanh toán cho hóa đơn tháng {transaction.Invoice.BillingMonth}/{transaction.Invoice.BillingYear} của quý khách hiện <strong>chưa được chấp nhận</strong>.</p>
-                <p>Lý do từ chối: <strong style='color:red;'>{request.Reason}</strong></p>
-                <p>Quý khách vui lòng đăng nhập vào ứng dụng Cổng cư dân để tải lại biên lai hợp lệ.</p>";
+                <div style='font-family: Arial, sans-serif; padding: 15px; border: 1px solid #dc3545; border-radius: 8px;'>
+                    <h3 style='color: #dc3545; margin-top: 0;'>GIAO DỊCH BỊ TỪ CHỐI</h3>
+                    <p>Kính gửi <strong>{residentName}</strong>,</p>
+                    <p>Biên lai thanh toán cho hóa đơn tháng {transaction.Invoice.BillingMonth}/{transaction.Invoice.BillingYear} hiện <strong>chưa được chấp nhận</strong>.</p>
+                    <p>Lý do từ chối: <strong style='color:red;'>{request.Reason}</strong></p>
+                    <p>Quý khách vui lòng đăng nhập vào ứng dụng Cổng cư dân để tải lại biên lai hợp lệ.</p>
+                    <p style='font-size: 0.9em; color: #555;'>Trân trọng,<br/>Ban Quản Lý Tòa Nhà Sentana.</p>
+                </div>";
 
-                await _emailService.SendEmailAsync(account.Email, subject, body);
+                // Chạy ngầm (Fire-and-forget) 
+                _ = _emailService.SendEmailAsync(account.Email, subject, body);
             }
 
             return isSaved ? (true, "Đã từ chối thanh toán thành công.")
-:           (false, "Lỗi hệ thống khi lưu dữ liệu.");
+                           : (false, "Lỗi hệ thống khi lưu dữ liệu.");
         }
     }
 }
