@@ -184,7 +184,7 @@ namespace Sentana.API.Services.SInvoice
             int generatedCount = 0;
             int skippedCount = 0;
 
-            // BỔ SUNG: Khởi tạo danh sách chờ để gửi Email đồng thời (Parallel Execution)
+            // Khởi tạo danh sách chờ để gửi Email đồng thời (Parallel Execution)
             var emailTasks = new List<Task>();
 
             foreach (var apt in activeApartments)
@@ -285,16 +285,22 @@ namespace Sentana.API.Services.SInvoice
 
             if (generatedCount > 0)
             {
-                // Lưu giao dịch cơ sở dữ liệu (Database Transaction) - Cả Hóa đơn và Thông báo sẽ được lưu cùng lúc
-                await _context.SaveChangesAsync();
-
-                // Kích hoạt gửi Email hàng loạt chạy ngầm (Fire-and-forget Parallel Execution)
-                if (emailTasks.Any())
+                try
                 {
-                    _ = Task.WhenAll(emailTasks);
-                }
+                    await _context.SaveChangesAsync();
 
-                return (true, $"Tạo thành công {generatedCount} hóa đơn. Bỏ qua {skippedCount} phòng do đã có hóa đơn.", generatedCount);
+                    // Kích hoạt gửi Email hàng loạt chạy ngầm (Fire-and-forget Parallel Execution)
+                    if (emailTasks.Any())
+                    {
+                        _ = Task.WhenAll(emailTasks);
+                    }
+
+                    return (true, $"Tạo thành công {generatedCount} hóa đơn. Bỏ qua {skippedCount} phòng do đã có hóa đơn.", generatedCount);
+                }
+                catch (DbUpdateException)
+                {
+                    return (false, "Phát hiện thao tác tạo hóa đơn đồng thời. Hệ thống đã tự động chặn việc tạo trùng lặp để bảo vệ dữ liệu. Vui lòng tải lại trang.", 0);
+                }
             }
 
             return (false, $"Không tạo được hóa đơn nào. Có {skippedCount} phòng đã tồn tại hóa đơn.", 0);
