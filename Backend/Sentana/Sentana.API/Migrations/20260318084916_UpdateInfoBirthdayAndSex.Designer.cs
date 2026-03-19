@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sentana.API.Models;
 
@@ -11,9 +12,11 @@ using Sentana.API.Models;
 namespace Sentana.API.Migrations
 {
     [DbContext(typeof(SentanaContext))]
-    partial class SentanaContextModelSnapshot : ModelSnapshot
+    [Migration("20260318084916_UpdateInfoBirthdayAndSex")]
+    partial class UpdateInfoBirthdayAndSex
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -835,39 +838,6 @@ namespace Sentana.API.Migrations
                     b.ToTable("News");
                 });
 
-            modelBuilder.Entity("Sentana.API.Models.Notification", b =>
-                {
-                    b.Property<int>("NotificationId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("NotificationId"));
-
-                    b.Property<int>("AccountId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsRead")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
-                    b.HasKey("NotificationId");
-
-                    b.HasIndex("AccountId");
-
-                    b.ToTable("Notifications");
-                });
-
             modelBuilder.Entity("Sentana.API.Models.PaymentTransaction", b =>
                 {
                     b.Property<int>("TransactionId")
@@ -1239,17 +1209,6 @@ namespace Sentana.API.Migrations
                     b.Navigation("AssignedToNavigation");
 
                     b.Navigation("Category");
-                });
-
-            modelBuilder.Entity("Sentana.API.Models.Notification", b =>
-                {
-                    b.HasOne("Sentana.API.Models.Account", "Account")
-                        .WithMany()
-                        .HasForeignKey("AccountId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Account");
                 });
 
             modelBuilder.Entity("Sentana.API.Models.PaymentTransaction", b =>

@@ -16,6 +16,9 @@ namespace Sentana.API.DTOs.Resident
         public string? Address { get; set; }
         public GeneralStatus? Status { get; set; }
         public bool? IsDeleted { get; set; }
+        public DateTime? BirthDay { get; set; }
+        public Gender? Sex { get; set; }
+    }
 		public int? ApartmentId { get; set; }
 		public string? ApartmentCode { get; set; }
 	}

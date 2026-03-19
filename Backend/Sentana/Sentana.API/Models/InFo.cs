@@ -1,5 +1,7 @@
-﻿using System;
+﻿using Sentana.API.Enums;
+using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Sentana.API.Models;
 
@@ -9,9 +11,10 @@ public partial class InFo
 
     public string? FullName { get; set; }
 
+    [Column(TypeName = "date")]
     public DateTime? BirthDay { get; set; }
 
-    public byte? Sex { get; set; }
+    public Gender? Sex { get; set; }
 
     public string? CmndCccd { get; set; }
 

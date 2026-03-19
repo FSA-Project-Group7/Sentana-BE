@@ -24,7 +24,9 @@ namespace Sentana.API.Services.SInfo
                 PhoneNumber = info.PhoneNumber,
                 Country = info.Country,
                 City = info.City,
-                Address = info.Address
+                Address = info.Address,
+                Sex = info.Sex,
+                Birthday = info.BirthDay
             };
         }
     }
