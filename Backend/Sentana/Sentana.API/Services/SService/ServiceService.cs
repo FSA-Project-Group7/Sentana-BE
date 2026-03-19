@@ -193,5 +193,19 @@ namespace Sentana.API.Services.SService
         {
             return Task.FromResult(user?.Identity?.IsAuthenticated ?? false);
         }
+
+        public async Task<bool> IsResidentRoomAsync(int accountId, int roomId)
+        {
+            var contract = await _context.Contracts
+                .FirstOrDefaultAsync(x =>
+                    x.AccountId == accountId &&
+                    x.Status == GeneralStatus.Active &&
+                    x.IsDeleted == false);
+
+            if (contract == null)
+                return false;
+
+            return contract.ApartmentId == roomId;
+        }
     }
 }

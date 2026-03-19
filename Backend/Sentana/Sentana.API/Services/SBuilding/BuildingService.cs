@@ -79,7 +79,7 @@ namespace Sentana.API.Services.SBuilding
 					{
 						BuildingId = newBuilding.BuildingId, 
 						ApartmentCode = $"{newBuilding.BuildingCode}-{roomNumber}", 
-						ApartmentName = $"Phòng {roomNumber} Tòa {nextChar}",       
+						ApartmentName = $"Phòng {roomNumber} Chung cư SENTANA Tòa {nextChar}",       
 						ApartmentNumber = roomNumber,
 						FloorNumber = floor,
 						Area = 0,
@@ -170,26 +170,44 @@ namespace Sentana.API.Services.SBuilding
 			return MapToResponseDto(existingBuilding);
 		}
 
-		public async Task<bool> DeleteBuildingAsync(int id, ClaimsPrincipal user) 
+		public async Task<bool> DeleteBuildingAsync(int id, ClaimsPrincipal user)
 		{
-			var existingBuilding = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == false);
+			var existingBuilding = await _context.Buildings
+				.Include(b => b.Apartments)
+					.ThenInclude(a => a.Contracts)
+				.Include(b => b.Apartments)
+					.ThenInclude(a => a.ApartmentResidents)
+				.FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == false);
+
 			if (existingBuilding == null) throw new InvalidOperationException("Không tìm thấy tòa nhà.");
 
-			//Kiểm tra xem tòa nhà còn căn hộ nào không
-			var hasActiveApartments = await _context.Apartments
-				.AnyAsync(a => a.BuildingId == id && a.IsDeleted == false);
+			var activeApartments = existingBuilding.Apartments.Where(a => a.IsDeleted == false).ToList();
 
-			if (hasActiveApartments)
-				throw new InvalidOperationException("Không thể đưa vào thùng rác! Tòa nhà này vẫn đang có căn hộ tồn tại bên trong.");
+			bool hasOccupiedOrContractedApartments = activeApartments.Any(a =>
+				a.Status != ApartmentStatus.Vacant ||
+				a.Contracts.Any(c => c.IsDeleted == false) ||
+				a.ApartmentResidents.Any(ar => ar.IsDeleted == false)
+			);
 
-			existingBuilding.IsDeleted = true;
-			existingBuilding.UpdatedAt = DateTime.UtcNow;
+			if (hasOccupiedOrContractedApartments)
+				throw new InvalidOperationException("Không thể đưa vào thùng rác! Tòa nhà này đang có căn hộ có người ở, có hợp đồng hoặc có dữ liệu cư dân.");
 
-			// Lấy ID của người Admin đang thao tác xóa để lưu vào DB
+			int? accountId = null;
 			var accountIdClaim = user?.FindFirst("AccountId");
 			if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
 			{
-				existingBuilding.UpdatedBy = parsedAccountId;
+				accountId = parsedAccountId;
+			}
+
+			existingBuilding.IsDeleted = true;
+			existingBuilding.UpdatedAt = DateTime.UtcNow;
+			existingBuilding.UpdatedBy = accountId;
+
+			foreach (var apt in activeApartments)
+			{
+				apt.IsDeleted = true;
+				apt.UpdatedAt = DateTime.UtcNow;
+				apt.UpdatedBy = accountId;
 			}
 
 			_context.Buildings.Update(existingBuilding);
@@ -219,11 +237,20 @@ namespace Sentana.API.Services.SBuilding
 		//Khôi phục tòa nhà đã xóa mềm
 		public async Task<bool> RestoreBuildingAsync(int id)
 		{
-			var building = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == true);
+			var building = await _context.Buildings
+				.Include(b => b.Apartments)
+				.FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == true);
+
 			if (building == null) throw new InvalidOperationException("Không tìm thấy tòa nhà trong thùng rác.");
 
-			building.IsDeleted = false; // Khôi phục lại
+			building.IsDeleted = false; 
 			building.UpdatedAt = DateTime.UtcNow;
+
+			foreach (var apt in building.Apartments.Where(a => a.IsDeleted == true))
+			{
+				apt.IsDeleted = false;
+				apt.UpdatedAt = DateTime.UtcNow;
+			}
 
 			_context.Buildings.Update(building);
 			await _context.SaveChangesAsync();
@@ -233,15 +260,16 @@ namespace Sentana.API.Services.SBuilding
 		//Xóa vĩnh viễn
 		public async Task<bool> HardDeleteBuildingAsync(int id)
 		{
-			var building = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == true);
+			var building = await _context.Buildings
+				.Include(b => b.Apartments)
+				.FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == true);
+
 			if (building == null) throw new InvalidOperationException("Không tìm thấy tòa nhà trong thùng rác.");
 
-			// Kiểm tra lại một lần nữa cho chắc chắn trước khi xóa bay màu
-			var hasActiveApartments = await _context.Apartments
-				.AnyAsync(a => a.BuildingId == id && a.IsDeleted == false);
-
-			if (hasActiveApartments)
-				throw new InvalidOperationException("Không thể xóa vĩnh viễn! Tòa nhà này vẫn đang chứa các căn hộ chưa bị xóa.");
+			if (building.Apartments.Any())
+			{
+				_context.Apartments.RemoveRange(building.Apartments);
+			}
 
 			_context.Buildings.Remove(building);
 			await _context.SaveChangesAsync();
