@@ -143,7 +143,7 @@ public class ResidentService : IResidentService
 				Address = a.Info != null ? a.Info.Address : null,
 				IsDeleted = a.IsDeleted,
 				Sex = a.Info != null ? a.Info.Sex : null,
-				BirthDay = a.Info != null ? a.Info.BirthDay : null
+				BirthDay = a.Info != null ? a.Info.BirthDay : null,
 
 				ApartmentId = a.ApartmentResidents
 					.Where(ar => ar.Status == GeneralStatus.Active && ar.IsDeleted == false)
