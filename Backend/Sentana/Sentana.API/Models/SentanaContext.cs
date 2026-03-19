@@ -434,6 +434,11 @@ public partial class SentanaContext : DbContext
             .HasForeignKey(c => c.CurrentVersionId)
             .OnDelete(DeleteBehavior.Restrict);
         OnModelCreatingPartial(modelBuilder);
+
+        modelBuilder.Entity<Invoice>()
+                .HasIndex(i => new { i.ApartmentId, i.BillingMonth, i.BillingYear })
+                .IsUnique() 
+                .HasFilter("[IsDeleted] = 0"); 
     }
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder);

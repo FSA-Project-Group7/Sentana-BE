@@ -27,40 +27,42 @@ namespace Sentana.API.Services.SBuilding
             _emailService = emailService;
         }
 
-        //login
+        // login
         public async Task<LoginResponseDto?> LoginAsync(LoginRequestDto request)
         {
-            // tìm user trong db
             var user = await _context.Accounts
                 .Include(a => a.Role)
-                .FirstOrDefaultAsync(a => a.UserName == request.UserName && a.Status == GeneralStatus.Active);
+                .FirstOrDefaultAsync(a =>
+                    (a.UserName == request.UserName || a.Email == request.UserName)
+                    && a.Status == GeneralStatus.Active);
 
             // Dùng BCrypt.Verify để kiểm tra mật khẩu 
             if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.Password))
             {
                 return null;
             }
-            // tạo jwt token - access token
+            // tạo jwt token và refresh token
             var token = GenerateJwtToken(user);
-            // tạo refesh token
-            var refreshToken = GenerateRefreshToken();
-            user.RefreshToken = refreshToken;
-            user.RefreshTokenExpiryTime = DateTime.Now.AddDays(7); // Hạn sống 7 ngày
-            //lưu vào db
+            var plainRefreshToken = GenerateRefreshToken();
+
+            // Băm Refresh Token trước khi lưu xuống Database
+            user.RefreshToken = BCrypt.Net.BCrypt.HashPassword(plainRefreshToken);
+            user.RefreshTokenExpiryTime = DateTime.Now.AddDays(7); 
+
             await _context.SaveChangesAsync();
 
-            // Trả về DTO hoàn chỉnh 
+            // Trả về mã plainRefreshToken gốc cho Client
             return new LoginResponseDto
             {
                 Token = token,
-                RefreshToken = refreshToken,
+                RefreshToken = plainRefreshToken,
                 Role = user.Role?.RoleName ?? "Resident",
                 UserName = user.UserName,
                 AccountId = user.AccountId
             };
         }
 
-        //tạo jwt token cho login
+        // tạo jwt token cho login
         private string GenerateJwtToken(Account user)
         {
             var jwtSettings = _configuration.GetSection("JwtSettings");
@@ -78,15 +80,15 @@ namespace Sentana.API.Services.SBuilding
                 issuer: jwtSettings["Issuer"],
                 audience: jwtSettings["Audience"],
                 claims: claims,
-                expires: DateTime.Now.AddHours(2),
+                expires: DateTime.Now.AddMinutes(10),
                 signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
             );
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
 
-		//get user profile
-		public async Task<UserProfileResponseDto?> GetUserProfileAsync(int accountId)
+        //get user profile
+        public async Task<UserProfileResponseDto?> GetUserProfileAsync(int accountId)
 		{
 			
 			var user = await _context.Accounts
@@ -209,6 +211,11 @@ namespace Sentana.API.Services.SBuilding
 
             // Băm mật khẩu mới bằng BCrypt
             user.Password = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+
+            // xóa Refresh Token
+            user.RefreshToken = null;
+            user.RefreshTokenExpiryTime = null;
+
             user.UpdatedAt = DateTime.Now;
 
             await _context.SaveChangesAsync();
@@ -218,6 +225,7 @@ namespace Sentana.API.Services.SBuilding
 
             return true;
         }
+
         // Change Password
         // tạo và gửi OTP cho người đang đăng nhập
         public async Task<bool> RequestChangePasswordOtpAsync(int accountId)
@@ -257,6 +265,10 @@ namespace Sentana.API.Services.SBuilding
 
             // Cập nhật mật khẩu mới
             user.Password = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+
+            user.RefreshToken = null;
+            user.RefreshTokenExpiryTime = null;
+
             user.UpdatedAt = DateTime.Now;
 
             await _context.SaveChangesAsync();
@@ -318,26 +330,31 @@ namespace Sentana.API.Services.SBuilding
                 .Include(a => a.Role)
                 .FirstOrDefaultAsync(a => a.UserName == userName);
 
-            // Test có user không? Refresh Token gửi lên có khớp DB không? Đã quá hạn 7 ngày chưa?
-            if (user == null || user.RefreshToken != request.RefreshToken || user.RefreshTokenExpiryTime <= DateTime.Now)
+            // kiểm tra xem user có tồn tại và token còn hạn không
+            if (user == null || user.RefreshTokenExpiryTime <= DateTime.Now || string.IsNullOrEmpty(user.RefreshToken))
             {
-                return null; // Từ chối cấp mới và login lại
+                return null; // Từ chối cấp mới
             }
 
-            // ok -> sinh cặp Token mới tinh
-            var newAccessToken = GenerateJwtToken(user);
-            var newRefreshToken = GenerateRefreshToken();
+            // dùng BCrypt.Verify để so sánh mã Frontend gửi lên với bản Hash trong DB
+            if (!BCrypt.Net.BCrypt.Verify(request.RefreshToken, user.RefreshToken))
+            {
+                return null; // Mã làm mới không khớp
+            }
 
-            // ghi đè Refresh Token mới vào DB
-            user.RefreshToken = newRefreshToken;
+            var newAccessToken = GenerateJwtToken(user);
+            var newPlainRefreshToken = GenerateRefreshToken();
+
+            // ghi đè Refresh Token bản Hash mới vào DB
+            user.RefreshToken = BCrypt.Net.BCrypt.HashPassword(newPlainRefreshToken);
             user.RefreshTokenExpiryTime = DateTime.Now.AddDays(7);
             await _context.SaveChangesAsync();
 
-            // trả về fe
+            // trả về FE
             return new TokenModelDto
             {
                 AccessToken = newAccessToken,
-                RefreshToken = newRefreshToken
+                RefreshToken = newPlainRefreshToken
             };
         }
 
