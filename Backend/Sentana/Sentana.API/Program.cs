@@ -88,6 +88,7 @@ namespace Sentana.API
             builder.Services.AddScoped<IInvoiceService, InvoiceService>();
             builder.Services.AddScoped<IUtilityService, UtilityService>();
             builder.Services.AddScoped<INotificationService, NotificationService>();
+            builder.Services.AddHostedService<Sentana.API.BackgroundServices.NotificationCleanupService>();
 
             builder.Services.AddControllers();
             // build ram để lưu otp
