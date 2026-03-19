@@ -20,7 +20,6 @@ namespace Sentana.API.Services
             _minioService = minioService;
         }
 
-        // ================= CREATE CONTRACT =================
         public async Task<ApiResponse<object>> CreateContractAsync(CreateContractDto request, int accountId)
         {
             if (request == null)
@@ -45,6 +44,9 @@ namespace Sentana.API.Services
             if (managerAccount == null)
                 return ApiResponse<object>.Fail(404, "Account không tồn tại.");
 
+            if (managerAccount.Role?.RoleName != "Manager")
+                return ApiResponse<object>.Fail(403, "Chỉ Manager mới được tạo hợp đồng.");
+
             var resident = await _contractRepository.GetAccountAsync(request.ResidentAccountId);
 
             if (resident == null)
@@ -68,7 +70,8 @@ namespace Sentana.API.Services
                 MonthlyRent = request.MonthlyRent,
                 Deposit = request.Deposit,
                 Status = GeneralStatus.Active,
-                CreatedAt = DateTime.Now
+                CreatedAt = DateTime.Now,
+                CreatedBy = accountId 
             };
 
             await _contractRepository.AddContractAsync(contract);
@@ -108,7 +111,6 @@ namespace Sentana.API.Services
             }, "Tạo hợp đồng thành công.");
         }
 
-        // ================= TERMINATE =================
         public async Task<ApiResponse<object>> TerminateContractAsync(int contractId, TerminateContractDto request)
         {
             var contract = await _contractRepository.GetContractWithApartmentAsync(contractId);
@@ -116,7 +118,11 @@ namespace Sentana.API.Services
             if (contract == null)
                 return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng.");
 
+            if (contract.Status == GeneralStatus.Inactive)
+                return ApiResponse<object>.Fail(400, "Hợp đồng đã bị chấm dứt trước đó.");
+
             contract.Status = GeneralStatus.Inactive;
+            contract.UpdatedAt = DateTime.Now;
 
             if (contract.Apartment != null)
                 contract.Apartment.Status = ApartmentStatus.Vacant;
@@ -126,13 +132,15 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(null, "Chấm dứt hợp đồng thành công.");
         }
 
-        // ================= EXTEND =================
         public async Task<ApiResponse<object>> ExtendContractAsync(int contractId, ExtendContractDto request)
         {
             var contract = await _contractRepository.GetContractWithApartmentAsync(contractId);
 
             if (contract == null)
                 return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng.");
+
+            if (request.NewEndDate <= contract.EndDay)
+                return ApiResponse<object>.Fail(400, "Ngày gia hạn phải lớn hơn ngày kết thúc hiện tại.");
 
             contract.EndDay = request.NewEndDate;
             contract.UpdatedAt = DateTime.Now;
@@ -142,13 +150,18 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(null, "Gia hạn hợp đồng thành công.");
         }
 
-        // ================= UPDATE =================
         public async Task<ApiResponse<object>> UpdateContractAsync(int contractId, UpdateContractDto request)
         {
             var contract = await _contractRepository.GetContractDetailAsync(contractId);
 
             if (contract == null)
                 return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng.");
+
+            if (request.StartDay.HasValue && request.EndDay.HasValue)
+            {
+                if (request.StartDay >= request.EndDay)
+                    return ApiResponse<object>.Fail(400, "Ngày kết thúc phải lớn hơn ngày bắt đầu.");
+            }
 
             if (request.StartDay.HasValue)
                 contract.StartDay = request.StartDay;
@@ -169,7 +182,7 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(null, "Cập nhật hợp đồng thành công.");
         }
 
-        // ================= DETAIL =================
+        
         public async Task<ApiResponse<object>> GetContractDetailAsync(int contractId)
         {
             var contract = await _contractRepository.GetContractDetailAsync(contractId);
@@ -180,7 +193,6 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(contract, "Lấy chi tiết hợp đồng thành công.");
         }
 
-        // ================= LIST =================
         public async Task<ApiResponse<object>> GetContractListAsync()
         {
             var contracts = await _contractRepository.GetContractListAsync();
@@ -188,7 +200,6 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(contracts, "Lấy danh sách hợp đồng thành công.");
         }
 
-        // FIX BUG34
         public async Task<ApiResponse<object>> GetMyContractAsync(int accountId)
         {
             var contract = await _contractRepository.GetContractByAccountIdAsync(accountId);
