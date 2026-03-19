@@ -19,6 +19,12 @@ namespace Sentana.API.Services.SBuilding
 		{
 			if (!dto.FloorNumber.HasValue || dto.FloorNumber <= 0)
 				throw new ArgumentException("Số tầng là bắt buộc và phải lớn hơn 0.");
+			if (string.IsNullOrWhiteSpace(dto.BuildingCode) || string.IsNullOrWhiteSpace(dto.BuildingName))
+				throw new ArgumentException("Mã và Tên tòa nhà không được để trống.");
+
+			var isExist = await _context.Buildings.AnyAsync(b => b.BuildingCode != null && b.BuildingCode.ToLower() == dto.BuildingCode.ToLower());
+
+			if (isExist) throw new InvalidOperationException($"Mã tòa nhà '{dto.BuildingCode}' đã tồn tại (hoặc đang nằm trong thùng rác). Vui lòng chọn mã khác!");
 
 			int? accountId = null;
 			var accountIdClaim = user?.FindFirst("AccountId");
@@ -27,63 +33,42 @@ namespace Sentana.API.Services.SBuilding
 				accountId = parsedAccountId;
 			}
 
-			var lastBuilding = await _context.Buildings
-				.Where(b => b.BuildingCode != null && b.BuildingCode.StartsWith("SEN-"))
-				.OrderByDescending(b => b.BuildingCode)
-				.FirstOrDefaultAsync();
-
-			char nextChar = 'A'; 
-
-			if (lastBuilding != null && lastBuilding.BuildingCode.Length >= 5)
-			{
-				char lastChar = lastBuilding.BuildingCode.Last();
-				if (char.IsLetter(lastChar) && lastChar >= 'A' && lastChar < 'Z')
-				{
-					nextChar = (char)(lastChar + 1);
-				}
-				else if (lastChar == 'Z')
-				{
-					throw new InvalidOperationException("Hệ thống đã đạt giới hạn tối đa tòa nhà (Từ A đến Z).");
-				}
-			}
-
-			string generatedCode = $"SEN-{nextChar}";
-			string generatedName = $"Chung cư SENTANA Tòa {nextChar}";
 			int calculatedApartmentNumber = dto.FloorNumber.Value * 10;
 
 			var newBuilding = new Building
 			{
-				BuildingName = generatedName,
-				BuildingCode = generatedCode,
+				BuildingName = dto.BuildingName,
+				BuildingCode = dto.BuildingCode.ToUpper(),
 				Address = dto.Address,
 				City = dto.City,
 				FloorNumber = dto.FloorNumber,
 				ApartmentNumber = calculatedApartmentNumber,
-				Status = (GeneralStatus)1, 
+				Status = (GeneralStatus)1,
 				CreatedAt = DateTime.UtcNow,
 				IsDeleted = false,
 				CreatedBy = accountId ?? 0
 			};
 
 			_context.Buildings.Add(newBuilding);
-			await _context.SaveChangesAsync(); 
+			await _context.SaveChangesAsync();
+
 			var newApartments = new List<Apartment>();
 
 			for (int floor = 1; floor <= newBuilding.FloorNumber; floor++)
 			{
-				for (int aptIndex = 1; aptIndex <= 10; aptIndex++) 
+				for (int aptIndex = 1; aptIndex <= 10; aptIndex++)
 				{
 					int roomNumber = (floor * 100) + aptIndex;
 
 					newApartments.Add(new Apartment
 					{
-						BuildingId = newBuilding.BuildingId, 
-						ApartmentCode = $"{newBuilding.BuildingCode}-{roomNumber}", 
-						ApartmentName = $"Phòng {roomNumber} Chung cư SENTANA Tòa {nextChar}",       
+						BuildingId = newBuilding.BuildingId,
+						ApartmentCode = $"{newBuilding.BuildingCode}-{roomNumber}",
+						ApartmentName = $"Phòng {roomNumber} - {newBuilding.BuildingName}",
 						ApartmentNumber = roomNumber,
 						FloorNumber = floor,
 						Area = 0,
-						Status = (ApartmentStatus)1, 
+						Status = ApartmentStatus.Vacant,
 						CreatedAt = DateTime.UtcNow,
 						CreatedBy = accountId ?? 0,
 						IsDeleted = false
@@ -106,7 +91,7 @@ namespace Sentana.API.Services.SBuilding
 
 			var existingBuilding = await _context.Buildings
 				.Include(b => b.Apartments)
-					.ThenInclude(a => a.Contracts) 
+					.ThenInclude(a => a.Contracts)
 				.FirstOrDefaultAsync(b => b.BuildingId == id && b.IsDeleted == false);
 
 			if (existingBuilding == null) throw new InvalidOperationException("Không tìm thấy tòa nhà.");
@@ -115,49 +100,41 @@ namespace Sentana.API.Services.SBuilding
 				existingBuilding.BuildingName = dto.BuildingName;
 
 			if (!string.IsNullOrWhiteSpace(dto.BuildingCode) && dto.BuildingCode != existingBuilding.BuildingCode)
+			{
+				var isExist = await _context.Buildings.AnyAsync(b => b.BuildingCode != null && b.BuildingCode.ToLower() == dto.BuildingCode.ToLower());
+				if (isExist) throw new InvalidOperationException($"Mã tòa nhà '{dto.BuildingCode}' đã tồn tại. Vui lòng chọn mã khác!");
+
 				existingBuilding.BuildingCode = dto.BuildingCode;
+			}
 
 			if (dto.Address != null) existingBuilding.Address = dto.Address;
 			if (dto.City != null) existingBuilding.City = dto.City;
 
-			// 2. Cập nhật Tầng và TỰ ĐỘNG tính lại số căn hộ
 			if (dto.FloorNumber.HasValue)
 			{
 				existingBuilding.FloorNumber = dto.FloorNumber.Value;
 				existingBuilding.ApartmentNumber = dto.FloorNumber.Value * 10;
 			}
 
-			// 2. Ép Trạng thái nhận giá trị từ giao diện
 			if (dto.Status.HasValue && existingBuilding.Status != (GeneralStatus)dto.Status.Value)
 			{
 				var newStatus = (GeneralStatus)dto.Status.Value;
 				existingBuilding.Status = newStatus;
 
-				// Cập nhật trạng thái các căn hộ bên trong
-				if (newStatus == GeneralStatus.Inactive) // Giả sử Inactive (0) hoặc 2 là Bảo trì (Tùy thuộc GeneralStatus của bạn)
+				if (newStatus == GeneralStatus.Inactive)
 				{
-					// Nếu tòa nhà bảo trì -> Mọi phòng thành bảo trì (3)
 					foreach (var apt in existingBuilding.Apartments.Where(a => a.IsDeleted == false))
 					{
 						apt.Status = ApartmentStatus.Maintenance;
 					}
 				}
-				else if (newStatus == GeneralStatus.Active) // Tòa nhà hoạt động lại (1)
+				else if (newStatus == GeneralStatus.Active)
 				{
-					// Kiểm tra hợp đồng để quyết định phòng Trống (1) hay Đang ở (2)
 					var today = DateOnly.FromDateTime(DateTime.Now);
 					foreach (var apt in existingBuilding.Apartments.Where(a => a.IsDeleted == false))
 					{
 						bool hasActiveContract = apt.Contracts.Any(c => c.Status == GeneralStatus.Active && c.EndDay >= today);
-
-						if (hasActiveContract)
-						{
-							apt.Status = ApartmentStatus.Occupied; 
-						}
-						else
-						{
-							apt.Status = ApartmentStatus.Vacant;  
-						}
+						apt.Status = hasActiveContract ? ApartmentStatus.Occupied : ApartmentStatus.Vacant;
 					}
 				}
 			}

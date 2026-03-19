@@ -18,10 +18,10 @@ namespace Sentana.API.DTOs.Building
         [StringLength(100, ErrorMessage = "Thành phố tối đa 100 ký tự.")]
         public string? City { get; set; }
 
-        [Range(0, 1000, ErrorMessage = "Số tầng phải lớn hơn hoặc bằng 0 và nhỏ hơn hoặc bằng 1000.")]
+        [Range(1, 1000, ErrorMessage = "Số tầng phải lớn hơn hoặc bằng 1 và nhỏ hơn hoặc bằng 1000.")]
         public int? FloorNumber { get; set; }
 
-        [Range(0, 100000, ErrorMessage = "Số căn hộ phải lớn hơn hoặc bằng 0.")]
+        [Range(1, 100000, ErrorMessage = "Số căn hộ phải lớn hơn hoặc bằng 1.")]
         public int? ApartmentNumber { get; set; }
 		public byte? Status { get; set; }
 	}

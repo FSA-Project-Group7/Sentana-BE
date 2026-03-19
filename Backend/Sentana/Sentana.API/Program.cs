@@ -90,9 +90,12 @@ namespace Sentana.API
             builder.Services.AddScoped<INotificationService, NotificationService>();
             builder.Services.AddHostedService<Sentana.API.BackgroundServices.NotificationCleanupService>();
 
-            builder.Services.AddControllers();
-            // build ram để lưu otp
-            builder.Services.AddMemoryCache();
+			builder.Services.AddControllers()
+				.AddJsonOptions(options =>
+				{
+					options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+				});
+			builder.Services.AddMemoryCache();
             // đăng ý gửi thư
             builder.Services.AddScoped<IEmailService, EmailService>();
             // Swagger
