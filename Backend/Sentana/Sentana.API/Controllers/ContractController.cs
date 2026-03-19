@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using Sentana.API.DTOs.Contracts;
@@ -13,7 +13,7 @@ namespace Sentana.API.Controllers
     {
         private readonly IContractService _contractService = contractService;
 
-        [Authorize(Roles = "Manager,Technician")]
+        [Authorize(Roles = "Manager")]
         [HttpPost("{id}/terminate")]
         public async Task<IActionResult> TerminateContract(int id, [FromBody] TerminateContractDto request)
         {
@@ -21,7 +21,7 @@ namespace Sentana.API.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        [Authorize(Roles = "Manager,Technician")]
+        [Authorize(Roles = "Manager")]
         [HttpPut("{id}/extend")]
         public async Task<IActionResult> ExtendContract(int id, [FromBody] ExtendContractDto request)
         {
@@ -29,20 +29,23 @@ namespace Sentana.API.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        [Authorize(Roles = "Manager,Technician")]
+        [Authorize(Roles = "Manager")]
         [HttpPost]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> CreateContract([FromForm] CreateContractDto request)
         {
             var accountIdClaim = User.FindFirst("AccountId");
-            int accountId = int.Parse(accountIdClaim!.Value);
+            if (accountIdClaim == null)
+                return Unauthorized("Token không hợp lệ");
+
+            int accountId = int.Parse(accountIdClaim.Value);
 
             var result = await _contractService.CreateContractAsync(request, accountId);
 
             return StatusCode(result.StatusCode, result);
         }
 
-        [Authorize(Roles = "Manager,Technician")]
+        [Authorize(Roles = "Manager")]
         [HttpPut("{id}")]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> UpdateContract(int id, [FromForm] UpdateContractDto request)
@@ -63,7 +66,10 @@ namespace Sentana.API.Controllers
         public async Task<IActionResult> GetMyContract()
         {
             var accountIdClaim = User.FindFirst("AccountId");
-            int accountId = int.Parse(accountIdClaim!.Value);
+            if (accountIdClaim == null)
+                return Unauthorized("Token không hợp lệ");
+
+            int accountId = int.Parse(accountIdClaim.Value);
 
             var result = await _contractService.GetMyContractAsync(accountId);
 
