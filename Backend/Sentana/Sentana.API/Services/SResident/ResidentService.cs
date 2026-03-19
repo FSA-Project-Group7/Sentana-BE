@@ -300,6 +300,20 @@ public class ResidentService : IResidentService
             return (false, "Không tìm thấy Căn hộ này.");
         }
 
+        // US45 / BUG32: Chặn gán nhiều "Chủ hộ/Chủ hợp đồng" (RelationshipId = 1) cho cùng một căn hộ
+        if (request.RelationshipId == 1)
+        {
+            var existingOwner = await _context.ApartmentResidents
+                .AnyAsync(ar => ar.ApartmentId == request.ApartmentId
+                             && ar.RelationshipId == 1
+                             && ar.IsDeleted == false);
+
+            if (existingOwner)
+            {
+                return (false, "Căn hộ này đã có chủ hộ/chủ hợp đồng. Vui lòng gỡ/chuyển chủ hộ trước khi gán mới.");
+            }
+        }
+
         // 3. Kiểm tra xem Cư dân này đã được gán vào chính Căn hộ này chưa? (Tránh duplicate)
         var isAlreadyAssigned = await _context.ApartmentResidents
             .AnyAsync(ar => ar.AccountId == request.AccountId
