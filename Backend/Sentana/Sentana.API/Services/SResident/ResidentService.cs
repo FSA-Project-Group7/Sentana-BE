@@ -47,7 +47,9 @@ public class ResidentService : IResidentService
             City = info?.City,
             Address = info?.Address,
             Status = account.Status,
-            IsDeleted = account.IsDeleted
+            IsDeleted = account.IsDeleted,
+            Sex = info?.Sex,
+            BirthDay = info?.BirthDay
         };
     }
     private async Task<bool> CheckEmailExist(string email)
@@ -139,7 +141,9 @@ public class ResidentService : IResidentService
                 Country = a.Info != null ? a.Info.Country : null,
                 City = a.Info != null ? a.Info.City : null,
                 Address = a.Info != null ? a.Info.Address : null,
-                IsDeleted = a.IsDeleted
+                IsDeleted = a.IsDeleted,
+                Sex = a.Info != null ? a.Info.Sex : null,
+                BirthDay = a.Info != null ? a.Info.BirthDay : null
             })
             .ToListAsync();
     }

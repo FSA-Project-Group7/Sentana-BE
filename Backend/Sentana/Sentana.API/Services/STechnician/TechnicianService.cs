@@ -69,7 +69,9 @@ namespace Sentana.API.Services.STechnician
                 Country = info?.Country,
                 City = info?.City,
                 Address = info?.Address,
-                IsDeleted = account.IsDeleted
+                IsDeleted = account.IsDeleted,
+                Sex = info?.Sex,
+                BirthDay = info?.BirthDay
             };
         }
         public async Task<TechnicianResponseDto> CreateTechnician(CreateTechnicianRequestDto technicianRequest, int managerId)
@@ -141,7 +143,9 @@ namespace Sentana.API.Services.STechnician
                     Country = a.Info != null ? a.Info.Country : null,
                     City = a.Info != null ? a.Info.City : null,
                     Address = a.Info != null ? a.Info.Address : null,
-                    IsDeleted = a.IsDeleted
+                    IsDeleted = a.IsDeleted,
+                    Sex = a.Info != null ? a.Info.Sex : null,
+                    BirthDay = a.Info != null ? a.Info.BirthDay : null
                 })
                 .ToListAsync();
         }
