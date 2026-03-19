@@ -44,13 +44,30 @@ namespace Sentana.API.Services
             if (existingRecord != null)
                 return (false, $"Căn hộ này đã được chốt số điện cho tháng {request.RegistrationDate.Month}/{request.RegistrationDate.Year}.");
 
-            // Tự động tìm OldIndex từ tháng gần nhất
-            var lastRecord = await _context.ElectricMeters
-                .Where(e => e.ApartmentId == request.ApartmentId && e.IsDeleted == false)
-                .OrderByDescending(e => e.RegistrationDate)
+            int currentTotalMonths = request.RegistrationDate.Year * 12 + request.RegistrationDate.Month;
+
+            var previousRecord = await _context.ElectricMeters
+                .Where(e => e.ApartmentId == request.ApartmentId
+                         && e.RegistrationDate.HasValue
+                         && (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) < currentTotalMonths
+                         && e.IsDeleted == false)
+                .OrderByDescending(e => e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month)
                 .FirstOrDefaultAsync();
 
-            decimal oldIndex = lastRecord != null && lastRecord.NewIndex.HasValue ? lastRecord.NewIndex.Value : 0m;
+            decimal oldIndex = previousRecord?.NewIndex ?? 0m;
+
+            var nextRecord = await _context.ElectricMeters
+                .Where(e => e.ApartmentId == request.ApartmentId
+                         && e.RegistrationDate.HasValue
+                         && (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) > currentTotalMonths
+                         && e.IsDeleted == false)
+                .OrderBy(e => e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month)
+                .FirstOrDefaultAsync();
+
+            if (nextRecord != null && nextRecord.NewIndex.HasValue && request.NewIndex > nextRecord.NewIndex.Value)
+            {
+                return (false, $"Chỉ số tháng này ({request.NewIndex}) đang lớn hơn chỉ số của tháng tương lai ({nextRecord.RegistrationDate.Value.Month}/{nextRecord.RegistrationDate.Value.Year} là {nextRecord.NewIndex.Value}).");
+            }
 
             var validationResult = ValidationHelper.ValidateUtilityIndex(request.NewIndex, oldIndex, request.RegistrationDate);
             if (!validationResult.IsValid)
@@ -98,13 +115,30 @@ namespace Sentana.API.Services
             if (existingRecord != null)
                 return (false, $"Đã chốt số nước cho tháng {request.RegistrationDate.Month}/{request.RegistrationDate.Year}.");
 
-            // Tự động tìm OldIndex từ tháng gần nhất
-            var lastRecord = await _context.WaterMeters
-                .Where(e => e.ApartmentId == request.ApartmentId && e.IsDeleted == false)
-                .OrderByDescending(e => e.RegistrationDate)
+            int currentTotalMonths = request.RegistrationDate.Year * 12 + request.RegistrationDate.Month;
+
+            var previousRecord = await _context.WaterMeters
+                .Where(e => e.ApartmentId == request.ApartmentId
+                         && e.RegistrationDate.HasValue
+                         && (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) < currentTotalMonths
+                         && e.IsDeleted == false)
+                .OrderByDescending(e => e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month)
                 .FirstOrDefaultAsync();
 
-            decimal oldIndex = lastRecord != null && lastRecord.NewIndex.HasValue ? lastRecord.NewIndex.Value : 0m;
+            decimal oldIndex = previousRecord?.NewIndex ?? 0m;
+
+            var nextRecord = await _context.WaterMeters
+                .Where(e => e.ApartmentId == request.ApartmentId
+                         && e.RegistrationDate.HasValue
+                         && (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) > currentTotalMonths
+                         && e.IsDeleted == false)
+                .OrderBy(e => e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month)
+                .FirstOrDefaultAsync();
+
+            if (nextRecord != null && nextRecord.NewIndex.HasValue && request.NewIndex > nextRecord.NewIndex.Value)
+            {
+                return (false, $"Chỉ số tháng này ({request.NewIndex}) đang lớn hơn chỉ số của tháng tương lai ({nextRecord.RegistrationDate.Value.Month}/{nextRecord.RegistrationDate.Value.Year} là {nextRecord.NewIndex.Value}).");
+            }
 
             var validationResult = ValidationHelper.ValidateUtilityIndex(request.NewIndex, oldIndex, request.RegistrationDate);
             if (!validationResult.IsValid)
