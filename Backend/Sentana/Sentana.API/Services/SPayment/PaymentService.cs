@@ -29,7 +29,6 @@ public class PaymentService : IPaymentService
         _httpContextAccessor = httpContextAccessor;
     }
 
-    // ================= UPLOAD PAYMENT PROOF =================
     public async Task<ApiResponse<object>> UploadPaymentProofAsync(int invoiceId, UploadPaymentProofDto request)
     {
         if (invoiceId <= 0)
@@ -50,7 +49,7 @@ public class PaymentService : IPaymentService
         if (invoice == null)
             return ApiResponse<object>.Fail(404, "Invoice không tồn tại.");
 
-        // 🔥 LẤY USER ID TỪ TOKEN
+ 
         var userClaim = _httpContextAccessor.HttpContext?.User?.FindFirst("AccountId");
 
         if (userClaim == null)
@@ -58,7 +57,6 @@ public class PaymentService : IPaymentService
 
         int userId = int.Parse(userClaim.Value);
 
-        // 🔥 CHECK CONTRACT
         var contract = await _context.Contracts
             .FirstOrDefaultAsync(c =>
                 c.ContractId == invoice.ContractId &&
@@ -67,11 +65,9 @@ public class PaymentService : IPaymentService
         if (contract == null)
             return ApiResponse<object>.Fail(404, "Contract không tồn tại.");
 
-        // 🔥 CHẶN UPLOAD NGƯỜI KHÁC
         if (contract.AccountId != userId)
             return ApiResponse<object>.Fail(403, "Bạn không có quyền upload cho hóa đơn này.");
 
-        // 🔥 UPLOAD FILE
         var fileUrl = await _minioService.UploadContractAsync(request.File, 0, 0);
 
         var transaction = new PaymentTransaction
@@ -97,7 +93,6 @@ public class PaymentService : IPaymentService
         }, "Upload payment proof thành công.");
     }
 
-    // ================= GET PAYMENTS BY INVOICE =================
     public async Task<ApiResponse<object>> GetPaymentsByInvoiceAsync(int invoiceId)
     {
         if (invoiceId <= 0)
@@ -108,7 +103,6 @@ public class PaymentService : IPaymentService
         return ApiResponse<object>.Success(payments, "Lấy danh sách payment thành công.");
     }
 
-    // ================= GET PAYMENT DETAIL =================
     public async Task<ApiResponse<object>> GetPaymentDetailAsync(int transactionId)
     {
         if (transactionId <= 0)
@@ -122,7 +116,6 @@ public class PaymentService : IPaymentService
         return ApiResponse<object>.Success(transaction, "Lấy chi tiết payment thành công.");
     }
 
-    // ================= PAYMENT HISTORY =================
     public async Task<ApiResponse<object>> GetPaymentHistoryAsync(ClaimsPrincipal user, int? apartmentId = null, int? accountId = null)
     {
         if (user == null)
@@ -187,7 +180,6 @@ public class PaymentService : IPaymentService
         return ApiResponse<object>.Success(history, "Lấy lịch sử thành công.");
     }
 
-    // ================= HELPER =================
     private async Task<int?> ResolveTargetApartmentIdAsync(
         int callerAccountId,
         bool isManager,
@@ -224,7 +216,6 @@ public class PaymentService : IPaymentService
         return residentContract?.ApartmentId;
     }
 
-    // ================= GET ALL =================
     public async Task<ApiResponse<object>> GetAllTransactionsAsync()
     {
         var transactions = await _context.PaymentTransactions
