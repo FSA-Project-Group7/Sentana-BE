@@ -503,7 +503,7 @@ public class ResidentService : IResidentService
         var hasActiveContract = await _context.ApartmentResidents
             .Include(ar => ar.Apartment)
             .ThenInclude(a => a.Contracts)
-            .AnyAsync(ar => ar.ResidentId == residentId
+            .AnyAsync(ar => ar.AccountId == residentId
                          && ar.Apartment.Contracts.Any(c => c.Status == GeneralStatus.Active && c.EndDay >= today));
         if (hasActiveContract)
         {

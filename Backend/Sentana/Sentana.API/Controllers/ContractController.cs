@@ -6,81 +6,87 @@ using Sentana.API.Services;
 
 namespace Sentana.API.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    [Authorize]
-    public class ContractController(IContractService contractService) : ControllerBase
-    {
-        private readonly IContractService _contractService = contractService;
+	[Route("api/[controller]")]
+	[ApiController]
+	[Authorize]
+	public class ContractController : ControllerBase
+	{
+		private readonly IContractService _contractService;
 
-        [Authorize(Roles = "Manager")]
-        [HttpPost("{id}/terminate")]
-        public async Task<IActionResult> TerminateContract(int id, [FromBody] TerminateContractDto request)
-        {
-            var result = await _contractService.TerminateContractAsync(id, request);
-            return StatusCode(result.StatusCode, result);
-        }
+		// CÁCH CHUẨN: Sử dụng DI tiêm trực tiếp IContractService (Không cần new ContractService thủ công)
+		public ContractController(IContractService contractService)
+		{
+			_contractService = contractService;
+		}
 
-        [Authorize(Roles = "Manager")]
-        [HttpPut("{id}/extend")]
-        public async Task<IActionResult> ExtendContract(int id, [FromBody] ExtendContractDto request)
-        {
-            var result = await _contractService.ExtendContractAsync(id, request);
-            return StatusCode(result.StatusCode, result);
-        }
+		[Authorize(Roles = "Manager")]
+		[HttpPost("{id}/terminate")]
+		public async Task<IActionResult> TerminateContract(int id, [FromBody] TerminateContractDto request)
+		{
+			var result = await _contractService.TerminateContractAsync(id, request);
+			return StatusCode(result.StatusCode, result);
+		}
 
-        [Authorize(Roles = "Manager")]
-        [HttpPost]
-        [Consumes("multipart/form-data")]
-        public async Task<IActionResult> CreateContract([FromForm] CreateContractDto request)
-        {
-            var accountIdClaim = User.FindFirst("AccountId");
-            if (accountIdClaim == null)
-                return Unauthorized("Token không hợp lệ");
+		[Authorize(Roles = "Manager")]
+		[HttpPut("{id}/extend")]
+		public async Task<IActionResult> ExtendContract(int id, [FromBody] ExtendContractDto request)
+		{
+			var result = await _contractService.ExtendContractAsync(id, request);
+			return StatusCode(result.StatusCode, result);
+		}
 
-            int accountId = int.Parse(accountIdClaim.Value);
+		[Authorize(Roles = "Manager")]
+		[HttpPost]
+		[Consumes("multipart/form-data")]
+		public async Task<IActionResult> CreateContract([FromForm] CreateContractDto request)
+		{
+			var accountIdClaim = User.FindFirst("AccountId");
+			if (accountIdClaim == null)
+				return Unauthorized("Token không hợp lệ");
 
-            var result = await _contractService.CreateContractAsync(request, accountId);
+			int accountId = int.Parse(accountIdClaim.Value);
 
-            return StatusCode(result.StatusCode, result);
-        }
+			var result = await _contractService.CreateContractAsync(request, accountId);
 
-        [Authorize(Roles = "Manager")]
-        [HttpPut("{id}")]
-        [Consumes("multipart/form-data")]
-        public async Task<IActionResult> UpdateContract(int id, [FromForm] UpdateContractDto request)
-        {
-            var result = await _contractService.UpdateContractAsync(id, request);
-            return StatusCode(result.StatusCode, result);
-        }
+			return StatusCode(result.StatusCode, result);
+		}
 
-        [HttpGet("{id}")]
-        public async Task<IActionResult> GetContractDetail(int id)
-        {
-            var result = await _contractService.GetContractDetailAsync(id);
-            return StatusCode(result.StatusCode, result);
-        }
+		[Authorize(Roles = "Manager")]
+		[HttpPut("{id}")]
+		[Consumes("multipart/form-data")]
+		public async Task<IActionResult> UpdateContract(int id, [FromForm] UpdateContractDto request)
+		{
+			var result = await _contractService.UpdateContractAsync(id, request);
+			return StatusCode(result.StatusCode, result);
+		}
 
-        [Authorize(Roles = "Resident")]
-        [HttpGet("my-contract")]
-        public async Task<IActionResult> GetMyContract()
-        {
-            var accountIdClaim = User.FindFirst("AccountId");
-            if (accountIdClaim == null)
-                return Unauthorized("Token không hợp lệ");
+		[HttpGet("{id}")]
+		public async Task<IActionResult> GetContractDetail(int id)
+		{
+			var result = await _contractService.GetContractDetailAsync(id);
+			return StatusCode(result.StatusCode, result);
+		}
 
-            int accountId = int.Parse(accountIdClaim.Value);
+		[Authorize(Roles = "Resident")]
+		[HttpGet("my-contract")]
+		public async Task<IActionResult> GetMyContract()
+		{
+			var accountIdClaim = User.FindFirst("AccountId");
+			if (accountIdClaim == null)
+				return Unauthorized("Token không hợp lệ");
 
-            var result = await _contractService.GetMyContractAsync(accountId);
+			int accountId = int.Parse(accountIdClaim.Value);
 
-            return StatusCode(result.StatusCode, result);
-        }
+			var result = await _contractService.GetMyContractAsync(accountId);
 
-        [HttpGet]
-        public async Task<IActionResult> GetContractList()
-        {
-            var result = await _contractService.GetContractListAsync();
-            return StatusCode(result.StatusCode, result);
-        }
-    }
+			return StatusCode(result.StatusCode, result);
+		}
+
+		[HttpGet]
+		public async Task<IActionResult> GetContractList()
+		{
+			var result = await _contractService.GetContractListAsync();
+			return StatusCode(result.StatusCode, result);
+		}
+	}
 }
