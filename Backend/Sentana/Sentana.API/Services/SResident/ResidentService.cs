@@ -495,7 +495,17 @@ public class ResidentService : IResidentService
         {
             throw new Exception("Không thể xóa vì cư dân đang ở trong phòng còn hạn thuê.");
         }
+        var isAssignedToRoom = await _context.ApartmentResidents
+        .AnyAsync(ar => ar.AccountId == residentId
+                     && ar.Status == GeneralStatus.Active
+                     && ar.IsDeleted == false);
+
+        if (isAssignedToRoom)
+        {
+            throw new Exception("Không thể xóa tài khoản vì cư dân vẫn đang ở trong một căn hộ. Vui lòng gỡ cư dân khỏi phòng trước.");
+        }
         account.IsDeleted = true;
+        account.Status = GeneralStatus.Inactive;
         account.UpdatedAt = DateTime.Now;
         account.UpdatedBy = managerId;
         _context.Accounts.Update(account);
@@ -545,6 +555,7 @@ public class ResidentService : IResidentService
             throw new Exception("Email này đã được sử dụng cho một tài khoản khác.");
         }
         resident.IsDeleted = false;
+        resident.Status = GeneralStatus.Active;
         resident.UpdatedAt = DateTime.Now;
         resident.UpdatedBy = managerId;
         _context.Accounts.Update(resident);
