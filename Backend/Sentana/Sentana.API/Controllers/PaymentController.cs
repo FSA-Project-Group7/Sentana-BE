@@ -85,5 +85,12 @@ namespace Sentana.API.Controllers
             var result = await _paymentService.GetAllTransactionsAsync();
             return StatusCode(result.StatusCode, result);
         }
+        [HttpGet("my-unpaid-invoices")]
+        [Authorize(Roles = "Resident")]
+        public async Task<IActionResult> GetMyUnpaidInvoices()
+        {
+            var result = await _paymentService.GetMyUnpaidInvoicesAsync();
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }
