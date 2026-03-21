@@ -223,12 +223,126 @@ public class PaymentService : IPaymentService
 
     public async Task<ApiResponse<object>> GetPaymentHistoryAsync(ClaimsPrincipal user, int? apartmentId = null, int? accountId = null)
     {
-        return ApiResponse<object>.Success(new List<object>(), "OK");
+        if (user == null)
+            return ApiResponse<object>.Fail(401, "User is null.");
+
+        var accountIdClaim = user.FindFirst("AccountId")?.Value;
+        if (!int.TryParse(accountIdClaim, out var callerAccountId))
+            return ApiResponse<object>.Fail(401, "Token không hợp lệ.");
+
+        var role = user.FindFirst(ClaimTypes.Role)?.Value
+                   ?? user.FindFirst("role")?.Value
+                   ?? string.Empty;
+
+        var isManager = role.Equals("Manager", StringComparison.OrdinalIgnoreCase);
+
+        var targetApartmentId = await ResolveTargetApartmentIdAsync(
+            callerAccountId,
+            isManager,
+            apartmentId,
+            accountId);
+
+        if (!targetApartmentId.HasValue)
+            return ApiResponse<object>.Success(new List<PaymentHistoryItemDto>(), "Không có dữ liệu.");
+
+        var invoices = await _context.Invoices
+            .AsNoTracking()
+            .Include(i => i.Apartment)
+            .Include(i => i.PaymentTransactions)
+            .Where(i => i.ApartmentId == targetApartmentId.Value
+                        && (i.Status == InvoiceStatus.Paid || i.PaymentTransactions.Any(t => t.IsDeleted == false || t.IsDeleted == null))
+                        && (i.IsDeleted == false || i.IsDeleted == null))
+            .ToListAsync();
+
+        var history = invoices.Select(i =>
+        {
+            var approved = i.PaymentTransactions
+                .Where(t => (t.IsDeleted == false || t.IsDeleted == null)
+                         && t.Status == PaymentTransactionStatus.Approved)
+                .ToList();
+
+            var amountPaid = approved.Sum(t => t.AmountPaid ?? 0m);
+            if (amountPaid <= 0)
+                amountPaid = i.Pay ?? 0m;
+
+            var paidDate = i.DayPay?.ToString("yyyy-MM-dd");
+
+            return new PaymentHistoryItemDto
+            {
+                InvoiceId = i.InvoiceId,
+                ApartmentId = i.ApartmentId,
+                ApartmentCode = i.Apartment?.ApartmentCode,
+                BillingMonth = i.BillingMonth,
+                BillingYear = i.BillingYear,
+                TotalMoney = i.TotalMoney,
+                AmountPaid = amountPaid,
+                PaidDate = paidDate
+            };
+        })
+        .OrderBy(x => x.PaidDate)
+        .ToList();
+
+        return ApiResponse<object>.Success(history, "Lấy lịch sử thành công.");
+    }
+
+    private async Task<int?> ResolveTargetApartmentIdAsync(
+        int callerAccountId,
+        bool isManager,
+        int? apartmentId,
+        int? accountId)
+    {
+        if (isManager)
+        {
+            if (apartmentId.HasValue)
+                return apartmentId.Value;
+
+            if (accountId.HasValue)
+            {
+                var contract = await _context.Contracts
+                    .AsNoTracking()
+                    .Where(c => c.AccountId == accountId.Value &&
+                                c.Status == GeneralStatus.Active &&
+                                c.IsDeleted == false)
+                    .OrderByDescending(c => c.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                return contract?.ApartmentId;
+            }
+        }
+
+        var residentContract = await _context.Contracts
+            .AsNoTracking()
+            .Where(c => c.AccountId == callerAccountId &&
+                        c.Status == GeneralStatus.Active &&
+                        c.IsDeleted == false)
+            .OrderByDescending(c => c.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        return residentContract?.ApartmentId;
     }
 
     public async Task<ApiResponse<object>> GetAllTransactionsAsync()
     {
-        var data = await _context.PaymentTransactions.ToListAsync();
-        return ApiResponse<object>.Success(data, "OK");
+        var transactions = await _context.PaymentTransactions
+            .Include(t => t.Invoice)
+                .ThenInclude(i => i.Apartment)
+            .Where(t => t.IsDeleted == false)
+            .OrderByDescending(t => t.SubmitDate)
+            .Select(t => new
+            {
+                transactionId = t.TransactionId,
+                invoiceId = t.InvoiceId,
+                apartmentCode = t.Invoice.Apartment != null ? t.Invoice.Apartment.ApartmentCode : "N/A",
+                billingMonth = t.Invoice.BillingMonth,
+                billingYear = t.Invoice.BillingYear,
+                amountPaid = t.AmountPaid,
+                submitDate = t.SubmitDate,
+                proofUrl = t.PaymentProofImage,
+                status = (int)t.Status,
+                note = t.Note
+            })
+            .ToListAsync();
+
+        return ApiResponse<object>.Success(transactions, "Lấy danh sách giao dịch thành công.");
     }
 }
