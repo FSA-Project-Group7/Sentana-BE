@@ -403,6 +403,14 @@ public class ResidentService : IResidentService
             RemovedAt = now
         };
 
+        // BUG43-[US46]: Bắt buộc phải có lý do khi gỡ cư dân
+        if (string.IsNullOrWhiteSpace(request.Reason))
+        {
+            response.IsSuccess = false;
+            response.Message = "Vui lòng nhập lý do gỡ cư dân.";
+            return response;
+        }
+
         // 1. Tìm bản ghi cư dân trong phòng
         var aptResident = await _context.ApartmentResidents
             .FirstOrDefaultAsync(ar => ar.AccountId == request.AccountId
@@ -411,6 +419,7 @@ public class ResidentService : IResidentService
 
         if (aptResident == null)
         {
+            response.IsSuccess = false;
             response.Message = "Cư dân không tồn tại trong căn hộ này.";
             return response;
         }
@@ -423,6 +432,7 @@ public class ResidentService : IResidentService
 
             if (hasActiveContract)
             {
+                response.IsSuccess = false;
                 response.Message = "Không thể gỡ chủ hộ khi hợp đồng vẫn còn hiệu lực. Hãy tất toán hợp đồng trước.";
                 return response;
             }
@@ -443,20 +453,10 @@ public class ResidentService : IResidentService
             response.ApartmentStatus = "Vacant";
         }
 
-        // 5. Lưu lý do gỡ (Reason từ Request) vào bảng History/Info
-        //_context.Histories.Add(new History
-        //{
-        //    AccountId = request.AccountId,
-        //    Action = "Remove",
-        //    Description = request.Reason ?? "Gỡ cư dân khỏi phòng",
-        //    CreatedAt = now,
-        //    CreatedBy = managerId
-        //});
-
         await _context.SaveChangesAsync();
 
         response.IsSuccess = true;
-        response.Message = "Gỡ cư dân thành công.";
+        response.Message = $"Gỡ cư dân thành công. Lý do: {request.Reason}";
         return response;
     }
     public async Task<string> ToggleResidentStatus(int residentId)
