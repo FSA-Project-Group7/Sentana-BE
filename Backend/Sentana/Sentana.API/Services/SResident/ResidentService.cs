@@ -160,7 +160,7 @@ public class ResidentService : IResidentService
 
 	public async Task<ImportResidentsResultDto> ImportResidentsFromExcelAsync(Stream fileStream, int managerId)
     {
-        ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+        ExcelPackage.License.SetNonCommercialPersonal("Sentana");
 
         using var package = new ExcelPackage(fileStream);
         var worksheet = package.Workbook.Worksheets.FirstOrDefault();
