@@ -467,7 +467,16 @@ namespace Sentana.API.Services.SInvoice
                 }
             }
 
-            bool isSaved = await _context.SaveChangesAsync() > 0;
+            // xử lý đồng thời
+            bool isSaved = false;
+            try
+            {
+                isSaved = await _context.SaveChangesAsync() > 0;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return (false, "Giao dịch này vừa được duyệt hoặc từ chối bởi một người khác. Vui lòng tải lại trang để xem trạng thái mới nhất.");
+            }
 
             if (isSaved && transaction.Invoice?.Contract?.Account?.Email != null)
             {

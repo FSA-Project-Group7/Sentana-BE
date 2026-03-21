@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using Sentana.API.Enums;
 
 namespace Sentana.API.Models;
@@ -29,4 +30,7 @@ public partial class PaymentTransaction
     public bool? IsDeleted { get; set; }
 
     public virtual Invoice? Invoice { get; set; }
+
+    [Timestamp]
+    public byte[] RowVersion { get; set; }
 }
