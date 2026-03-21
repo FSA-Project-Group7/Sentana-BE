@@ -131,7 +131,7 @@ namespace Sentana.API
 
             var app = builder.Build();
 
-            //ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+            ExcelPackage.License.SetNonCommercialPersonal("Sentana");
 
 			if (app.Environment.IsDevelopment())
             {
