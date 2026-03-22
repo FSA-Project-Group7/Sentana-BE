@@ -221,15 +221,17 @@ namespace Sentana.API.Services
             if (contract.Apartment != null)
                 contract.Apartment.Status = ApartmentStatus.Vacant;
 
-            var resident = await _context.ApartmentResidents
-                .FirstOrDefaultAsync(x =>
-                    x.AccountId == contract.AccountId &&
+            var residents = await _context.ApartmentResidents
+                .Where(x =>
                     x.ApartmentId == contract.ApartmentId &&
-                    x.IsDeleted == false);
+                    x.IsDeleted == false)
+                .ToListAsync();
 
-            if (resident != null)
+            foreach (var resident in residents)
+            {
                 resident.IsDeleted = true;
-
+                resident.Status = GeneralStatus.Inactive; 
+            }
             await _context.SaveChangesAsync();
 
             return ApiResponse<object>.Success(null, "Terminate thành công");
