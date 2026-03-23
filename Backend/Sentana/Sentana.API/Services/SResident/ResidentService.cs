@@ -235,6 +235,17 @@ public class ResidentService : IResidentService
                         result.Errors.Add($"Dòng {row}: Không tìm thấy căn hộ với mã '{apartmentCode}'.");
                         continue;
                     }
+
+                    // BUG46-[US41]: Chặn gán vào căn hộ chưa có hợp đồng active
+                    var hasActiveContract = await _context.Contracts
+                        .AnyAsync(c => c.ApartmentId == apartment.ApartmentId && c.Status == GeneralStatus.Active);
+
+                    if (!hasActiveContract)
+                    {
+                        result.FailedCount++;
+                        result.Errors.Add($"Dòng {row}: Căn hộ '{apartmentCode}' chưa có hợp đồng đang hiệu lực. Vui lòng tạo hợp đồng trước khi gán cư dân.");
+                        continue;
+                    }
                 }
 
                 var dto = new CreateResidentRequestDto
@@ -249,6 +260,9 @@ public class ResidentService : IResidentService
                     City = city,
                     Address = address
                 };
+
+                // BUG46-[US41]: Dùng transaction để đảm bảo tính nhất quán dữ liệu
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
                 var resident = await CreateResident(dto, managerId);
 
@@ -267,6 +281,7 @@ public class ResidentService : IResidentService
                     await _context.SaveChangesAsync();
                 }
 
+                await transaction.CommitAsync();
                 result.SuccessCount++;
             }
             catch (Exception ex)
@@ -298,6 +313,15 @@ public class ResidentService : IResidentService
         if (apartment == null)
         {
             return (false, "Không tìm thấy Căn hộ này.");
+        }
+
+        // BUG45-[US45]: Chặn gán cư dân vào căn hộ khi chưa có hợp đồng active
+        var hasActiveContract = await _context.Contracts
+            .AnyAsync(c => c.ApartmentId == request.ApartmentId && c.Status == GeneralStatus.Active);
+
+        if (!hasActiveContract)
+        {
+            return (false, "Không thể gán cư dân vào căn hộ này vì chưa có hợp đồng đang hiệu lực. Vui lòng tạo hợp đồng trước.");
         }
 
         // US45 / BUG32: Chặn gán nhiều "Chủ hộ/Chủ hợp đồng" (RelationshipId = 1) cho cùng một căn hộ
