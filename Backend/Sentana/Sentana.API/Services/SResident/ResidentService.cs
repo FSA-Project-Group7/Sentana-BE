@@ -236,6 +236,14 @@ public class ResidentService : IResidentService
                         continue;
                     }
 
+                    // BUG46-[US41]: Chặn gán vào căn hộ không ở trạng thái Active
+                    if (apartment.Status != ApartmentStatus.Active && apartment.Status != ApartmentStatus.Vacant && apartment.Status != ApartmentStatus.Occupied)
+                    {
+                        result.FailedCount++;
+                        result.Errors.Add($"Dòng {row}: Căn hộ '{apartmentCode}' không ở trạng thái hợp lệ để gán cư dân.");
+                        continue;
+                    }
+
                     // BUG46-[US41]: Chặn gán vào căn hộ chưa có hợp đồng active
                     var hasActiveContract = await _context.Contracts
                         .AnyAsync(c => c.ApartmentId == apartment.ApartmentId && c.Status == GeneralStatus.Active);
@@ -268,6 +276,20 @@ public class ResidentService : IResidentService
 
                 if (apartment != null)
                 {
+                    // BUG46-[US41]: Kiểm tra cư dân đã được gán vào căn hộ khác chưa
+                    var alreadyAssigned = await _context.ApartmentResidents
+                        .AnyAsync(ar => ar.AccountId == resident.AccountId
+                                     && ar.Status == GeneralStatus.Active
+                                     && ar.IsDeleted == false);
+
+                    if (alreadyAssigned)
+                    {
+                        result.FailedCount++;
+                        result.Errors.Add($"Dòng {row}: Cư dân '{userName}' đã được gán vào một căn hộ khác.");
+                        await transaction.RollbackAsync();
+                        continue;
+                    }
+
                     var aptResident = new ApartmentResident
                     {
                         ApartmentId = apartment.ApartmentId,
