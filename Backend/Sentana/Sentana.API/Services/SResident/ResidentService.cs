@@ -237,7 +237,7 @@ public class ResidentService : IResidentService
                     }
 
                     // BUG46-[US41]: Chặn gán vào căn hộ không ở trạng thái Active
-                    if (apartment.Status != ApartmentStatus.Active && apartment.Status != ApartmentStatus.Vacant && apartment.Status != ApartmentStatus.Occupied)
+                    if (apartment.Status == ApartmentStatus.Maintenance)
                     {
                         result.FailedCount++;
                         result.Errors.Add($"Dòng {row}: Căn hộ '{apartmentCode}' không ở trạng thái hợp lệ để gán cư dân.");
