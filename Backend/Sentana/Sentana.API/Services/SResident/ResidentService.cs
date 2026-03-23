@@ -276,16 +276,16 @@ public class ResidentService : IResidentService
 
                 if (apartment != null)
                 {
-                    // BUG46-[US41]: Kiểm tra cư dân đã được gán vào căn hộ khác chưa
-                    var alreadyAssigned = await _context.ApartmentResidents
-                        .AnyAsync(ar => ar.AccountId == resident.AccountId
+                    // 1 phòng chỉ có 1 resident đứng tên (nhưng 1 resident có thể đứng tên nhiều phòng)
+                    var apartmentAlreadyHasResident = await _context.ApartmentResidents
+                        .AnyAsync(ar => ar.ApartmentId == apartment.ApartmentId
                                      && ar.Status == GeneralStatus.Active
                                      && ar.IsDeleted == false);
 
-                    if (alreadyAssigned)
+                    if (apartmentAlreadyHasResident)
                     {
                         result.FailedCount++;
-                        result.Errors.Add($"Dòng {row}: Cư dân '{userName}' đã được gán vào một căn hộ khác.");
+                        result.Errors.Add($"Dòng {row}: Căn hộ '{apartmentCode}' đã có cư dân đứng tên. Mỗi căn hộ chỉ có thể có 1 cư dân đứng tên.");
                         await transaction.RollbackAsync();
                         continue;
                     }
