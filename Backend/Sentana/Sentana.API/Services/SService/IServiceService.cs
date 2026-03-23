@@ -19,5 +19,8 @@ namespace Sentana.API.Services.SService
         Task<bool> CheckRoomServiceRelationAsync(int apartmentId, int serviceId);
         Task<bool> IsUserAuthorizedToModifyRoomService(ClaimsPrincipal user, int apartmentId);
         Task<bool> IsResidentRoomAsync(int accountId, int roomId);
-    }
+		Task<IEnumerable<ServiceResponseDto>> GetDeletedServiceListAsync();
+		Task<bool> RestoreServiceAsync(int serviceId);
+		Task<bool> HardDeleteServiceAsync(int serviceId);
+	}
 }

@@ -50,21 +50,72 @@ namespace Sentana.API.Services.SService
             return service;
         }
 
-        public async Task DeleteServiceAsync(int serviceId)
-        {
-            var service = await _context.Services
-                .FirstOrDefaultAsync(x => x.ServiceId == serviceId && x.IsDeleted == false);
+		public async Task DeleteServiceAsync(int serviceId)
+		{
+			var service = await _context.Services.FirstOrDefaultAsync(x => x.ServiceId == serviceId && x.IsDeleted == false);
+			if (service == null) throw new KeyNotFoundException("Không tìm thấy dịch vụ.");
 
-            if (service == null)
-                throw new KeyNotFoundException("Không tìm thấy dịch vụ.");
+			service.Status = GeneralStatus.Inactive;
+			service.IsDeleted = true;
 
-            service.Status = GeneralStatus.Inactive;
-            service.IsDeleted = true;
+			// Xử lý các phòng đang dùng dịch vụ này
+			var activeRoomServices = await _context.ApartmentServices
+				.Where(x => x.ServiceId == serviceId && x.IsDeleted == false)
+				.ToListAsync();
 
-            await _context.SaveChangesAsync();
-        }
+			foreach (var rs in activeRoomServices)
+			{
+				rs.IsDeleted = true;
+				rs.Status = GeneralStatus.Inactive;
+				rs.EndDay = DateOnly.FromDateTime(DateTime.Now); // Chốt ngày để tính hóa đơn
+			}
 
-        public async Task<IEnumerable<ServiceResponseDto>> GetServiceListAsync()
+			await _context.SaveChangesAsync();
+		}
+
+		// LẤY DANH SÁCH ĐÃ XÓA
+		public async Task<IEnumerable<ServiceResponseDto>> GetDeletedServiceListAsync()
+		{
+			var services = await _context.Services.Where(x => x.IsDeleted == true).ToListAsync();
+			return services.Select(s => new ServiceResponseDto
+			{
+				ServiceId = s.ServiceId,
+				ServiceName = s.ServiceName ?? "",
+				Description = s.Description ?? "",
+				ServiceFee = s.ServiceFee ?? 0,
+				Status = (int)(s.Status ?? GeneralStatus.Inactive),
+				CreatedAt = s.CreatedAt
+			});
+		}
+
+		// KHÔI PHỤC DỊCH VỤ
+		public async Task<bool> RestoreServiceAsync(int serviceId)
+		{
+			var service = await _context.Services.FirstOrDefaultAsync(x => x.ServiceId == serviceId && x.IsDeleted == true);
+			if (service == null) return false;
+
+			service.IsDeleted = false;
+			service.Status = GeneralStatus.Active;
+			await _context.SaveChangesAsync();
+			return true;
+		}
+
+		// XÓA CỨNG
+		public async Task<bool> HardDeleteServiceAsync(int serviceId)
+		{
+			var service = await _context.Services.FirstOrDefaultAsync(x => x.ServiceId == serviceId && x.IsDeleted == true);
+			if (service == null) throw new Exception("Không tìm thấy dịch vụ trong thùng rác.");
+
+			// Kiểm tra xem đã từng có phòng nào dùng chưa
+			var hasHistory = await _context.ApartmentServices.AnyAsync(x => x.ServiceId == serviceId);
+			if (hasHistory) throw new Exception("Không thể xóa cứng! Dịch vụ này đã từng được cư dân sử dụng. Hãy giữ lại để bảo vệ lịch sử hóa đơn.");
+
+			_context.Services.Remove(service);
+			await _context.SaveChangesAsync();
+			return true;
+		}
+
+		public async Task<IEnumerable<ServiceResponseDto>> GetServiceListAsync()
         {
             var services = await _context.Services
                 .Where(x => x.IsDeleted == false)

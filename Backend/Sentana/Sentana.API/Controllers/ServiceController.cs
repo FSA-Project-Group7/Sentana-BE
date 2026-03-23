@@ -165,5 +165,34 @@ namespace Sentana.API.Controllers
 
             return Ok(new { message = "Giá dịch vụ phòng đã được cập nhật thành công." });
         }
-    }
+
+		[HttpGet("deleted")]
+		public async Task<IActionResult> GetDeletedServiceList()
+		{
+			var services = await _serviceService.GetDeletedServiceListAsync();
+			return Ok(services);
+		}
+
+		[HttpPut("{id}/restore")]
+		public async Task<IActionResult> RestoreService(int id)
+		{
+			var result = await _serviceService.RestoreServiceAsync(id);
+			if (!result) return NotFound(new { message = "Không tìm thấy dịch vụ." });
+			return Ok(new { message = "Khôi phục dịch vụ thành công." });
+		}
+
+		[HttpDelete("{id}/hard")]
+		public async Task<IActionResult> HardDeleteService(int id)
+		{
+			try
+			{
+				await _serviceService.HardDeleteServiceAsync(id);
+				return Ok(new { message = "Đã xóa vĩnh viễn dịch vụ." });
+			}
+			catch (Exception ex)
+			{
+				return BadRequest(new { message = ex.Message });
+			}
+		}
+	}
 }
