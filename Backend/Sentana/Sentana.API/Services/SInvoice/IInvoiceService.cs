@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Sentana.API.DTOs.Common;
@@ -19,5 +19,7 @@ namespace Sentana.API.Services.SInvoice
         Task<(bool IsSuccess, string Message)> RejectPaymentAsync(int transactionId, RejectPaymentDto request, int currentUserId);
         // gửi thông báo invoice 
         Task<(bool IsSuccess, string Message)> SendInvoiceNotificationAsync(int invoiceId);
+        
+        Task<List<OutstandingDebtItemDto>> GetOutstandingDebtsAsync();
     }
 }

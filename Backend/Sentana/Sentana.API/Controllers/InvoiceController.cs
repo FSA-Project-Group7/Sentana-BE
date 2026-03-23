@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Common;
@@ -171,5 +171,26 @@ namespace Sentana.API.Controllers
         }
         return Ok(ApiResponse<string>.Success(null, result.Message));
     }
+
+        // US82 - View Outstanding Debt
+        [HttpGet("outstanding-debts")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetOutstandingDebts()
+        {
+            try
+            {
+                var result = await _invoiceService.GetOutstandingDebtsAsync();
+
+                if (result == null || !result.Any())
+                    return NotFound(ApiResponse<string>.Fail(404, "Không có hóa đơn quá hạn chưa thanh toán nào."));
+
+                return Ok(ApiResponse<List<OutstandingDebtItemDto>>.Success(result,
+                    $"Tìm thấy {result.Count} hóa đơn quá hạn chưa thanh toán."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<string>.Fail(500, $"Lỗi hệ thống: {ex.Message}"));
+            }
+        }
     }
 }

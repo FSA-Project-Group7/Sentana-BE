@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Security.Claims;
@@ -562,6 +562,37 @@ namespace Sentana.API.Services.SInvoice
 
             return isSaved ? (true, "Đã từ chối thanh toán thành công.")
                            : (false, "Lỗi hệ thống khi lưu dữ liệu.");
+        }
+
+        // US82 - View Outstanding Debt
+        public async Task<List<OutstandingDebtItemDto>> GetOutstandingDebtsAsync()
+        {
+            var today = DateOnly.FromDateTime(DateTime.Today);
+
+            var overdueInvoices = await _context.Invoices
+                .Include(i => i.Apartment)
+                .Where(i =>
+                    i.IsDeleted == false &&
+                    (i.Status == InvoiceStatus.Unpaid || i.Status == InvoiceStatus.PendingVerification) &&
+                    i.DayPay.HasValue &&
+                    i.DayPay.Value < today)
+                .OrderByDescending(i => today.DayNumber - i.DayPay!.Value.DayNumber)
+                .ToListAsync();
+
+            return overdueInvoices.Select(i => new OutstandingDebtItemDto
+            {
+                InvoiceId    = i.InvoiceId,
+                ApartmentId  = i.ApartmentId,
+                ApartmentCode = i.Apartment?.ApartmentCode,
+                ApartmentName = i.Apartment?.ApartmentName,
+                BillingMonth = i.BillingMonth,
+                BillingYear  = i.BillingYear,
+                TotalMoney   = i.TotalMoney,
+                Debt         = i.Debt,
+                DayPay       = i.DayPay,
+                DaysOverdue  = today.DayNumber - i.DayPay!.Value.DayNumber,
+                Status       = i.Status.HasValue ? i.Status.Value.ToString() : null
+            }).ToList();
         }
     }
 }
