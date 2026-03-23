@@ -650,5 +650,65 @@ public class ResidentService : IResidentService
         _context.Accounts.Remove(resident);
         return await _context.SaveChangesAsync() > 0;
     }
+
+    // US06 - View Room Details
+    public async Task<MyRoomResponseDto?> GetMyRoomAsync(int accountId)
+    {
+        var account = await _context.Accounts
+            .FirstOrDefaultAsync(a =>
+                a.AccountId == accountId &&
+                a.RoleId == 2 &&
+                a.IsDeleted == false &&
+                a.Status == GeneralStatus.Active);
+
+        if (account == null)
+            throw new UnauthorizedAccessException("Tài khoản không hợp lệ hoặc không có quyền truy cập.");
+
+        var myAssignment = await _context.ApartmentResidents
+            .Include(ar => ar.Apartment)
+            .FirstOrDefaultAsync(ar =>
+                ar.AccountId == accountId &&
+                ar.Status == GeneralStatus.Active &&
+                ar.IsDeleted == false);
+
+        if (myAssignment == null || myAssignment.Apartment == null)
+            return null;
+
+        var apartment = myAssignment.Apartment;
+
+        if (apartment.IsDeleted == true)
+            return null;
+
+        var roommates = await _context.ApartmentResidents
+            .Where(ar =>
+                ar.ApartmentId == apartment.ApartmentId &&
+                ar.AccountId != accountId &&
+                ar.Status == GeneralStatus.Active &&
+                ar.IsDeleted == false)
+            .Include(ar => ar.Account)
+                .ThenInclude(a => a.Info)
+            .Include(ar => ar.Relationship)
+            .Select(ar => new RoommateDto
+            {
+                AccountId = ar.Account!.AccountId,
+                FullName = ar.Account.Info != null ? ar.Account.Info.FullName : null,
+                PhoneNumber = ar.Account.Info != null ? ar.Account.Info.PhoneNumber : null,
+                Email = ar.Account.Email,
+                Relationship = ar.Relationship != null ? ar.Relationship.RelationshipName : null
+            })
+            .ToListAsync();
+
+        return new MyRoomResponseDto
+        {
+            ApartmentId = apartment.ApartmentId,
+            ApartmentCode = apartment.ApartmentCode ?? string.Empty,
+            ApartmentName = apartment.ApartmentName,
+            ApartmentNumber = apartment.ApartmentNumber,
+            FloorNumber = apartment.FloorNumber,
+            Area = apartment.Area,
+            Status = apartment.Status.HasValue ? apartment.Status.Value.ToString() : null,
+            Roommates = roommates
+        };
+    }
    
 }
