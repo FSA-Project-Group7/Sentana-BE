@@ -142,6 +142,25 @@ namespace Sentana.API.Controllers
                 return BadRequest(ApiResponse<object>.Fail(400, "Hệ thống chỉ chấp nhận file định dạng .xlsx."));
             }
 
+            // Kiểm tra magic bytes: file .xlsx thực chất là ZIP archive, bắt đầu bằng 50 4B 03 04
+            // Chặn trường hợp file khác được đổi tên thành .xlsx
+            using (var magicStream = file.OpenReadStream())
+            {
+                var magicBytes = new byte[4];
+                int bytesRead = await magicStream.ReadAsync(magicBytes, 0, 4);
+                bool isValidXlsx = bytesRead == 4
+                    && magicBytes[0] == 0x50  // P
+                    && magicBytes[1] == 0x4B  // K
+                    && magicBytes[2] == 0x03
+                    && magicBytes[3] == 0x04;
+
+                if (!isValidXlsx)
+                {
+                    return BadRequest(ApiResponse<object>.Fail(400,
+                        "File không hợp lệ. Vui lòng upload đúng file Excel (.xlsx), không phải file được đổi tên."));
+                }
+            }
+
             var managerIdStr = User.FindFirstValue("AccountId");
             if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
             {
