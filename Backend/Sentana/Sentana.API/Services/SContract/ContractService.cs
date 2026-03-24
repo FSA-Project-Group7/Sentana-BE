@@ -228,7 +228,10 @@ namespace Sentana.API.Services
                 if (contract.Apartment != null)
                     contract.Apartment.Status = ApartmentStatus.Vacant;
 
-                int apartmentId = contract.ApartmentId ?? 0;
+                if (contract.ApartmentId == null)
+                    return ApiResponse<object>.Fail(400, "Apartment không hợp lệ");
+                
+                    int apartmentId = contract.ApartmentId.Value;
 
                 var residents = await _context.ApartmentResidents
                     .Where(x => x.ApartmentId == apartmentId && x.IsDeleted == false)
@@ -274,15 +277,16 @@ namespace Sentana.API.Services
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                return ApiResponse<object>.Success(new
-                {
-                    TotalInvoice = totalInvoice,
-                    TotalPaid = totalPaid,
-                    AdditionalCost = additionalCost,
-                    RefundAmount = refund,
-                    IsFullyPaid = isFullyPaid
-                }, "Terminate thành công");
-            }
+               return ApiResponse<object>.Success(new
+                    {
+                        TotalInvoice = totalInvoice,
+                        TotalPaid = totalPaid,
+                        AdditionalCost = additionalCost,
+                        RefundAmount = refund,
+                        IsFullyPaid = isFullyPaid,
+                        PaymentStatus = paymentStatus
+                    }, "Terminate thành công");
+                                }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
