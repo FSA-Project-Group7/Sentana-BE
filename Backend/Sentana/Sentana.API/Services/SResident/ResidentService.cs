@@ -520,13 +520,13 @@ public class ResidentService : IResidentService
             RemovedAt = now
         };
 
-        // BUG43-[US46]: Bắt buộc phải có lý do khi gỡ cư dân
-        if (string.IsNullOrWhiteSpace(request.Reason))
-        {
-            response.IsSuccess = false;
-            response.Message = "Vui lòng nhập lý do gỡ cư dân.";
-            return response;
-        }
+        //// BUG43-[US46]: Bắt buộc phải có lý do khi gỡ cư dân
+        //if (string.IsNullOrWhiteSpace(request.Reason))
+        //{
+        //    response.IsSuccess = false;
+        //    response.Message = "Vui lòng nhập lý do gỡ cư dân.";
+        //    return response;
+        //}
 
         // 1. Tìm bản ghi cư dân trong phòng
         var aptResident = await _context.ApartmentResidents
@@ -573,7 +573,7 @@ public class ResidentService : IResidentService
         await _context.SaveChangesAsync();
 
         response.IsSuccess = true;
-        response.Message = $"Gỡ cư dân thành công. Lý do: {request.Reason}";
+        response.Message = "Gỡ cư dân khỏi phòng thành công.";
         return response;
     }
     public async Task<string> ToggleResidentStatus(int residentId)
