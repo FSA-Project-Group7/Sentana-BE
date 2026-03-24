@@ -9,4 +9,5 @@ namespace Sentana.API.DTOs.Resident
 
         [Required(ErrorMessage = "Vui lòng cung cấp ApartmentId.")]
         public int ApartmentId { get; set; }
+    }
 }

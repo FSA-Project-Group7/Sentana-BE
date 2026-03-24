@@ -5,6 +5,8 @@ namespace Sentana.API.DTOs.Resident
         public int TotalRows { get; set; }
         public int SuccessCount { get; set; }
         public int FailedCount { get; set; }
+
+        public bool IsRejected { get; set; }
         public List<string> Errors { get; set; } = new();
     }
 }
