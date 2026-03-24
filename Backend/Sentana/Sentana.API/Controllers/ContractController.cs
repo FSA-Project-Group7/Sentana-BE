@@ -19,11 +19,11 @@ namespace Sentana.API.Controllers
         }
 
         [Authorize(Roles = "Manager")]
-        [HttpPost("{id}/terminate")]
-        public async Task<IActionResult> TerminateContract(int id, [FromBody] TerminateContractDto request)
+        [HttpPut("{id}/terminate")]
+        public async Task<IActionResult> Terminate(int id, [FromBody] TerminateContractDto dto)
         {
-            var result = await _contractService.TerminateContractAsync(id, request);
-            return StatusCode(result.StatusCode, result);
+            var result = await _contractService.TerminateContractAsync(id, dto);
+            return Ok(result);
         }
 
         [Authorize(Roles = "Manager")]

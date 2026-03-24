@@ -1,10 +1,11 @@
+using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Contracts;
 using Sentana.API.Enums;
 using Sentana.API.Helpers;
 using Sentana.API.Models;
 using Sentana.API.Repositories;
 using Sentana.API.Services.SStorage;
-using Microsoft.EntityFrameworkCore;
+using System.Linq;
 
 namespace Sentana.API.Services
 {
@@ -215,24 +216,82 @@ namespace Sentana.API.Services
             if (contract.Status != GeneralStatus.Active)
                 return ApiResponse<object>.Fail(400, "Contract không active");
 
-            contract.Status = GeneralStatus.Inactive;
-            contract.UpdatedAt = DateTime.Now;
+            using var transaction = await _context.Database.BeginTransactionAsync();
 
-            if (contract.Apartment != null)
-                contract.Apartment.Status = ApartmentStatus.Vacant;
+            try
+            {
+                contract.Status = GeneralStatus.Inactive;
+                contract.UpdatedAt = DateTime.Now;
 
-            var resident = await _context.ApartmentResidents
-                .FirstOrDefaultAsync(x =>
-                    x.AccountId == contract.AccountId &&
-                    x.ApartmentId == contract.ApartmentId &&
-                    x.IsDeleted == false);
+                contract.EndDay = request.TerminationDate;
 
-            if (resident != null)
-                resident.IsDeleted = true;
+                if (contract.Apartment != null)
+                    contract.Apartment.Status = ApartmentStatus.Vacant;
 
-            await _context.SaveChangesAsync();
+                if (contract.ApartmentId == null)
+                    return ApiResponse<object>.Fail(400, "Apartment không hợp lệ");
+                
+                    int apartmentId = contract.ApartmentId.Value;
 
-            return ApiResponse<object>.Success(null, "Terminate thành công");
+                var residents = await _context.ApartmentResidents
+                    .Where(x => x.ApartmentId == apartmentId && x.IsDeleted == false)
+                    .ToListAsync();
+
+                foreach (var r in residents)
+                {
+                    r.IsDeleted = true;
+                }
+
+                var services = await _context.ApartmentServices
+                    .Where(x => x.ApartmentId == apartmentId && x.IsDeleted == false)
+                    .ToListAsync();
+
+                foreach (var s in services)
+                {
+                    s.EndDay = request.TerminationDate;
+                    s.IsDeleted = true;
+                }
+
+                var invoices = await _context.Invoices
+                    .Where(x => x.ContractId == contractId)
+                    .ToListAsync();
+
+                var invoiceIds = invoices.Select(x => x.InvoiceId).ToList();
+
+                var payments = await _context.PaymentTransactions
+                    .Where(x => x.InvoiceId != null && invoiceIds.Contains(x.InvoiceId.Value))
+                    .ToListAsync();
+
+                decimal totalInvoice = invoices.Sum(x => x.TotalMoney ?? 0);
+                decimal totalPaid = payments.Sum(x => x.AmountPaid ?? 0);
+
+                decimal additionalCost = request.AdditionalCost;
+
+                decimal refund = totalPaid - totalInvoice - additionalCost;
+
+                bool isFullyPaid = totalPaid >= (totalInvoice + additionalCost);
+
+                string paymentStatus = isFullyPaid
+                        ? "Đã thanh toán đủ"
+                        : "Chưa thanh toán đủ";
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+               return ApiResponse<object>.Success(new
+                    {
+                        TotalInvoice = totalInvoice,
+                        TotalPaid = totalPaid,
+                        AdditionalCost = additionalCost,
+                        RefundAmount = refund,
+                        IsFullyPaid = isFullyPaid,
+                        PaymentStatus = paymentStatus
+                    }, "Terminate thành công");
+                                }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return ApiResponse<object>.Fail(500, ex.Message);
+            }
         }
 
         public async Task<ApiResponse<object>> ExtendContractAsync(int contractId, ExtendContractDto request)
