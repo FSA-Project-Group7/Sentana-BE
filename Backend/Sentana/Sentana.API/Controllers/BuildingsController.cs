@@ -4,8 +4,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Building;
 using Sentana.API.Enums;
+using Sentana.API.Helpers;
 using Sentana.API.Models;
 using Sentana.API.Services.SBuilding;
+using System.Security.Claims;
 
 namespace Sentana.API.Controllers
 {
@@ -31,19 +33,21 @@ namespace Sentana.API.Controllers
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public async Task<IActionResult> CreateBuilding([FromBody] BuildingRequestDto newBuilding)
         {
+            var accountIdClaim = User.FindFirst("AccountId")?.Value;
+            if (string.IsNullOrEmpty(accountIdClaim) || !int.TryParse(accountIdClaim, out int currentManagerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Không tìm thấy thông tin người dùng."));
+            }
+
             try
             {
-                var createdBuilding = await _buildingService.CreateBuildingAsync(newBuilding, User);
 
-                return CreatedAtAction(nameof(GetBuildingList), new { id = createdBuilding.BuildingId }, createdBuilding);
+                var result = await _buildingService.CreateBuildingAsync(newBuilding, currentManagerId);
+                return Ok(ApiResponse<object>.Success(result, "Tạo tòa nhà và căn hộ thành công."));
             }
-            catch (ArgumentException ex)
+            catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
             }
         }
 
@@ -57,11 +61,15 @@ namespace Sentana.API.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> UpdateBuilding(int id, [FromBody] BuildingRequestDto updatedBuilding)
         {
+            var accountIdClaim = User.FindFirst("AccountId")?.Value;
+            if (string.IsNullOrEmpty(accountIdClaim) || !int.TryParse(accountIdClaim, out int currentManagerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Không tìm thấy thông tin người dùng."));
+            }
             try
             {
-                var result = await _buildingService.UpdateBuildingAsync(id, updatedBuilding, User);
-
-                return Ok(result);
+                var result = await _buildingService.UpdateBuildingAsync(id, updatedBuilding, currentManagerId);
+                return Ok(ApiResponse<object>.Success(result, "Cập nhật tòa nhà và bổ sung phòng mới thành công."));
             }
             catch (ArgumentException ex)
             {
@@ -96,26 +104,24 @@ namespace Sentana.API.Controllers
 
         // View Building List - để kiểm tra building mới tạo
         [HttpGet]
-        [Authorize(Roles = "Manager,Technician")] // Thêm role Technician cách nhau bởi dấu phẩy
+        [Authorize(Roles = "Manager")] // Thêm role Technician cách nhau bởi dấu phẩy
         [ProducesResponseType(StatusCodes.Status200OK)]
         public async Task<IActionResult> GetBuildingList()
         {
-            var buildings = await _context.Buildings
-                .Where(b => b.IsDeleted == false)
-                .Select(b => new BuildingResponseDto
-                {
-                    BuildingId = b.BuildingId,
-                    BuildingName = b.BuildingName,
-                    BuildingCode = b.BuildingCode,
-                    Address = b.Address,
-                    City = b.City,
-                    FloorNumber = b.FloorNumber,
-                    ApartmentNumber = b.ApartmentNumber,
-					Status = (byte?)b.Status
-				})
-                .ToListAsync();
-
-            return Ok(buildings);
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+            }
+            try
+            {
+                var buildingList = await _buildingService.GetBuildingListAsync(managerId);
+                return Ok(ApiResponse<IEnumerable<BuildingResponseDto>>.Success(buildingList, "Lấy danh sách thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(500, $"Lỗi hệ thống: {ex.Message}"));
+            }
         }
 
 		// Lấy danh sách xóa mềm
