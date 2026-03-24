@@ -33,4 +33,8 @@ public partial class Building
     public bool? IsDeleted { get; set; }
 
     public virtual ICollection<Apartment> Apartments { get; set; } = new List<Apartment>();
+
+    public int? ManagerId { get; set; }
+
+    public virtual Account? Manager { get; set; }
 }

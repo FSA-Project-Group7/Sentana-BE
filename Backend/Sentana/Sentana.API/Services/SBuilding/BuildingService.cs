@@ -15,7 +15,7 @@ namespace Sentana.API.Services.SBuilding
             _context = context;
         }
 
-		public async Task<BuildingResponseDto> CreateBuildingAsync(BuildingRequestDto dto, ClaimsPrincipal user)
+		public async Task<BuildingResponseDto> CreateBuildingAsync(BuildingRequestDto dto, int managerId)
 		{
 			if (!dto.FloorNumber.HasValue || dto.FloorNumber <= 0)
 				throw new ArgumentException("Số tầng là bắt buộc và phải lớn hơn 0.");
@@ -25,13 +25,6 @@ namespace Sentana.API.Services.SBuilding
 			var isExist = await _context.Buildings.AnyAsync(b => b.BuildingCode != null && b.BuildingCode.ToLower() == dto.BuildingCode.ToLower());
 
 			if (isExist) throw new InvalidOperationException($"Mã tòa nhà '{dto.BuildingCode}' đã tồn tại (hoặc đang nằm trong thùng rác). Vui lòng chọn mã khác!");
-
-			int? accountId = null;
-			var accountIdClaim = user?.FindFirst("AccountId");
-			if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
-			{
-				accountId = parsedAccountId;
-			}
 
 			int calculatedApartmentNumber = dto.FloorNumber.Value * 10;
 
@@ -46,8 +39,9 @@ namespace Sentana.API.Services.SBuilding
 				Status = (GeneralStatus)1,
 				CreatedAt = DateTime.UtcNow,
 				IsDeleted = false,
-				CreatedBy = accountId ?? 0
-			};
+				CreatedBy = managerId,
+				ManagerId = managerId
+            };
 
 			_context.Buildings.Add(newBuilding);
 			await _context.SaveChangesAsync();
@@ -70,7 +64,7 @@ namespace Sentana.API.Services.SBuilding
 						Area = 0,
 						Status = ApartmentStatus.Vacant,
 						CreatedAt = DateTime.UtcNow,
-						CreatedBy = accountId ?? 0,
+						CreatedBy = managerId,
 						IsDeleted = false
 					});
 				}
@@ -82,13 +76,8 @@ namespace Sentana.API.Services.SBuilding
 			return MapToResponseDto(newBuilding);
 		}
 
-		public async Task<BuildingResponseDto> UpdateBuildingAsync(int id, BuildingRequestDto dto, ClaimsPrincipal user)
+		public async Task<BuildingResponseDto> UpdateBuildingAsync(int id, BuildingRequestDto dto, int managerId)
 		{
-			int? accountId = null;
-			var accountIdClaim = user?.FindFirst("AccountId");
-			if (accountIdClaim != null && int.TryParse(accountIdClaim.Value, out var parsedAccountId))
-				accountId = parsedAccountId;
-
 			var existingBuilding = await _context.Buildings
 				.Include(b => b.Apartments)
 					.ThenInclude(a => a.Contracts)
@@ -110,13 +99,42 @@ namespace Sentana.API.Services.SBuilding
 			if (dto.Address != null) existingBuilding.Address = dto.Address;
 			if (dto.City != null) existingBuilding.City = dto.City;
 
-			if (dto.FloorNumber.HasValue)
-			{
-				existingBuilding.FloorNumber = dto.FloorNumber.Value;
-				existingBuilding.ApartmentNumber = dto.FloorNumber.Value * 10;
-			}
+            if (dto.FloorNumber.HasValue && dto.FloorNumber.Value != existingBuilding.FloorNumber)
+            {
+                int oldFloorNumber = existingBuilding.FloorNumber ?? 0;
+                int newFloorNumber = dto.FloorNumber.Value;
 
-			if (dto.Status.HasValue && existingBuilding.Status != (GeneralStatus)dto.Status.Value)
+                if (newFloorNumber < oldFloorNumber)
+                    throw new ArgumentException("Không thể giảm số tầng của tòa nhà đã có dữ liệu.");
+                existingBuilding.FloorNumber = newFloorNumber;
+                existingBuilding.ApartmentNumber = newFloorNumber * 10;
+                var additionalApartments = new List<Apartment>();
+                for (int floor = oldFloorNumber + 1; floor <= newFloorNumber; floor++)
+                {
+                    for (int aptIndex = 1; aptIndex <= 10; aptIndex++)
+                    {
+                        int roomNumber = (floor * 100) + aptIndex;
+                        additionalApartments.Add(new Apartment
+                        {
+                            BuildingId = existingBuilding.BuildingId,
+                            ApartmentCode = $"{existingBuilding.BuildingCode}-{roomNumber}",
+                            ApartmentName = $"Phòng {roomNumber} - {existingBuilding.BuildingName}",
+                            ApartmentNumber = roomNumber,
+                            FloorNumber = floor,
+                            Status = ApartmentStatus.Vacant,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = managerId,
+                            IsDeleted = false
+                        });
+                    }
+                }
+                if (additionalApartments.Any())
+                {
+                    await _context.Apartments.AddRangeAsync(additionalApartments);
+                }
+            }
+
+            if (dto.Status.HasValue && existingBuilding.Status != (GeneralStatus)dto.Status.Value)
 			{
 				var newStatus = (GeneralStatus)dto.Status.Value;
 				existingBuilding.Status = newStatus;
@@ -140,8 +158,9 @@ namespace Sentana.API.Services.SBuilding
 			}
 
 			existingBuilding.UpdatedAt = DateTime.UtcNow;
+			existingBuilding.UpdatedBy = managerId;
 
-			_context.Buildings.Update(existingBuilding);
+            _context.Buildings.Update(existingBuilding);
 			await _context.SaveChangesAsync();
 
 			return MapToResponseDto(existingBuilding);
@@ -265,6 +284,24 @@ namespace Sentana.API.Services.SBuilding
                 ApartmentNumber = building.ApartmentNumber,
 				Status = (byte?)building.Status
 			};
-        }
+        } 
+
+		public async Task<IEnumerable<BuildingResponseDto>> GetBuildingListAsync(int? managerId = null)
+		{
+			return await _context.Buildings
+			.Where(b => b.ManagerId == managerId && b.IsDeleted == false)
+			.Select(b => new BuildingResponseDto
+			{
+				BuildingId = b.BuildingId,
+				BuildingName = b.BuildingName,
+				BuildingCode = b.BuildingCode,
+				Address = b.Address,
+				City = b.City,
+				FloorNumber = b.FloorNumber,
+				ApartmentNumber = b.ApartmentNumber,
+				Status = (byte?)b.Status
+			})
+			.ToListAsync();
+		}
     }
 }
