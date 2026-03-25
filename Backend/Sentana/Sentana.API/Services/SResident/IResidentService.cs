@@ -6,7 +6,7 @@ namespace Sentana.API.Services.SResident
     {
         Task<ResidentResponseDto> CreateResident(CreateResidentRequestDto request, int managerId);
 
-        Task<IEnumerable<ResidentResponseDto>> GetAllResidents();
+        Task<IEnumerable<ResidentResponseDto>> GetAllResidents(int managerId);
 
         Task<ResidentResponseDto> UpdateResident(int residentId, UpdateResidentRequestDto request, int managerId);
 
