@@ -1,15 +1,18 @@
-using System;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
-using Sentana.API.DTOs.Invoice;
-using Sentana.API.Models;
-using Sentana.API.Enums;
+using OfficeOpenXml;
+using OfficeOpenXml.Style;
 using Sentana.API.DTOs.Common;
+using Sentana.API.DTOs.Invoice;
 using Sentana.API.DTOs.Payment;
-using Sentana.API.Services.SEmail;
+using Sentana.API.Enums;
 using Sentana.API.Helpers;
+using Sentana.API.Models;
+using Sentana.API.Services.SEmail;
+using System;
+using System.Drawing;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
 
 namespace Sentana.API.Services.SInvoice
 {
@@ -576,23 +579,110 @@ namespace Sentana.API.Services.SInvoice
                     (i.Status == InvoiceStatus.Unpaid || i.Status == InvoiceStatus.PendingVerification) &&
                     i.DayPay.HasValue &&
                     i.DayPay.Value < today)
-                .OrderByDescending(i => today.DayNumber - i.DayPay!.Value.DayNumber)
+                // Sửa lỗi 500: Sắp xếp theo DayPay tăng dần (Ngày càng cũ -> Quá hạn càng lâu).
+                // EF Core dịch được OrderBy này sang SQL một cách an toàn.
+                .OrderBy(i => i.DayPay)
                 .ToListAsync();
 
             return overdueInvoices.Select(i => new OutstandingDebtItemDto
             {
-                InvoiceId    = i.InvoiceId,
-                ApartmentId  = i.ApartmentId,
+                InvoiceId = i.InvoiceId,
+                ApartmentId = i.ApartmentId,
                 ApartmentCode = i.Apartment?.ApartmentCode,
                 ApartmentName = i.Apartment?.ApartmentName,
                 BillingMonth = i.BillingMonth,
-                BillingYear  = i.BillingYear,
-                TotalMoney   = i.TotalMoney,
-                Debt         = i.Debt,
-                DayPay       = i.DayPay,
-                DaysOverdue  = today.DayNumber - i.DayPay!.Value.DayNumber,
-                Status       = i.Status.HasValue ? i.Status.Value.ToString() : null
+                BillingYear = i.BillingYear,
+                TotalMoney = i.TotalMoney,
+                Debt = i.Debt,
+                DayPay = i.DayPay,
+                // Thực hiện tính số ngày quá hạn ở trên RAM (Client-side evaluation)
+                DaysOverdue = today.DayNumber - i.DayPay!.Value.DayNumber,
+                Status = i.Status.HasValue ? i.Status.Value.ToString() : null
             }).ToList();
+        }
+
+        //us 83 - Export Debt Report
+        public async Task<byte[]> ExportDebtReportAsync()
+        {
+            ExcelPackage.License.SetNonCommercialPersonal("Sentana");
+            var today = DateOnly.FromDateTime(DateTime.Today);
+
+            // 1. Lọc hóa đơn CHUẨN logic Outstanding Debt
+            var unpaidInvoices = await _context.Invoices
+                .Include(i => i.Apartment)
+                .Include(i => i.Contract)
+                    .ThenInclude(c => c.Account)
+                        .ThenInclude(a => a.Info)
+                .Where(i => i.IsDeleted == false &&
+                            (i.Status == InvoiceStatus.Unpaid || i.Status == InvoiceStatus.PendingVerification) &&
+                            i.Debt > 0 &&
+                            i.DayPay.HasValue &&
+                            i.DayPay.Value < today) // Chỉ lấy hóa đơn ĐÃ QUÁ HẠN
+                .ToListAsync();
+
+            // 2. Nhóm dữ liệu theo Căn hộ + Chủ tài khoản (Tránh gộp nhầm nợ chủ cũ/mới)
+            var exportData = unpaidInvoices
+                .GroupBy(i => new {
+                    i.ApartmentId,
+                    ApartmentCode = i.Apartment?.ApartmentCode,
+                    AccountId = i.Contract?.AccountId, // Điểm mấu chốt để phân biệt
+                    ResidentName = i.Contract?.Account?.Info?.FullName
+                                   ?? i.Contract?.Account?.UserName
+                                   ?? "Không xác định"
+                })
+                .Select(g => new {
+                    RoomNumber = g.Key.ApartmentCode ?? "N/A",
+                    ResidentName = g.Key.ResidentName,
+                    TotalAmountOwed = g.Sum(i => i.Debt ?? 0)
+                })
+                .OrderBy(x => x.RoomNumber)
+                .ToList();
+
+            using var package = new ExcelPackage();
+            var worksheet = package.Workbook.Worksheets.Add("Debt Report");
+
+            // Khởi tạo Header
+            worksheet.Cells[1, 1].Value = "Mã Phòng (Room Number)";
+            worksheet.Cells[1, 2].Value = "Tên Cư Dân (Resident Name)";
+            worksheet.Cells[1, 3].Value = "Tổng Nợ (Total Amount Owed)";
+
+            using (var range = worksheet.Cells[1, 1, 1, 3])
+            {
+                range.Style.Font.Bold = true;
+                range.Style.Fill.PatternType = ExcelFillStyle.Solid;
+                range.Style.Fill.BackgroundColor.SetColor(Color.LightGray);
+                range.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
+            }
+
+            // 3. Xử lý trường hợp Không có ai nợ
+            if (!exportData.Any())
+            {
+                worksheet.Cells[2, 1, 2, 3].Merge = true;
+                worksheet.Cells[2, 1].Value = "Hiện tại không có cư dân nào đang nợ đọng/quá hạn.";
+                worksheet.Cells[2, 1].Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
+                worksheet.Cells[2, 1].Style.Font.Italic = true;
+
+                worksheet.Cells[worksheet.Dimension.Address].AutoFitColumns();
+                return await package.GetAsByteArrayAsync();
+            }
+
+            // Đổ dữ liệu vào các dòng
+            int row = 2;
+            foreach (var item in exportData)
+            {
+                worksheet.Cells[row, 1].Value = item.RoomNumber;
+                worksheet.Cells[row, 2].Value = item.ResidentName;
+
+                worksheet.Cells[row, 3].Value = item.TotalAmountOwed;
+                worksheet.Cells[row, 3].Style.Numberformat.Format = "#,##0 VNĐ";
+
+                row++;
+            }
+
+            // Tự động căn chỉnh độ rộng
+            worksheet.Cells[worksheet.Dimension.Address].AutoFitColumns();
+
+            return await package.GetAsByteArrayAsync();
         }
     }
 }
