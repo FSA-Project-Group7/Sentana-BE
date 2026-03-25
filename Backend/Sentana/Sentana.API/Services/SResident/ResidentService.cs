@@ -174,45 +174,71 @@ public class ResidentService : IResidentService
             };
         }
 
-        var result   = new ImportResidentsResultDto();
+        var result = new ImportResidentsResultDto();
         int startRow = 2; // row 1 là header
 
         // Intra-batch duplicate tracking
-        var batchEmails    = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var batchEmails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var batchUserNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var batchCccds     = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var batchCccds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var emailRegex = new System.Text.RegularExpressions.Regex(
             ValidationHelper.EmailRegex, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        var cccdRegex  = new System.Text.RegularExpressions.Regex(ValidationHelper.CccdRegex);
+        var cccdRegex = new System.Text.RegularExpressions.Regex(ValidationHelper.CccdRegex);
         var phoneRegex = new System.Text.RegularExpressions.Regex(ValidationHelper.PhoneRegex);
 
-        // Danh sách các DTO hợp lệ được thu thập ở pass 1
         var validDtos = new List<CreateResidentRequestDto>();
 
         // ════════════════════════════════════════════════════════════════════
-        // PASS 1 – Validate toàn bộ file, không lưu DB
+        // PRE-PASS – Thu thập dữ liệu để kiểm tra DB hàng loạt (Tránh N+1)
+        // ════════════════════════════════════════════════════════════════════
+        var emailsToValidate = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var userNamesToValidate = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var cccdsToValidate = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (int row = startRow; row <= worksheet.Dimension.End.Row; row++)
+        {
+            var email = worksheet.Cells[row, 1].Text?.Trim();
+            var userName = worksheet.Cells[row, 2].Text?.Trim();
+            var identityCard = worksheet.Cells[row, 5].Text?.Trim();
+
+            if (!string.IsNullOrWhiteSpace(email)) emailsToValidate.Add(email);
+            if (!string.IsNullOrWhiteSpace(userName)) userNamesToValidate.Add(userName);
+            if (!string.IsNullOrWhiteSpace(identityCard)) cccdsToValidate.Add(identityCard);
+        }
+
+        // Thực hiện query DB 1 lần để lấy các record bị trùng
+        var existingEmailSet = new HashSet<string>(
+            await _context.Accounts.Where(a => emailsToValidate.Contains(a.Email)).Select(a => a.Email).ToListAsync(),
+            StringComparer.OrdinalIgnoreCase);
+
+        var existingUserNameSet = new HashSet<string>(
+            await _context.Accounts.Where(a => userNamesToValidate.Contains(a.UserName)).Select(a => a.UserName).ToListAsync(),
+            StringComparer.OrdinalIgnoreCase);
+
+        var existingCccdSet = new HashSet<string>(
+            await _context.Accounts.Where(a => a.RoleId == 2 && a.Info != null && cccdsToValidate.Contains(a.Info.CmndCccd))
+                                   .Select(a => a.Info.CmndCccd).ToListAsync(),
+            StringComparer.OrdinalIgnoreCase);
+
+        // ════════════════════════════════════════════════════════════════════
+        // PASS 1 – Validate dữ liệu đồng bộ bằng RAM
         // ════════════════════════════════════════════════════════════════════
         for (int row = startRow; row <= worksheet.Dimension.End.Row; row++)
         {
-            // Col: 1=Email, 2=UserName, 3=FullName, 4=PhoneNumber, 5=IdentityCard,
-            //      6=BirthDay(dd/MM/yyyy), 7=Sex(0/1/2), 8=Country, 9=City, 10=Address
-            var email        = worksheet.Cells[row, 1].Text?.Trim();
-            var userName     = worksheet.Cells[row, 2].Text?.Trim();
-            var fullName     = worksheet.Cells[row, 3].Text?.Trim();
-            var phoneNumber  = worksheet.Cells[row, 4].Text?.Trim();
+            var email = worksheet.Cells[row, 1].Text?.Trim();
+            var userName = worksheet.Cells[row, 2].Text?.Trim();
+            var fullName = worksheet.Cells[row, 3].Text?.Trim();
+            var phoneNumber = worksheet.Cells[row, 4].Text?.Trim();
             var identityCard = worksheet.Cells[row, 5].Text?.Trim();
-            var birthDayStr  = worksheet.Cells[row, 6].Text?.Trim();
-            var sexStr       = worksheet.Cells[row, 7].Text?.Trim();
-            var country      = worksheet.Cells[row, 8].Text?.Trim();
-            var city         = worksheet.Cells[row, 9].Text?.Trim();
-            var address      = worksheet.Cells[row, 10].Text?.Trim();
+            var birthDayStr = worksheet.Cells[row, 6].Text?.Trim();
+            var sexStr = worksheet.Cells[row, 7].Text?.Trim();
+            var country = worksheet.Cells[row, 8].Text?.Trim();
+            var city = worksheet.Cells[row, 9].Text?.Trim();
+            var address = worksheet.Cells[row, 10].Text?.Trim();
 
-            // Bỏ qua dòng hoàn toàn trống
-            if (string.IsNullOrWhiteSpace(email) &&
-                string.IsNullOrWhiteSpace(userName) &&
-                string.IsNullOrWhiteSpace(fullName) &&
-                string.IsNullOrWhiteSpace(identityCard))
+            if (string.IsNullOrWhiteSpace(email) && string.IsNullOrWhiteSpace(userName) &&
+                string.IsNullOrWhiteSpace(fullName) && string.IsNullOrWhiteSpace(identityCard))
             {
                 continue;
             }
@@ -220,11 +246,8 @@ public class ResidentService : IResidentService
             result.TotalRows++;
             bool rowValid = true;
 
-            // 1. Required fields
-            if (string.IsNullOrWhiteSpace(email) ||
-                string.IsNullOrWhiteSpace(userName) ||
-                string.IsNullOrWhiteSpace(fullName) ||
-                string.IsNullOrWhiteSpace(identityCard))
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(userName) ||
+                string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(identityCard))
             {
                 result.FailedCount++;
                 result.Errors.Add($"Dòng {row}: Thiếu trường bắt buộc (Email, UserName, FullName, IdentityCard).");
@@ -252,13 +275,11 @@ public class ResidentService : IResidentService
                 rowValid = false;
             }
 
-            // BirthDay parse
+            // Parse ngày sinh và giới tính
             DateTime? birthDay = null;
             if (rowValid && !string.IsNullOrWhiteSpace(birthDayStr))
             {
-                if (!DateTime.TryParseExact(birthDayStr, "dd/MM/yyyy",
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        System.Globalization.DateTimeStyles.None, out var parsedDate))
+                if (!DateTime.TryParseExact(birthDayStr, "dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedDate))
                 {
                     result.FailedCount++;
                     result.Errors.Add($"Dòng {row}: Ngày sinh '{birthDayStr}' không đúng định dạng dd/MM/yyyy.");
@@ -276,7 +297,6 @@ public class ResidentService : IResidentService
                 }
             }
 
-            // Sex parse
             Gender? sex = null;
             if (rowValid && !string.IsNullOrWhiteSpace(sexStr))
             {
@@ -292,7 +312,7 @@ public class ResidentService : IResidentService
                 }
             }
 
-            // Intra-batch duplicate
+            // Intra-batch duplicate check
             if (rowValid && !batchEmails.Add(email!))
             {
                 result.FailedCount++;
@@ -312,20 +332,20 @@ public class ResidentService : IResidentService
                 rowValid = false;
             }
 
-            // DB uniqueness
-            if (rowValid && await CheckEmailExist(email!))
+            // Synchronous DB uniqueness check (Memory RAM lookup, O(1))
+            if (rowValid && existingEmailSet.Contains(email!))
             {
                 result.FailedCount++;
                 result.Errors.Add($"Dòng {row}: Email '{email}' đã tồn tại trong hệ thống.");
                 rowValid = false;
             }
-            if (rowValid && await CheckUserNameExist(userName!))
+            if (rowValid && existingUserNameSet.Contains(userName!))
             {
                 result.FailedCount++;
                 result.Errors.Add($"Dòng {row}: Tên đăng nhập '{userName}' đã tồn tại trong hệ thống.");
                 rowValid = false;
             }
-            if (rowValid && await CheckDuplicateRoleByIdentityCard(identityCard!, 2))
+            if (rowValid && existingCccdSet.Contains(identityCard!))
             {
                 result.FailedCount++;
                 result.Errors.Add($"Dòng {row}: CCCD '{identityCard}' đã có tài khoản cư dân trong hệ thống.");
@@ -336,50 +356,109 @@ public class ResidentService : IResidentService
             {
                 validDtos.Add(new CreateResidentRequestDto
                 {
-                    Email        = email!,
-                    UserName     = userName!,
-                    Password     = "Temp@123",
-                    FullName     = fullName!,
-                    PhoneNumber  = phoneNumber,
+                    Email = email!,
+                    UserName = userName!,
+                    Password = "Temp@123",
+                    FullName = fullName!,
+                    PhoneNumber = phoneNumber,
                     IdentityCard = identityCard!,
-                    BirthDay     = birthDay,
-                    Sex          = sex,
-                    Country      = country,
-                    City         = city,
-                    Address      = address
+                    BirthDay = birthDay,
+                    Sex = sex,
+                    Country = country,
+                    City = city,
+                    Address = address
                 });
             }
         }
 
-        // ════════════════════════════════════════════════════════════════════
-        // Nếu có bất kỳ dòng nào lỗi → reject toàn bộ file, không lưu gì
-        // ════════════════════════════════════════════════════════════════════
         if (result.FailedCount > 0)
         {
-            result.IsRejected  = true;
+            result.IsRejected = true;
             result.SuccessCount = 0;
             return result;
         }
 
         // ════════════════════════════════════════════════════════════════════
-        // PASS 2 – Tất cả hợp lệ → lưu toàn bộ trong 1 transaction
+        // PASS 2 – LƯU HÀNG LOẠT TRONG 1 TRANSACTION (Bulk Insert)
         // ════════════════════════════════════════════════════════════════════
         using var globalTransaction = await _context.Database.BeginTransactionAsync();
         try
         {
+            // Trích xuất các Info hiện có 1 lần (Cho trường hợp người dùng đã có Info nhưng chưa có Account Cư dân)
+            var validCccds = validDtos.Select(d => d.IdentityCard).ToList();
+            var existingInfos = await _context.InFos
+                .Where(i => validCccds.Contains(i.CmndCccd))
+                .ToDictionaryAsync(i => i.CmndCccd, StringComparer.OrdinalIgnoreCase);
+
+            // Lấy mã Code lớn nhất 1 lần để tăng trong RAM
+            var lastRes = await _context.Accounts
+                .Where(a => a.RoleId == 2 && a.Code != null && a.Code.StartsWith("RES-"))
+                .OrderByDescending(a => a.AccountId)
+                .FirstOrDefaultAsync();
+
+            int nextNumber = 1;
+            if (lastRes != null && lastRes.Code.Length > 4)
+            {
+                if (int.TryParse(lastRes.Code.Substring(4), out int lastNumber))
+                    nextNumber = lastNumber + 1;
+            }
+
+            DateTime currentTime = DateTime.Now;
+            var newAccounts = new List<Account>();
+
             foreach (var dto in validDtos)
             {
-                await CreateResident(dto, managerId);
+                string hashedPassword = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+                string generatedCode = $"RES-{nextNumber:D3}";
+                nextNumber++; // Tăng trong RAM thay vì query lại
+
+                var newAccount = new Account
+                {
+                    Code = generatedCode,
+                    Email = dto.Email,
+                    UserName = dto.UserName,
+                    Password = hashedPassword,
+                    RoleId = 2,
+                    Status = GeneralStatus.Active,
+                    CreatedAt = currentTime,
+                    CreatedBy = managerId,
+                    IsDeleted = false
+                };
+
+                if (existingInfos.TryGetValue(dto.IdentityCard, out var existingInfo))
+                {
+                    newAccount.InfoId = existingInfo.InfoId;
+                }
+                else
+                {
+                    newAccount.Info = new InFo
+                    {
+                        FullName = dto.FullName,
+                        PhoneNumber = dto.PhoneNumber,
+                        BirthDay = dto.BirthDay,
+                        Sex = dto.Sex,
+                        CmndCccd = dto.IdentityCard,
+                        Country = dto.Country,
+                        City = dto.City,
+                        Address = dto.Address,
+                        CreatedAt = currentTime
+                    };
+                }
+
+                newAccounts.Add(newAccount);
                 result.SuccessCount++;
             }
+
+            _context.Accounts.AddRange(newAccounts); // AddRange (Bulk Add) thay vì Add từng cái
+            await _context.SaveChangesAsync();       // Lưu 1 lần duy nhất
             await globalTransaction.CommitAsync();
         }
         catch (Exception ex)
         {
             await globalTransaction.RollbackAsync();
             result.SuccessCount = 0;
-            result.FailedCount  = result.TotalRows;
-            result.IsRejected   = true;
+            result.FailedCount = result.TotalRows;
+            result.IsRejected = true;
             result.Errors.Clear();
             result.Errors.Add($"Lỗi khi lưu dữ liệu: {ex.Message}. Toàn bộ file bị hủy.");
         }
