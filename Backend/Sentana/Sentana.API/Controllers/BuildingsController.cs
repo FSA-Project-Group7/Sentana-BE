@@ -129,12 +129,19 @@ namespace Sentana.API.Controllers
 		[Authorize(Roles = "Manager")]
 		public async Task<IActionResult> GetDeletedBuildings()
 		{
-			try
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+            }
+            try
 			{
-				var buildings = await _buildingService.GetDeletedBuildingsAsync();
-				return Ok(buildings);
-			}
-			catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+				var buildings = await _buildingService.GetDeletedBuildingsAsync(managerId);
+                return Ok(ApiResponse<IEnumerable<BuildingResponseDto>>.Success(buildings, "Lấy danh sách thùng rác thành công."));
+            }
+			catch (Exception ex) {
+                return BadRequest(ApiResponse<object>.Fail(400, "Lỗi khi lấy dữ liệu: " + ex.Message));
+            }
 		}
 
 		// Khôi phục

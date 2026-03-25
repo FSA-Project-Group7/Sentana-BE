@@ -54,9 +54,15 @@ namespace Sentana.API.Controllers
         [Authorize(Roles = "Manager")]
         public async Task<IActionResult> GetAllResidents()
         {
+            var managerIdStr = User.FindFirstValue("AccountId") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+            {
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+            }
             try
             {
-                var residents = await _residentService.GetAllResidents();
+                var residents = await _residentService.GetAllResidents(managerId);
                 var response = ApiResponse<IEnumerable<ResidentResponseDto>>.Success(residents);
                 return Ok(response);
             }
