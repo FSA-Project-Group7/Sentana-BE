@@ -576,22 +576,25 @@ namespace Sentana.API.Services.SInvoice
                     (i.Status == InvoiceStatus.Unpaid || i.Status == InvoiceStatus.PendingVerification) &&
                     i.DayPay.HasValue &&
                     i.DayPay.Value < today)
-                .OrderByDescending(i => today.DayNumber - i.DayPay!.Value.DayNumber)
+                // Sửa lỗi 500: Sắp xếp theo DayPay tăng dần (Ngày càng cũ -> Quá hạn càng lâu).
+                // EF Core dịch được OrderBy này sang SQL một cách an toàn.
+                .OrderBy(i => i.DayPay)
                 .ToListAsync();
 
             return overdueInvoices.Select(i => new OutstandingDebtItemDto
             {
-                InvoiceId    = i.InvoiceId,
-                ApartmentId  = i.ApartmentId,
+                InvoiceId = i.InvoiceId,
+                ApartmentId = i.ApartmentId,
                 ApartmentCode = i.Apartment?.ApartmentCode,
                 ApartmentName = i.Apartment?.ApartmentName,
                 BillingMonth = i.BillingMonth,
-                BillingYear  = i.BillingYear,
-                TotalMoney   = i.TotalMoney,
-                Debt         = i.Debt,
-                DayPay       = i.DayPay,
-                DaysOverdue  = today.DayNumber - i.DayPay!.Value.DayNumber,
-                Status       = i.Status.HasValue ? i.Status.Value.ToString() : null
+                BillingYear = i.BillingYear,
+                TotalMoney = i.TotalMoney,
+                Debt = i.Debt,
+                DayPay = i.DayPay,
+                // Thực hiện tính số ngày quá hạn ở trên RAM (Client-side evaluation)
+                DaysOverdue = today.DayNumber - i.DayPay!.Value.DayNumber,
+                Status = i.Status.HasValue ? i.Status.Value.ToString() : null
             }).ToList();
         }
     }
