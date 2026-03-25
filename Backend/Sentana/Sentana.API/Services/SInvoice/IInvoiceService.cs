@@ -21,5 +21,7 @@ namespace Sentana.API.Services.SInvoice
         Task<(bool IsSuccess, string Message)> SendInvoiceNotificationAsync(int invoiceId);
         
         Task<List<OutstandingDebtItemDto>> GetOutstandingDebtsAsync();
+
+        Task<byte[]> ExportDebtReportAsync();
     }
 }
