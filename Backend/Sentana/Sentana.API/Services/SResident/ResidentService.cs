@@ -187,10 +187,13 @@ public class ResidentService : IResidentService
         var cccdRegex = new System.Text.RegularExpressions.Regex(ValidationHelper.CccdRegex);
         var phoneRegex = new System.Text.RegularExpressions.Regex(ValidationHelper.PhoneRegex);
 
+        // Thêm Regex kiểm tra FullName (Chỉ chấp nhận chữ cái và khoảng trắng, hỗ trợ Tiếng Việt)
+        var fullNameRegex = new System.Text.RegularExpressions.Regex(@"^[\p{L}\s]+$");
+
         var validDtos = new List<CreateResidentRequestDto>();
 
         // ════════════════════════════════════════════════════════════════════
-        // PRE-PASS – Thu thập dữ liệu để kiểm tra DB hàng loạt (Tránh N+1)
+        // PRE-PASS – Thu thập dữ liệu để kiểm tra DB hàng loạt (Giải quyết N+1)
         // ════════════════════════════════════════════════════════════════════
         var emailsToValidate = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var userNamesToValidate = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -207,7 +210,6 @@ public class ResidentService : IResidentService
             if (!string.IsNullOrWhiteSpace(identityCard)) cccdsToValidate.Add(identityCard);
         }
 
-        // Thực hiện query DB 1 lần để lấy các record bị trùng
         var existingEmailSet = new HashSet<string>(
             await _context.Accounts.Where(a => emailsToValidate.Contains(a.Email)).Select(a => a.Email).ToListAsync(),
             StringComparer.OrdinalIgnoreCase);
@@ -222,7 +224,7 @@ public class ResidentService : IResidentService
             StringComparer.OrdinalIgnoreCase);
 
         // ════════════════════════════════════════════════════════════════════
-        // PASS 1 – Validate dữ liệu đồng bộ bằng RAM
+        // PASS 1 – Validate dữ liệu
         // ════════════════════════════════════════════════════════════════════
         for (int row = startRow; row <= worksheet.Dimension.End.Row; row++)
         {
@@ -231,7 +233,6 @@ public class ResidentService : IResidentService
             var fullName = worksheet.Cells[row, 3].Text?.Trim();
             var phoneNumber = worksheet.Cells[row, 4].Text?.Trim();
             var identityCard = worksheet.Cells[row, 5].Text?.Trim();
-            var birthDayStr = worksheet.Cells[row, 6].Text?.Trim();
             var sexStr = worksheet.Cells[row, 7].Text?.Trim();
             var country = worksheet.Cells[row, 8].Text?.Trim();
             var city = worksheet.Cells[row, 9].Text?.Trim();
@@ -254,10 +255,18 @@ public class ResidentService : IResidentService
                 rowValid = false;
             }
 
+            // Fix 1: Kiểm tra FullName không chứa số và ký tự đặc biệt
+            if (rowValid && !fullNameRegex.IsMatch(fullName!))
+            {
+                result.FailedCount++;
+                result.Errors.Add($"Dòng {row}: Họ tên '{fullName}' không hợp lệ (Không được chứa số hoặc ký tự đặc biệt).");
+                rowValid = false;
+            }
+
             if (rowValid && !emailRegex.IsMatch(email!))
             {
                 result.FailedCount++;
-                result.Errors.Add($"Dòng {row}: Email '{email}' không đúng định dạng (phải kết thúc bằng @gmail.com).");
+                result.Errors.Add($"Dòng {row}: Email '{email}' không đúng định dạng.");
                 rowValid = false;
             }
 
@@ -271,29 +280,29 @@ public class ResidentService : IResidentService
             if (rowValid && !string.IsNullOrWhiteSpace(phoneNumber) && !phoneRegex.IsMatch(phoneNumber))
             {
                 result.FailedCount++;
-                result.Errors.Add($"Dòng {row}: Số điện thoại '{phoneNumber}' không hợp lệ (định dạng Việt Nam 10 số).");
+                result.Errors.Add($"Dòng {row}: Số điện thoại '{phoneNumber}' không hợp lệ.");
                 rowValid = false;
             }
 
-            // Parse ngày sinh và giới tính
+            // Fix 2: Đọc trực tiếp giá trị DateTime bên dưới thay vì ép kiểu Text
             DateTime? birthDay = null;
-            if (rowValid && !string.IsNullOrWhiteSpace(birthDayStr))
+            if (rowValid && worksheet.Cells[row, 6].Value != null)
             {
-                if (!DateTime.TryParseExact(birthDayStr, "dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedDate))
+                try
+                {
+                    birthDay = worksheet.Cells[row, 6].GetValue<DateTime>();
+                    if (birthDay >= DateTime.Today)
+                    {
+                        result.FailedCount++;
+                        result.Errors.Add($"Dòng {row}: Ngày sinh phải là ngày trong quá khứ.");
+                        rowValid = false;
+                    }
+                }
+                catch
                 {
                     result.FailedCount++;
-                    result.Errors.Add($"Dòng {row}: Ngày sinh '{birthDayStr}' không đúng định dạng dd/MM/yyyy.");
+                    result.Errors.Add($"Dòng {row}: Ngày sinh không đúng định dạng ngày tháng hợp lệ của Excel.");
                     rowValid = false;
-                }
-                else if (parsedDate >= DateTime.Today)
-                {
-                    result.FailedCount++;
-                    result.Errors.Add($"Dòng {row}: Ngày sinh phải là ngày trong quá khứ.");
-                    rowValid = false;
-                }
-                else
-                {
-                    birthDay = parsedDate;
                 }
             }
 
@@ -312,27 +321,25 @@ public class ResidentService : IResidentService
                 }
             }
 
-            // Intra-batch duplicate check
             if (rowValid && !batchEmails.Add(email!))
             {
                 result.FailedCount++;
-                result.Errors.Add($"Dòng {row}: Email '{email}' bị trùng lặp trong file Excel này.");
+                result.Errors.Add($"Dòng {row}: Email '{email}' bị trùng lặp trong file Excel.");
                 rowValid = false;
             }
             if (rowValid && !batchUserNames.Add(userName!))
             {
                 result.FailedCount++;
-                result.Errors.Add($"Dòng {row}: Tên đăng nhập '{userName}' bị trùng lặp trong file Excel này.");
+                result.Errors.Add($"Dòng {row}: Tên đăng nhập '{userName}' bị trùng lặp trong file.");
                 rowValid = false;
             }
             if (rowValid && !batchCccds.Add(identityCard!))
             {
                 result.FailedCount++;
-                result.Errors.Add($"Dòng {row}: CCCD '{identityCard}' bị trùng lặp trong file Excel này.");
+                result.Errors.Add($"Dòng {row}: CCCD '{identityCard}' bị trùng lặp trong file.");
                 rowValid = false;
             }
 
-            // Synchronous DB uniqueness check (Memory RAM lookup, O(1))
             if (rowValid && existingEmailSet.Contains(email!))
             {
                 result.FailedCount++;
@@ -342,13 +349,13 @@ public class ResidentService : IResidentService
             if (rowValid && existingUserNameSet.Contains(userName!))
             {
                 result.FailedCount++;
-                result.Errors.Add($"Dòng {row}: Tên đăng nhập '{userName}' đã tồn tại trong hệ thống.");
+                result.Errors.Add($"Dòng {row}: Tên đăng nhập '{userName}' đã tồn tại.");
                 rowValid = false;
             }
             if (rowValid && existingCccdSet.Contains(identityCard!))
             {
                 result.FailedCount++;
-                result.Errors.Add($"Dòng {row}: CCCD '{identityCard}' đã có tài khoản cư dân trong hệ thống.");
+                result.Errors.Add($"Dòng {row}: CCCD '{identityCard}' đã có tài khoản cư dân.");
                 rowValid = false;
             }
 
@@ -379,18 +386,18 @@ public class ResidentService : IResidentService
         }
 
         // ════════════════════════════════════════════════════════════════════
-        // PASS 2 – LƯU HÀNG LOẠT TRONG 1 TRANSACTION (Bulk Insert)
+        // PASS 2 – LƯU HÀNG LOẠT VÀ CẬP NHẬT INFO (Giải quyết Race Condition & Data Update)
         // ════════════════════════════════════════════════════════════════════
         using var globalTransaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            // Trích xuất các Info hiện có 1 lần (Cho trường hợp người dùng đã có Info nhưng chưa có Account Cư dân)
             var validCccds = validDtos.Select(d => d.IdentityCard).ToList();
+
+            // Lấy danh sách InFo hiện có để cập nhật
             var existingInfos = await _context.InFos
                 .Where(i => validCccds.Contains(i.CmndCccd))
                 .ToDictionaryAsync(i => i.CmndCccd, StringComparer.OrdinalIgnoreCase);
 
-            // Lấy mã Code lớn nhất 1 lần để tăng trong RAM
             var lastRes = await _context.Accounts
                 .Where(a => a.RoleId == 2 && a.Code != null && a.Code.StartsWith("RES-"))
                 .OrderByDescending(a => a.AccountId)
@@ -410,7 +417,7 @@ public class ResidentService : IResidentService
             {
                 string hashedPassword = BCrypt.Net.BCrypt.HashPassword(dto.Password);
                 string generatedCode = $"RES-{nextNumber:D3}";
-                nextNumber++; // Tăng trong RAM thay vì query lại
+                nextNumber++;
 
                 var newAccount = new Account
                 {
@@ -427,6 +434,16 @@ public class ResidentService : IResidentService
 
                 if (existingInfos.TryGetValue(dto.IdentityCard, out var existingInfo))
                 {
+                    // Fix 3: Cập nhật thông tin mới từ Excel vào bảng InFo đang có sẵn
+                    existingInfo.FullName = dto.FullName;
+                    existingInfo.PhoneNumber = dto.PhoneNumber;
+                    existingInfo.BirthDay = dto.BirthDay;
+                    existingInfo.Sex = dto.Sex;
+                    existingInfo.Country = dto.Country;
+                    existingInfo.City = dto.City;
+                    existingInfo.Address = dto.Address;
+                    existingInfo.UpdatedAt = currentTime;
+
                     newAccount.InfoId = existingInfo.InfoId;
                 }
                 else
@@ -449,8 +466,8 @@ public class ResidentService : IResidentService
                 result.SuccessCount++;
             }
 
-            _context.Accounts.AddRange(newAccounts); // AddRange (Bulk Add) thay vì Add từng cái
-            await _context.SaveChangesAsync();       // Lưu 1 lần duy nhất
+            _context.Accounts.AddRange(newAccounts);
+            await _context.SaveChangesAsync();
             await globalTransaction.CommitAsync();
         }
         catch (Exception ex)
