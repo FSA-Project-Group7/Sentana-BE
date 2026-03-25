@@ -570,19 +570,17 @@ namespace Sentana.API.Services.SInvoice
         // US82 - View Outstanding Debt
         public async Task<List<OutstandingDebtItemDto>> GetOutstandingDebtsAsync()
         {
-            var today = DateOnly.FromDateTime(DateTime.Today);
-
             var overdueInvoices = await _context.Invoices
                 .Include(i => i.Apartment)
                 .Where(i =>
                     i.IsDeleted == false &&
                     (i.Status == InvoiceStatus.Unpaid || i.Status == InvoiceStatus.PendingVerification) &&
-                    i.DayPay.HasValue &&
-                    i.DayPay.Value < today)
-                // Sửa lỗi 500: Sắp xếp theo DayPay tăng dần (Ngày càng cũ -> Quá hạn càng lâu).
-                // EF Core dịch được OrderBy này sang SQL một cách an toàn.
-                .OrderBy(i => i.DayPay)
+                    i.Debt > 0)
+                // Sắp xếp theo ngày tạo (Hóa đơn cũ nhất lên đầu)
+                .OrderBy(i => i.CreatedAt)
                 .ToListAsync();
+
+            var today = DateTime.Today;
 
             return overdueInvoices.Select(i => new OutstandingDebtItemDto
             {
@@ -594,20 +592,19 @@ namespace Sentana.API.Services.SInvoice
                 BillingYear = i.BillingYear,
                 TotalMoney = i.TotalMoney,
                 Debt = i.Debt,
-                DayPay = i.DayPay,
-                // Thực hiện tính số ngày quá hạn ở trên RAM (Client-side evaluation)
-                DaysOverdue = today.DayNumber - i.DayPay!.Value.DayNumber,
+                DayPay = i.DayPay, // Chắc chắn sẽ là null vì chưa thanh toán
+                                   // Tính số ngày nợ dựa trên ngày tạo hóa đơn
+                DaysOverdue = i.CreatedAt.HasValue ? (today - i.CreatedAt.Value.Date).Days : 0,
                 Status = i.Status.HasValue ? i.Status.Value.ToString() : null
             }).ToList();
         }
 
-        //us 83 - Export Debt Report
+        // US83 - Export Debt Report
         public async Task<byte[]> ExportDebtReportAsync()
         {
             ExcelPackage.License.SetNonCommercialPersonal("Sentana");
-            var today = DateOnly.FromDateTime(DateTime.Today);
 
-            // 1. Lọc hóa đơn CHUẨN logic Outstanding Debt
+            // 1. Lọc hóa đơn CHUẨN logic Outstanding Debt (Bỏ điều kiện DayPay)
             var unpaidInvoices = await _context.Invoices
                 .Include(i => i.Apartment)
                 .Include(i => i.Contract)
@@ -615,9 +612,7 @@ namespace Sentana.API.Services.SInvoice
                         .ThenInclude(a => a.Info)
                 .Where(i => i.IsDeleted == false &&
                             (i.Status == InvoiceStatus.Unpaid || i.Status == InvoiceStatus.PendingVerification) &&
-                            i.Debt > 0 &&
-                            i.DayPay.HasValue &&
-                            i.DayPay.Value < today) // Chỉ lấy hóa đơn ĐÃ QUÁ HẠN
+                            i.Debt > 0)
                 .ToListAsync();
 
             // 2. Nhóm dữ liệu theo Căn hộ + Chủ tài khoản (Tránh gộp nhầm nợ chủ cũ/mới)
