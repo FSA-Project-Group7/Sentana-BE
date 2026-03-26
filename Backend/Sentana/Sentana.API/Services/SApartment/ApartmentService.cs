@@ -36,145 +36,229 @@ namespace Sentana.API.Services.SApartment
 		}
 
 		public async Task<ApartmentDto> CreateApartmentAsync(CreateApartmentDto dto)
-        {
-            var building = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == dto.BuildingId && b.IsDeleted == false);
-            if (building == null) throw new ArgumentException("Tòa nhà này không tồn tại hoặc đã bị xóa.");
-            if (building.ApartmentNumber.HasValue)
-            {
-                // 1. Kiểm tra sức chứa: Tòa nhà đã đầy chưa?
-                int currentRoomCount = await _context.Apartments.CountAsync(a => a.BuildingId == dto.BuildingId && a.IsDeleted == false);
-                if (currentRoomCount >= building.ApartmentNumber.Value)
-                    throw new ArgumentException($"Tòa nhà {building.BuildingName} đã đạt số lượng tối đa ({building.ApartmentNumber.Value} phòng). Không thể tạo thêm.");
+		{
+			var building = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == dto.BuildingId && b.IsDeleted == false);
+			if (building == null) throw new ArgumentException("Tòa nhà này không tồn tại hoặc đã bị xóa.");
 
-                // 2. Kiểm tra logic: Số phòng nhập vào (VD: 99) có lớn hơn tổng sức chứa của tòa nhà không?
-                if (dto.ApartmentNumber > building.ApartmentNumber.Value)
-                    throw new ArgumentException($"Số phòng ({dto.ApartmentNumber}) không hợp lệ vì vượt quá tổng sức chứa của tòa nhà ({building.ApartmentNumber.Value} phòng).");
-            }
+			int floor = dto.FloorNumber;
+			int room = dto.ApartmentNumber;
 
-            // 1. Validation: Tầng không vượt quá tòa nhà
-            if (dto.FloorNumber > building.FloorNumber)
-                throw new ArgumentException($"Tầng của căn hộ ({dto.FloorNumber}) không được vượt quá số tầng của tòa nhà ({building.FloorNumber}).");
+			if (room >= 100)
+			{
+				if (room / 100 == floor)
+					room = room % 100; // Tự động cắt lấy số 9
+				else
+					throw new ArgumentException($"Số phòng ({dto.ApartmentNumber}) không khớp với cấu trúc của Tầng {floor}.");
+			}
 
-            // 2. Tự động tính toán Tên và Mã
-            int floor = dto.FloorNumber;
-            int room = dto.ApartmentNumber;
+			if (building.ApartmentNumber.HasValue)
+			{
+				int currentRoomCount = await _context.Apartments.CountAsync(a => a.BuildingId == dto.BuildingId && a.IsDeleted == false);
+				if (currentRoomCount >= building.ApartmentNumber.Value)
+					throw new ArgumentException($"Tòa nhà {building.BuildingName} đã đạt số lượng tối đa ({building.ApartmentNumber.Value} phòng). Không thể tạo thêm.");
+			}
 
-            string generatedNumberStr = $"{floor}{room:D2}"; // VD: 7 và 9 -> "709"
-            int fullAppNumber = int.Parse(generatedNumberStr); // 709
+			if (dto.FloorNumber > building.FloorNumber)
+				throw new ArgumentException($"Tầng của căn hộ ({dto.FloorNumber}) không được vượt quá số tầng của tòa nhà ({building.FloorNumber}).");
 
-            // Gắn thêm mã tòa nhà để chống trùng lặp toàn hệ thống (VD: A-709)
-            string generatedCode = $"{building.BuildingCode}-{generatedNumberStr}";
-            string generatedName = $"Phòng {generatedNumberStr} Chung cư SENTANA Tòa {building.BuildingName}";
+			string generatedNumberStr = $"{floor}{room.ToString("00")}";
+			int fullAppNumber = int.Parse(generatedNumberStr); 
 
-            // 3. Validation: Kiểm tra trùng Mã và Số phòng
-            bool isCodeExist = await _context.Apartments.AnyAsync(a => a.ApartmentCode == generatedCode && a.IsDeleted == false);
-            if (isCodeExist) throw new ArgumentException($"Mã căn hộ '{generatedCode}' đã tồn tại trong hệ thống.");
+			string generatedCode = $"{building.BuildingCode}-{generatedNumberStr}";
 
-            bool isAppNumberExist = await _context.Apartments.AnyAsync(a => a.BuildingId == dto.BuildingId && a.ApartmentNumber == fullAppNumber && a.IsDeleted == false);
-            if (isAppNumberExist) throw new ArgumentException($"Số căn hộ {fullAppNumber} đã tồn tại trong tòa nhà này.");
+			string bName = building.BuildingName?.Trim() ?? "";
+			string generatedName;
 
-            if (!Enum.IsDefined(typeof(ApartmentStatus), (ApartmentStatus)dto.Status))
-                throw new ArgumentException("Trạng thái căn hộ không hợp lệ.");
+			if (bName.Contains("Chung cư", StringComparison.OrdinalIgnoreCase))
+			{
+				generatedName = $"Phòng {generatedNumberStr} {bName}";
+			}
+			else if (bName.StartsWith("Tòa", StringComparison.OrdinalIgnoreCase))
+			{
+				generatedName = $"Phòng {generatedNumberStr} Chung cư SENTANA {bName}";
+			}
+			else
+			{
+				generatedName = $"Phòng {generatedNumberStr} Chung cư SENTANA Tòa {bName}";
+			}
 
-            var newApartment = new Apartment
-            {
-                BuildingId = dto.BuildingId,
-                ApartmentCode = generatedCode,      // Tự động: A-709
-                ApartmentName = generatedName,      // Tự động: Phòng 709 tòa A
-                ApartmentNumber = fullAppNumber,    // Lưu số: 709
-                FloorNumber = floor,                // Lưu số: 7
-                Area = dto.Area,
-                Status = (ApartmentStatus)dto.Status,
-                CreatedAt = DateTime.Now,
-                IsDeleted = false
-            };
+			// 3. Validation: Kiểm tra trùng Mã và Số phòng
+			bool isCodeExist = await _context.Apartments.AnyAsync(a => a.ApartmentCode == generatedCode && a.IsDeleted == false);
+			if (isCodeExist) throw new ArgumentException($"Mã căn hộ '{generatedCode}' đã tồn tại trong hệ thống.");
 
-            _context.Apartments.Add(newApartment);
-            await _context.SaveChangesAsync();
+			bool isAppNumberExist = await _context.Apartments.AnyAsync(a => a.BuildingId == dto.BuildingId && a.ApartmentNumber == fullAppNumber && a.IsDeleted == false);
+			if (isAppNumberExist) throw new ArgumentException($"Số căn hộ {fullAppNumber} đã tồn tại trong tòa nhà này.");
 
-            return new ApartmentDto
-            {
-                ApartmentId = newApartment.ApartmentId,
-                ApartmentCode = newApartment.ApartmentCode,
-                ApartmentName = newApartment.ApartmentName,
-                FloorNumber = newApartment.FloorNumber,
-                Area = newApartment.Area,
-                Status = (byte)newApartment.Status!
-            };
-        }
+			if (!Enum.IsDefined(typeof(ApartmentStatus), (ApartmentStatus)dto.Status))
+				throw new ArgumentException("Trạng thái căn hộ không hợp lệ.");
 
-        public async Task<bool> UpdateApartmentAsync(int id, UpdateApartmentDto dto)
-        {
-            var apartment = await _context.Apartments.FirstOrDefaultAsync(a => a.ApartmentId == id && a.IsDeleted == false);
-            if (apartment == null) return false;
+			var newApartment = new Apartment
+			{
+				BuildingId = dto.BuildingId,
+				ApartmentCode = generatedCode,
+				ApartmentName = generatedName,
+				ApartmentNumber = fullAppNumber,
+				FloorNumber = floor,
+				Area = dto.Area,
+				Status = (ApartmentStatus)dto.Status,
+				CreatedAt = DateTime.Now,
+				IsDeleted = false
+			};
 
-            var building = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == apartment.BuildingId && b.IsDeleted == false);
+			_context.Apartments.Add(newApartment);
+			await _context.SaveChangesAsync();
 
-            if (dto.ApartmentNumber.HasValue)
-            {
-                int fullAppNumber = dto.ApartmentNumber.Value; // VD: Truyền lên 1205
-                int floor = fullAppNumber / 100; // Nội suy ra Tầng 12
-                int room = fullAppNumber % 100;  // Nội suy ra Phòng 5
+			return new ApartmentDto
+			{
+				ApartmentId = newApartment.ApartmentId,
+				ApartmentCode = newApartment.ApartmentCode,
+				ApartmentName = newApartment.ApartmentName,
+				FloorNumber = newApartment.FloorNumber,
+				Area = newApartment.Area,
+				Status = (byte)newApartment.Status!
+			};
+		}
 
-                if (building != null)
-                {
-                    
-                    if (building.FloorNumber.HasValue && floor > building.FloorNumber.Value)
-                        throw new ArgumentException($"Tầng phân tích được ({floor}) vượt quá số tầng của tòa nhà ({building.FloorNumber.Value}).");
+		public async Task<bool> UpdateApartmentAsync(int id, UpdateApartmentDto dto)
+		{
+			var apartment = await _context.Apartments.FirstOrDefaultAsync(a => a.ApartmentId == id && a.IsDeleted == false);
+			if (apartment == null) return false;
 
-                    
-                    if (building.ApartmentNumber.HasValue && room > building.ApartmentNumber.Value)
-                        throw new ArgumentException($"Số phòng phân tích được ({room}) vượt quá tổng số phòng của tòa nhà ({building.ApartmentNumber.Value} phòng).");
-                }
+			var building = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == apartment.BuildingId && b.IsDeleted == false);
 
-                if (room <= 0 || room >= 100)
-                    throw new ArgumentException("Số phòng phân tích được không hợp lệ (phải từ 01 đến 99).");
+			if (dto.ApartmentNumber.HasValue)
+			{
+				int inputNumber = dto.ApartmentNumber.Value;
+				int floor;
+				int room;
 
-                string generatedNumberStr = $"{floor}{room:D2}";
-                string generatedCode = $"{building?.BuildingCode}-{generatedNumberStr}";
-                string generatedName = $"Phòng {generatedNumberStr} Chung cư SENTANA Tòa {building?.BuildingName}";
+				if (inputNumber >= 100)
+				{
+					floor = inputNumber / 100;
+					room = inputNumber % 100;
+				}
+				else
+				{
+					floor = apartment.FloorNumber ?? 1;
+					room = inputNumber;
+				}
 
-                bool isAppNumberExist = await _context.Apartments.AnyAsync(a => a.ApartmentId != id && a.BuildingId == apartment.BuildingId && a.ApartmentNumber == fullAppNumber && a.IsDeleted == false);
-                if (isAppNumberExist) throw new ArgumentException($"Số căn hộ {fullAppNumber} đã tồn tại trong tòa nhà này.");
+				if (building != null && building.FloorNumber.HasValue && floor > building.FloorNumber.Value)
+					throw new ArgumentException($"Tầng phân tích được ({floor}) vượt quá số tầng của tòa nhà ({building.FloorNumber.Value}).");
 
-                bool isCodeExist = await _context.Apartments.AnyAsync(a => a.ApartmentId != id && a.ApartmentCode == generatedCode && a.IsDeleted == false);
-                if (isCodeExist) throw new ArgumentException($"Mã căn hộ '{generatedCode}' đã được sử dụng cho phòng khác.");
+				if (room <= 0 || room >= 100)
+					throw new ArgumentException("Số phòng phân tích được không hợp lệ (phải từ 01 đến 99).");
 
-                apartment.ApartmentNumber = fullAppNumber;
-                apartment.FloorNumber = floor;
-                apartment.ApartmentCode = generatedCode;
-                apartment.ApartmentName = generatedName;
-            }
+				string generatedNumberStr = $"{floor}{room.ToString("00")}";
+				int fullAppNumber = int.Parse(generatedNumberStr);
+				string generatedCode = $"{building?.BuildingCode}-{generatedNumberStr}";
 
-            if (dto.Area.HasValue) apartment.Area = dto.Area.Value;
+				string bName = building?.BuildingName?.Trim() ?? "";
+				string generatedName;
 
-            if (dto.Status.HasValue)
-            {
-                if (!Enum.IsDefined(typeof(ApartmentStatus), (ApartmentStatus)dto.Status.Value))
-                    throw new ArgumentException("Trạng thái căn hộ không hợp lệ.");
-                apartment.Status = (ApartmentStatus)dto.Status.Value;
-            }
+				if (bName.Contains("Chung cư", StringComparison.OrdinalIgnoreCase))
+				{
+					generatedName = $"Phòng {generatedNumberStr} {bName}";
+				}
+				else if (bName.StartsWith("Tòa", StringComparison.OrdinalIgnoreCase))
+				{
+					generatedName = $"Phòng {generatedNumberStr} Chung cư SENTANA {bName}";
+				}
+				else
+				{
+					generatedName = $"Phòng {generatedNumberStr} Chung cư SENTANA Tòa {bName}";
+				}
 
-            apartment.UpdatedAt = DateTime.Now;
+				// --- FIX 5: CHỐNG TỰ TRÙNG CHÍNH MÌNH (Đã bỏ qua ID của chính căn phòng đang sửa) ---
+				bool isAppNumberExist = await _context.Apartments.AnyAsync(a => a.ApartmentId != id && a.BuildingId == apartment.BuildingId && a.ApartmentNumber == fullAppNumber && a.IsDeleted == false);
+				if (isAppNumberExist) throw new ArgumentException($"Số căn hộ {fullAppNumber} đã tồn tại trong tòa nhà này.");
 
-            await _context.SaveChangesAsync();
-            return true;
-        }
+				bool isCodeExist = await _context.Apartments.AnyAsync(a => a.ApartmentId != id && a.ApartmentCode == generatedCode && a.IsDeleted == false);
+				if (isCodeExist) throw new ArgumentException($"Mã căn hộ '{generatedCode}' đã được sử dụng cho phòng khác.");
 
-        public async Task<bool> UpdateStatusAsync(int id, byte newStatus)
-        {
-            if (!Enum.IsDefined(typeof(ApartmentStatus), (ApartmentStatus)newStatus))
-                throw new ArgumentException("Trạng thái phòng không hợp lệ.");
+				apartment.ApartmentNumber = fullAppNumber;
+				apartment.FloorNumber = floor;
+				apartment.ApartmentCode = generatedCode;
+				apartment.ApartmentName = generatedName;
+			}
 
-            var apartment = await _context.Apartments.FirstOrDefaultAsync(a => a.ApartmentId == id && a.IsDeleted == false);
-            if (apartment == null) return false;
+			if (dto.Area.HasValue) apartment.Area = dto.Area.Value;
 
-            apartment.Status = (ApartmentStatus)newStatus;
-            apartment.UpdatedAt = DateTime.Now;
+			if (dto.Status.HasValue)
+			{
+				if (!Enum.IsDefined(typeof(ApartmentStatus), (ApartmentStatus)dto.Status.Value))
+					throw new ArgumentException("Trạng thái căn hộ không hợp lệ.");
+				apartment.Status = (ApartmentStatus)dto.Status.Value;
+			}
 
-            await _context.SaveChangesAsync();
-            return true;
-        }
+			apartment.UpdatedAt = DateTime.Now;
+
+			await _context.SaveChangesAsync();
+			return true;
+		}
+
+		public async Task<bool> UpdateStatusAsync(int id, byte newStatus)
+		{
+			if (!Enum.IsDefined(typeof(ApartmentStatus), (ApartmentStatus)newStatus))
+				throw new ArgumentException("Trạng thái phòng không hợp lệ.");
+
+			var apartment = await _context.Apartments.FirstOrDefaultAsync(a => a.ApartmentId == id && a.IsDeleted == false);
+			if (apartment == null) return false;
+
+			var requestedStatus = (ApartmentStatus)newStatus;
+
+			var building = await _context.Buildings.FirstOrDefaultAsync(b => b.BuildingId == apartment.BuildingId && b.IsDeleted == false);
+			bool isBuildingUnderMaintenance = building != null && (int?)building.Status == 3;
+
+			bool hasActiveContract = await _context.Contracts
+				.AnyAsync(c => c.ApartmentId == id && (int?)c.Status == 1 && c.IsDeleted == false);
+
+			if (isBuildingUnderMaintenance && requestedStatus != (ApartmentStatus)3)
+			{
+				throw new ArgumentException($"Không thể đổi trạng thái vì toàn bộ Tòa nhà '{building?.BuildingName}' đang trong thời gian bảo trì.");
+			}
+
+			if (requestedStatus == (ApartmentStatus)1 && hasActiveContract)
+			{
+				throw new ArgumentException("Không thể chuyển thành phòng Trống vì phòng này đang có Hợp đồng thuê có hiệu lực!");
+			}
+
+			if (requestedStatus == (ApartmentStatus)2 && !hasActiveContract)
+			{
+				throw new ArgumentException("Không thể chuyển thành phòng Đang thuê vì hệ thống không ghi nhận Hợp đồng nào có hiệu lực cho phòng này.");
+			}
+
+			apartment.Status = requestedStatus;
+			apartment.UpdatedAt = DateTime.Now;
+
+			await _context.SaveChangesAsync();
+			return true;
+		}
+
+		private async Task SyncApartmentStatusAsync(Apartment apartment)
+		{
+			// 1. Kiểm tra trạng thái Tòa nhà (Giả sử Status tòa nhà: 3 là Bảo trì)
+			var building = await _context.Buildings.FindAsync(apartment.BuildingId);
+			bool isBuildingUnderMaintenance = building != null && (int?)building.Status == 3;
+
+			// 2. Kiểm tra xem phòng có Hợp đồng nào đang "Có hiệu lực" không (Giả sử Status hợp đồng: 1 là Active)
+			bool hasActiveContract = await _context.Contracts
+				.AnyAsync(c => c.ApartmentId == apartment.ApartmentId && (int?)c.Status == 1 && c.IsDeleted == false);
+
+			// 3. Áp dụng Logic ưu tiên
+			if (isBuildingUnderMaintenance)
+			{
+				apartment.Status = ApartmentStatus.Maintenance; 
+			}
+			else if (hasActiveContract)
+			{
+				apartment.Status = ApartmentStatus.Occupied;     
+			}
+			else
+			{
+				apartment.Status = ApartmentStatus.Vacant;       
+			}
+		}
 
 		public async Task<bool> DeleteApartmentAsync(int id, ClaimsPrincipal user = null)
 		{
