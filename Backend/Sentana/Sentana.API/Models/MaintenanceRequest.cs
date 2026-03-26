@@ -18,6 +18,8 @@ public partial class MaintenanceRequest
 
     public string? Description { get; set; }
 
+    public string? ResolutionNote { get; set; }
+
     public byte? Priority { get; set; }
 
     public DateTime? CreateDay { get; set; }
