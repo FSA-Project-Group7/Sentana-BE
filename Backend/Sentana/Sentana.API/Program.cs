@@ -94,7 +94,9 @@ namespace Sentana.API
             builder.Services.AddHostedService<Sentana.API.BackgroundServices.NotificationCleanupService>();
             builder.Services.AddHostedService<Sentana.API.BackgroundServices.EmailConsumerService>();
             builder.Services.AddScoped<IMaintenanceService, MaintenanceService>();
-
+           /* my bot ContractManagement
+             Đăng ký Background Worker tự động check hợp đồng hết hạn*/
+            builder.Services.AddHostedService<Sentana.API.Workers.ContractExpirationWorker>();
             builder.Services.AddControllers()
 				.AddJsonOptions(options =>
 				{
