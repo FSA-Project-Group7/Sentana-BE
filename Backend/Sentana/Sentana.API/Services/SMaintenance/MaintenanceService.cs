@@ -14,10 +14,10 @@ namespace Sentana.API.Services.SMaintenance
             _context = context;
         }
 
-        // US22 & US23: Lấy danh sách task của tôi
+        // US22 & US23: Lấy danh sách Task
         public async Task<(bool IsSuccess, string Message, List<MaintenanceTaskDto>? Data)> GetMyAssignedTasksAsync(int currentTechId)
         {
-            var tasks = await _context.MaintenanceRequests // Nhớ dùng bảng số ít: MaintenanceRequest
+            var tasks = await _context.MaintenanceRequests 
                 .Include(m => m.Category)
                 .Include(m => m.Apartment)
                 .Where(m => m.AssignedTo == currentTechId
@@ -34,7 +34,6 @@ namespace Sentana.API.Services.SMaintenance
                     CategoryName = m.Category != null ? m.Category.CategoryName : "Khác",
                     ApartmentCode = m.Apartment != null ? m.Apartment.ApartmentCode : "N/A",
 
-                    // Ép kiểu về Enum rồi gọi ToString() để xuất ra chữ
                     Priority = ((MaintenancePriority)(m.Priority ?? (byte)1)).ToString(),
                     Status = (m.Status ?? MaintenanceRequestStatus.Pending).ToString(),
 
@@ -45,18 +44,16 @@ namespace Sentana.API.Services.SMaintenance
             return (true, "Lấy danh sách thành công", tasks);
         }
 
-        // US24: Thợ nhận việc (Accept Task)
+        // US24: Accept Task
         public async Task<(bool IsSuccess, string Message)> AcceptTaskAsync(int requestId, int currentTechId)
         {
             var task = await _context.MaintenanceRequests.FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
 
             if (task == null) return (false, "Không tìm thấy yêu cầu bảo trì này.");
 
-            // 1. Validate trạng thái: Phải là Pending (1)
             if (task.Status != (MaintenanceRequestStatus)1)
                 return (false, "Chỉ có thể nhận các yêu cầu đang ở trạng thái Chờ (Pending).");
 
-            // 2. Validate chống nhận trùng / Xâm phạm quyền (Concurrency & Authorization Check)
             if (task.AssignedTo.HasValue && task.AssignedTo != currentTechId)
             {
                 return (false, "Yêu cầu này đã được gán đích danh cho một kỹ thuật viên khác.");
@@ -65,13 +62,11 @@ namespace Sentana.API.Services.SMaintenance
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // 3. Cập nhật Task
-                task.Status = (MaintenanceRequestStatus)2; // Trạng thái ACCEPTED
-                task.AssignedTo = currentTechId; // Chốt ID người nhận (cover luôn trường hợp task ban đầu null)
+                task.Status = (MaintenanceRequestStatus)2; // ACCEPTED
+                task.AssignedTo = currentTechId;
                 task.UpdatedAt = DateTime.Now;
                 task.UpdatedBy = currentTechId;
 
-                // 4. Ghi log
                 var log = new History
                 {
                     AccountId = currentTechId,
@@ -94,7 +89,7 @@ namespace Sentana.API.Services.SMaintenance
             }
         }
 
-        // US25: Bắt đầu xử lý (Start Processing Task)
+        // US25: Start Processing Task
         public async Task<(bool IsSuccess, string Message)> StartProcessingTaskAsync(int requestId, int currentTechId)
         {
             var task = await _context.MaintenanceRequests.FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
@@ -102,18 +97,17 @@ namespace Sentana.API.Services.SMaintenance
             if (task == null) return (false, "Không tìm thấy yêu cầu bảo trì này.");
             if (task.AssignedTo != currentTechId) return (false, "Bạn không có quyền xử lý yêu cầu này.");
 
-            // Validate luồng: Phải đi từ Accepted (2) sang Processing (3)
             if (task.Status != (MaintenanceRequestStatus)2)
                 return (false, "Chỉ có thể bắt đầu làm những yêu cầu đã được Tiếp nhận (ACCEPTED).");
 
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                task.Status = (MaintenanceRequestStatus)3; // Trạng thái PROCESSING
+                task.Status = (MaintenanceRequestStatus)3; // PROCESSING
                 task.UpdatedAt = DateTime.Now;
                 task.UpdatedBy = currentTechId;
 
-                // US27: Tự động set thợ thành BUSY
+                // US27: Tự động thành BUSY
                 var techAccount = await _context.Accounts.FindAsync(currentTechId);
                 if (techAccount != null)
                 {
@@ -142,7 +136,7 @@ namespace Sentana.API.Services.SMaintenance
             }
         }
 
-        // US26: Báo cáo sửa xong (Fix Task)
+        // US26: Fixed Task
         public async Task<(bool IsSuccess, string Message)> FixTaskAsync(int requestId, FixTaskRequestDto request, int currentTechId)
         {
             var task = await _context.MaintenanceRequests.FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
@@ -150,7 +144,6 @@ namespace Sentana.API.Services.SMaintenance
             if (task == null) return (false, "Không tìm thấy yêu cầu bảo trì này.");
             if (task.AssignedTo != currentTechId) return (false, "Bạn không có quyền cập nhật yêu cầu này.");
 
-            // Validate luồng: Phải từ Processing (3) sang Fixed (4)
             if (task.Status != (MaintenanceRequestStatus)3)
                 return (false, "Chỉ có thể báo cáo hoàn thành cho các yêu cầu Đang xử lý (PROCESSING).");
 
@@ -160,13 +153,13 @@ namespace Sentana.API.Services.SMaintenance
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                task.Status = (MaintenanceRequestStatus)4; // Trạng thái FIXED
+                task.Status = (MaintenanceRequestStatus)4; // FIXED
                 task.ResolutionNote = request.ResolutionNote;
                 task.FixDay = DateTime.Now;
                 task.UpdatedAt = DateTime.Now;
                 task.UpdatedBy = currentTechId;
 
-                // US27: Giải phóng thợ nếu đã hết việc Processing
+                // US27: chuyển về Available
                 var hasOtherProcessingTasks = await _context.MaintenanceRequests
                     .AnyAsync(m => m.AssignedTo == currentTechId
                                 && m.Status == (MaintenanceRequestStatus)3
