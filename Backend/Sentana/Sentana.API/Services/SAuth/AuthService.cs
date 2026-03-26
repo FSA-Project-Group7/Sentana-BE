@@ -73,7 +73,8 @@ namespace Sentana.API.Services.SBuilding
                 new Claim(JwtRegisteredClaimNames.Sub, user.UserName),
                 new Claim("AccountId", user.AccountId.ToString()),
                 new Claim("RoleId", user.RoleId.ToString()),
-                new Claim(ClaimTypes.Role, user.Role?.RoleName ?? "Resident")
+                new Claim(ClaimTypes.Role, user.Role?.RoleName ?? "Resident"),
+                new Claim(JwtRegisteredClaimNames.Name, user.Info?.FullName ?? user.UserName),
             };
 
             var token = new JwtSecurityToken(
