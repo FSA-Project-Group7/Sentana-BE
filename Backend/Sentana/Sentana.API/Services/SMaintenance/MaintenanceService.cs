@@ -14,18 +14,28 @@ namespace Sentana.API.Services.SMaintenance
             _context = context;
         }
 
-        // US22 & US23: Lấy danh sách Task
-        public async Task<(bool IsSuccess, string Message, List<MaintenanceTaskDto>? Data)> GetMyAssignedTasksAsync(int currentTechId)
+        // US22 & US23: Lấy danh sách Task 
+        public async Task<(bool IsSuccess, string Message, object? Data)> GetMyAssignedTasksAsync(int currentTechId, int pageIndex = 1, int pageSize = 10)
         {
-            var tasks = await _context.MaintenanceRequests 
+            var query = _context.MaintenanceRequests
                 .Include(m => m.Category)
                 .Include(m => m.Apartment)
                 .Where(m => m.AssignedTo == currentTechId
                          && m.IsDeleted == false
                          && m.Status != MaintenanceRequestStatus.Closed
-                         && m.Status != MaintenanceRequestStatus.Canceled)
+                         && m.Status != MaintenanceRequestStatus.Canceled
+                         // Đảm bảo Căn hộ chưa bị xóa (Soft Deleted)
+                         && (m.Apartment == null || m.Apartment.IsDeleted == false));
+
+            var totalItems = await query.CountAsync();
+            var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+
+            // Truy vấn lấy Data theo trang
+            var tasks = await query
                 .OrderByDescending(m => m.Priority)
                 .ThenBy(m => m.CreateDay)
+                .Skip((pageIndex - 1) * pageSize)
+                .Take(pageSize)
                 .Select(m => new MaintenanceTaskDto
                 {
                     RequestId = m.RequestId,
@@ -41,15 +51,30 @@ namespace Sentana.API.Services.SMaintenance
                 })
                 .ToListAsync();
 
-            return (true, "Lấy danh sách thành công", tasks);
+            var resultData = new
+            {
+                TotalItems = totalItems,
+                TotalPages = totalPages,
+                CurrentPage = pageIndex,
+                PageSize = pageSize,
+                Items = tasks
+            };
+
+            return (true, "Lấy danh sách thành công", resultData);
         }
 
         // US24: Accept Task
         public async Task<(bool IsSuccess, string Message)> AcceptTaskAsync(int requestId, int currentTechId)
         {
-            var task = await _context.MaintenanceRequests.FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
+            var task = await _context.MaintenanceRequests
+                .Include(m => m.Apartment)
+                .FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
 
             if (task == null) return (false, "Không tìm thấy yêu cầu bảo trì này.");
+
+            // Chặn nhận việc nếu Căn hộ đã bị xóa
+            if (task.Apartment != null && task.Apartment.IsDeleted == true)
+                return (false, "Căn hộ này đã bị ngưng hoạt động. Không thể tiếp nhận yêu cầu.");
 
             if (task.Status != (MaintenanceRequestStatus)1)
                 return (false, "Chỉ có thể nhận các yêu cầu đang ở trạng thái Chờ (Pending).");
@@ -89,13 +114,26 @@ namespace Sentana.API.Services.SMaintenance
             }
         }
 
-        // US25: Start Processing Task
+        // US25: Start Processing Task 
         public async Task<(bool IsSuccess, string Message)> StartProcessingTaskAsync(int requestId, int currentTechId)
         {
-            var task = await _context.MaintenanceRequests.FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
+            var isAlreadyBusy = await _context.MaintenanceRequests
+                .AnyAsync(m => m.AssignedTo == currentTechId
+                            && m.Status == (MaintenanceRequestStatus)3
+                            && m.IsDeleted == false);
+
+            if (isAlreadyBusy)
+                return (false, "Bạn đang có một công việc chưa hoàn thành. Vui lòng báo cáo xong (Fix) công việc hiện tại trước khi bắt đầu cái mới!");
+
+            var task = await _context.MaintenanceRequests
+                .Include(m => m.Apartment)
+                .FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
 
             if (task == null) return (false, "Không tìm thấy yêu cầu bảo trì này.");
             if (task.AssignedTo != currentTechId) return (false, "Bạn không có quyền xử lý yêu cầu này.");
+
+            if (task.Apartment != null && task.Apartment.IsDeleted == true)
+                return (false, "Căn hộ này đã bị ngưng hoạt động. Hệ thống sẽ tự động hủy yêu cầu này.");
 
             if (task.Status != (MaintenanceRequestStatus)2)
                 return (false, "Chỉ có thể bắt đầu làm những yêu cầu đã được Tiếp nhận (ACCEPTED).");
