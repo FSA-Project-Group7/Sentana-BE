@@ -32,6 +32,7 @@ namespace Sentana.API.Services.SBuilding
         {
             var user = await _context.Accounts
                 .Include(a => a.Role)
+                .Include(a => a.Info)
                 .FirstOrDefaultAsync(a =>
                     (a.UserName == request.UserName || a.Email == request.UserName)
                     && a.Status == GeneralStatus.Active);
@@ -74,7 +75,8 @@ namespace Sentana.API.Services.SBuilding
                 new Claim(JwtRegisteredClaimNames.Sub, user.UserName),
                 new Claim("AccountId", user.AccountId.ToString()),
                 new Claim("RoleId", user.RoleId.ToString()),
-                new Claim(ClaimTypes.Role, user.Role?.RoleName ?? "Resident")
+                new Claim(ClaimTypes.Role, user.Role?.RoleName ?? "Resident"),
+                new Claim(JwtRegisteredClaimNames.Name, user.Info?.FullName ?? user.UserName),
             };
 
             var token = new JwtSecurityToken(
@@ -329,6 +331,7 @@ namespace Sentana.API.Services.SBuilding
             // tìm người dùng trong DB
             var user = await _context.Accounts
                 .Include(a => a.Role)
+                .Include(a => a.Info)
                 .FirstOrDefaultAsync(a => a.UserName == userName);
 
             // kiểm tra xem user có tồn tại và token còn hạn không
