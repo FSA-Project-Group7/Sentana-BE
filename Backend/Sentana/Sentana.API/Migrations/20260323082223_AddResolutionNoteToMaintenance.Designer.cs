@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sentana.API.Models;
 
@@ -11,9 +12,11 @@ using Sentana.API.Models;
 namespace Sentana.API.Migrations
 {
     [DbContext(typeof(SentanaContext))]
-    partial class SentanaContextModelSnapshot : ModelSnapshot
+    [Migration("20260323082223_AddResolutionNoteToMaintenance")]
+    partial class AddResolutionNoteToMaintenance
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -55,9 +58,6 @@ namespace Sentana.API.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
-
-                    b.Property<bool>("IsFirstLogin")
-                        .HasColumnType("bit");
 
                     b.Property<string>("Password")
                         .HasMaxLength(255)
@@ -308,9 +308,6 @@ namespace Sentana.API.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
-                    b.Property<int?>("ManagerId")
-                        .HasColumnType("int");
-
                     b.Property<byte?>("Status")
                         .HasColumnType("tinyint");
 
@@ -322,8 +319,6 @@ namespace Sentana.API.Migrations
 
                     b.HasKey("BuildingId")
                         .HasName("PK__Building__5463CDC426E62496");
-
-                    b.HasIndex("ManagerId");
 
                     b.ToTable("Building", (string)null);
                 });
@@ -1141,15 +1136,6 @@ namespace Sentana.API.Migrations
                     b.Navigation("Apartment");
 
                     b.Navigation("Service");
-                });
-
-            modelBuilder.Entity("Sentana.API.Models.Building", b =>
-                {
-                    b.HasOne("Sentana.API.Models.Account", "Manager")
-                        .WithMany()
-                        .HasForeignKey("ManagerId");
-
-                    b.Navigation("Manager");
                 });
 
             modelBuilder.Entity("Sentana.API.Models.Contract", b =>

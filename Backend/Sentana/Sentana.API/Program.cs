@@ -20,6 +20,7 @@ using Sentana.API.Services.SService;
 using Sentana.API.Services.SStorage;
 using Sentana.API.Services.STechnician;
 using System.Text;
+using Sentana.API.Services.SMaintenance;
 
 
 namespace Sentana.API
@@ -92,6 +93,7 @@ namespace Sentana.API
             builder.Services.AddScoped<INotificationService, NotificationService>();
             builder.Services.AddHostedService<Sentana.API.BackgroundServices.NotificationCleanupService>();
             builder.Services.AddHostedService<Sentana.API.BackgroundServices.EmailConsumerService>();
+            builder.Services.AddScoped<IMaintenanceService, MaintenanceService>();
 
             builder.Services.AddControllers()
 				.AddJsonOptions(options =>
