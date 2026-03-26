@@ -17,5 +17,7 @@ namespace Sentana.API.DTOs.Contracts
 
         [DataType(DataType.Upload)]
         public IFormFile? File { get; set; }
+        public List<ResidentItemDto>? AdditionalResidents { get; set; }
+        public List<ServiceItemDto>? Services { get; set; }
     }
 }

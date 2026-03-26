@@ -18,9 +18,9 @@ namespace Sentana.API.BackgroundServices
         // Hàm này sẽ tự động chạy ngầm ở một Luồng (Thread) riêng biệt
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Tác vụ dọn dẹp thông báo (Notification Cleanup Service) đã khởi động.");
+            _logger.LogInformation("Notification Cleanup Service Start.");
 
-            // Vòng lặp vô hạn (Infinite Loop) giữ cho tác vụ sống liên tục trừ khi tắt app
+            // Infinite Loop giữ cho tác vụ sống liên tục trừ khi tắt app
             while (!stoppingToken.IsCancellationRequested)
             {
                 try

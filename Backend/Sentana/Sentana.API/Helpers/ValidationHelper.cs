@@ -61,5 +61,24 @@
             }
             return (true, string.Empty);
         }
+
+        // Generate password 
+        public static string GenerateRandomPassword(int length = 10)
+        {
+            const string letters = "ABCDEFGHJKLMNOPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+            const string digits = "0123456789";
+            const string specials = "@$!%*#?&";
+            var random = new Random();
+            var passwordChars = new char[length];
+            passwordChars[0] = letters[random.Next(letters.Length)];
+            passwordChars[1] = digits[random.Next(digits.Length)];
+            passwordChars[2] = specials[random.Next(specials.Length)];
+            const string allChars = letters + digits + specials;
+            for (int i = 3; i < length; i++)
+            {
+                passwordChars[i] = allChars[random.Next(allChars.Length)];
+            }
+            return new string(passwordChars.OrderBy(x => random.Next()).ToArray());
+        }
     }
 }

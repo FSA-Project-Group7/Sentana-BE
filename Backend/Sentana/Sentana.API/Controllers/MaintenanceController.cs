@@ -27,11 +27,14 @@ namespace Sentana.API.Controllers
         // US22 & US23
         [HttpGet("assigned-to-me")]
         [Authorize(Roles = "Technician")]
-        public async Task<IActionResult> GetMyTasks()
+        public async Task<IActionResult> GetMyTasks([FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 10)
         {
             var userId = GetCurrentUserId();
-            var result = await _maintenanceService.GetMyAssignedTasksAsync(userId);
+
+            var result = await _maintenanceService.GetMyAssignedTasksAsync(userId, pageIndex, pageSize);
+
             if (!result.IsSuccess) return BadRequest(new { result.Message });
+
             return Ok(new { result.Message, result.Data });
         }
 

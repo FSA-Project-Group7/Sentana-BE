@@ -89,5 +89,37 @@ namespace Sentana.API.Controllers
             var result = await _contractService.GetContractListAsync();
             return StatusCode(result.StatusCode, result);
         }
+
+        [Authorize(Roles = "Manager")]
+        [HttpGet("deleted-contracts")]
+        public async Task<IActionResult> GetDeletedContracts()
+        {
+            var result = await _contractService.GetDeletedContractsAsync();
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [Authorize(Roles = "Manager")]
+        [HttpDelete("{id}/soft-delete")]
+        public async Task<IActionResult> SoftDeleteContract(int id)
+        {
+            var result = await _contractService.SoftDeleteContractAsync(id);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [Authorize(Roles = "Manager")]
+        [HttpPut("{id}/restore")]
+        public async Task<IActionResult> RestoreContract(int id)
+        {
+            var result = await _contractService.RestoreContractAsync(id);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [Authorize(Roles = "Manager")]
+        [HttpDelete("{id}/hard-delete")]
+        public async Task<IActionResult> HardDeleteContract(int id)
+        {
+            var result = await _contractService.HardDeleteContractAsync(id);
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }

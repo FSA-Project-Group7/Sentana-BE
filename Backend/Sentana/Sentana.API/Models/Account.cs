@@ -50,4 +50,6 @@ public partial class Account
     public virtual ICollection<MaintenanceRequest> MaintenanceRequestAssignedToNavigations { get; set; } = new List<MaintenanceRequest>();
 
     public virtual Role? Role { get; set; }
+
+    public bool IsFirstLogin { get; set; } = true;
 }

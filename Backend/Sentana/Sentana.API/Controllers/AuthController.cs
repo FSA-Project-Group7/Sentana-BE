@@ -202,5 +202,27 @@ namespace Sentana.API.Controllers
 
             return Ok(ApiResponse<string>.Success(null, "Đăng xuất thành công!"));
         }
+
+        [HttpPut("setup-password")]
+        [Authorize]
+        public async Task<IActionResult> SetupPassword([FromBody] SetupPasswordRequestDto request)
+        {
+            try
+            {
+                var accountIdClaim = User.FindFirstValue("AccountId");
+                if (!int.TryParse(accountIdClaim, out int accountId))
+                    return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ."));
+
+                var result = await _authService.SetupPasswordAsync(accountId, request);
+
+                if (!result) return BadRequest(ApiResponse<string>.Fail(400, "Thiết lập mật khẩu thất bại."));
+
+                return Ok(ApiResponse<string>.Success(null, "Thiết lập mật khẩu thành công!"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
+            }
+        }
     }
 }
