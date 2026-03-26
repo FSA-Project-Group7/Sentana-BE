@@ -396,7 +396,6 @@ public class ResidentService : IResidentService
                 {
                     Email = email!,
                     UserName = userName!,
-                    Password = "Temp@123",
                     FullName = fullName!,
                     PhoneNumber = phoneNumber,
                     IdentityCard = identityCard!,
@@ -446,7 +445,7 @@ public class ResidentService : IResidentService
 
             foreach (var dto in validDtos)
             {
-                string hashedPassword = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+                string hashedPassword = BCrypt.Net.BCrypt.HashPassword("Temp@123");
                 string generatedCode = $"RES-{nextNumber:D3}";
                 nextNumber++;
 
@@ -460,7 +459,8 @@ public class ResidentService : IResidentService
                     Status = GeneralStatus.Active,
                     CreatedAt = currentTime,
                     CreatedBy = managerId,
-                    IsDeleted = false
+                    IsDeleted = false,
+                    IsFirstLogin = true
                 };
 
                 if (existingInfos.TryGetValue(dto.IdentityCard, out var existingInfo))
