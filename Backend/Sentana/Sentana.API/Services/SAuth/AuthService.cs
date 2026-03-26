@@ -32,6 +32,7 @@ namespace Sentana.API.Services.SBuilding
         {
             var user = await _context.Accounts
                 .Include(a => a.Role)
+                .Include(a => a.Info)
                 .FirstOrDefaultAsync(a =>
                     (a.UserName == request.UserName || a.Email == request.UserName)
                     && a.Status == GeneralStatus.Active);
@@ -329,6 +330,7 @@ namespace Sentana.API.Services.SBuilding
             // tìm người dùng trong DB
             var user = await _context.Accounts
                 .Include(a => a.Role)
+                .Include(a => a.Info)
                 .FirstOrDefaultAsync(a => a.UserName == userName);
 
             // kiểm tra xem user có tồn tại và token còn hạn không
