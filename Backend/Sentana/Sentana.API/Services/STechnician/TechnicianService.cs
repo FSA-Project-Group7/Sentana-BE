@@ -1,17 +1,22 @@
 ﻿using Azure.Core;
 using Microsoft.EntityFrameworkCore;
+using Sentana.API.DTOs.Email;
 using Sentana.API.DTOs.Technician;
 using Sentana.API.Enums;
+using Sentana.API.Helpers;
 using Sentana.API.Models;
+using Sentana.API.Services.SRabbitMQ;
 
 namespace Sentana.API.Services.STechnician
 {
     public class TechnicianService : ITechnicianService
     {
         private readonly SentanaContext _context;
-        public TechnicianService(SentanaContext context)
+        private readonly IRabbitMQProducer _rabbitMQProducer;
+        public TechnicianService(SentanaContext context, IRabbitMQProducer rabbitMQProducer)
         {
             _context = context;
+            _rabbitMQProducer = rabbitMQProducer;
         }
         private async Task<bool> CheckEmailExist(string email)
         {
@@ -82,7 +87,8 @@ namespace Sentana.API.Services.STechnician
             {
                 throw new Exception("Người sở hữu CCCD này đã có tài khoản Kỹ thuật viên hoặc có thể đã bị xóa. Vui lòng khôi phục thay vì tạo mới.");
             }
-            string hashedPassword = BCrypt.Net.BCrypt.HashPassword(technicianRequest.Password);
+            string rawPassword = ValidationHelper.GenerateRandomPassword(10);
+            string hashedPassword = BCrypt.Net.BCrypt.HashPassword(rawPassword);
             string generatedCode = await GenerateTechnicianCode();
             DateTime currentTime = DateTime.Now;
             var existingInfo = await _context.InFos
@@ -93,6 +99,7 @@ namespace Sentana.API.Services.STechnician
                 Email = technicianRequest.Email,
                 UserName = technicianRequest.UserName,
                 Password = hashedPassword,
+                IsFirstLogin = true,
                 RoleId = 3,
                 Status = GeneralStatus.Active,
                 TechAvailability = (byte)TechAvailability.Free,
@@ -122,6 +129,22 @@ namespace Sentana.API.Services.STechnician
 
             _context.Accounts.Add(newAccount);
             await _context.SaveChangesAsync();
+            string subject = "Tài khoản Kỹ thuật viên Sentana";
+            string body = $@"
+                <h3>Chào {technicianRequest.FullName},</h3>
+                <p>Tài khoản Kỹ thuật viên của bạn tại hệ thống Sentana đã được tạo thành công.</p>
+                <p><b>Tên đăng nhập:</b> {technicianRequest.UserName}</p>
+                <p><b>Mật khẩu tạm thời:</b> {rawPassword}</p>
+                <p><b><a href='http://localhost:5173/login' target='_blank' style='color: #0056b3; text-decoration: none;'>Nhấn vào đây để đăng nhập vào hệ thống</a></b></p>
+                <br/>
+                <p><i>Lưu ý: Bạn bắt buộc phải đổi mật khẩu trong lần đăng nhập đầu tiên để đảm bảo tính bảo mật.</i></p>";
+            var emailMsg = new EmailMessageDto
+            {
+                To = technicianRequest.Email,
+                Subject = subject,
+                Body = body
+            };
+            await _rabbitMQProducer.SendEmailMessage(emailMsg);
             return MapToResponseDto(newAccount, existingInfo);
         }
 

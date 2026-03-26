@@ -58,7 +58,8 @@ namespace Sentana.API.Services.SBuilding
                 RefreshToken = plainRefreshToken,
                 Role = user.Role?.RoleName ?? "Resident",
                 UserName = user.UserName,
-                AccountId = user.AccountId
+                AccountId = user.AccountId,
+                RequiresPasswordChange = user.IsFirstLogin
             };
         }
 
@@ -132,22 +133,23 @@ namespace Sentana.API.Services.SBuilding
 		//update profile
 		public async Task<(bool IsSuccess, string Message)> UpdateUserProfileAsync(int accountId, UpdateProfileRequestDto request)
         {
-            if (await _context.Accounts.AnyAsync(a => a.Email == request.Email && a.AccountId != accountId))
-            {
-                return (false, "Email này đã được sử dụng bởi một tài khoản khác.");
-            }
-
-            if (await _context.Accounts.AnyAsync(a => a.Info != null && a.Info.PhoneNumber == request.PhoneNumber && a.AccountId != accountId))
-            {
-                return (false, "Số điện thoại này đã được sử dụng bởi một người khác.");
-            }
-
-            // không trùng thì update
             var user = await _context.Accounts
                 .Include(a => a.Info)
                 .FirstOrDefaultAsync(a => a.AccountId == accountId);
 
             if (user == null) return (false, "Không tìm thấy tài khoản để cập nhật.");
+
+            if (await _context.Accounts.AnyAsync(a => a.Email == request.Email && a.AccountId != accountId))
+            {
+                return (false, "Email này đã được sử dụng bởi một tài khoản khác.");
+            }
+
+            bool isPhoneDuplicate = await _context.Accounts.AnyAsync(a =>a.Info != null && a.Info.PhoneNumber == request.PhoneNumber && a.InfoId != user.InfoId );
+
+            if (isPhoneDuplicate)
+            {
+                return (false, "Số điện thoại này đã được sử dụng bởi một người khác.");
+            }
 
             user.Email = request.Email;
             user.UpdatedAt = DateTime.Now;
@@ -265,7 +267,6 @@ namespace Sentana.API.Services.SBuilding
 
             // Cập nhật mật khẩu mới
             user.Password = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
-
             user.RefreshToken = null;
             user.RefreshTokenExpiryTime = null;
 
@@ -369,6 +370,33 @@ namespace Sentana.API.Services.SBuilding
             user.RefreshTokenExpiryTime = null;
 
             return await _context.SaveChangesAsync() > 0;
+        }
+
+        public async Task<bool> SetupPasswordAsync(int accountId, SetupPasswordRequestDto request)
+        {
+            var user = await _context.Accounts.FindAsync(accountId);
+
+            // Chốt chặn 1: Bắt buộc phải là tài khoản đăng nhập lần đầu mới cho dùng hàm này
+            if (user == null || user.IsFirstLogin == false)
+                throw new Exception("Tài khoản không hợp lệ hoặc đã được thiết lập mật khẩu trước đó.");
+
+            // Chốt chặn 2: Kiểm tra mật khẩu cũ (mật khẩu gửi qua mail)
+            if (!BCrypt.Net.BCrypt.Verify(request.OldPassword, user.Password))
+                throw new Exception("Mật khẩu hiện tại không chính xác.");
+
+            // Cập nhật mật khẩu mới
+            user.Password = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+
+            // Tắt cờ đăng nhập lần đầu
+            user.IsFirstLogin = false;
+
+            user.RefreshToken = null;
+            user.RefreshTokenExpiryTime = null;
+            user.UpdatedAt = DateTime.Now;
+
+            await _context.SaveChangesAsync();
+
+            return true;
         }
     }
 }

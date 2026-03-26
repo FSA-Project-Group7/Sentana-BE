@@ -1,10 +1,10 @@
-using OfficeOpenXml;
 using DotNetEnv;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Minio;
+using OfficeOpenXml;
 using Sentana.API.Models;
 using Sentana.API.Repositories;
 using Sentana.API.Services;
@@ -15,6 +15,7 @@ using Sentana.API.Services.SInfo;
 using Sentana.API.Services.SInvoice;
 using Sentana.API.Services.SNotification;
 using Sentana.API.Services.SPayment;
+using Sentana.API.Services.SRabbitMQ;
 using Sentana.API.Services.SService;
 using Sentana.API.Services.SStorage;
 using Sentana.API.Services.STechnician;
@@ -63,6 +64,7 @@ namespace Sentana.API
             builder.Services.AddScoped<IMinioService, MinioService>();
 
             // Add services to the container.
+            builder.Services.AddScoped<IRabbitMQProducer, RabbitMQProducer>();
             builder.Services.AddScoped<IAuthService, AuthService>();
             builder.Services.AddScoped<IServiceService, ServiceService>();
             builder.Services.AddScoped<IContractService, ContractService>();
@@ -89,8 +91,9 @@ namespace Sentana.API
             builder.Services.AddScoped<IUtilityService, UtilityService>();
             builder.Services.AddScoped<INotificationService, NotificationService>();
             builder.Services.AddHostedService<Sentana.API.BackgroundServices.NotificationCleanupService>();
+            builder.Services.AddHostedService<Sentana.API.BackgroundServices.EmailConsumerService>();
 
-			builder.Services.AddControllers()
+            builder.Services.AddControllers()
 				.AddJsonOptions(options =>
 				{
 					options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
