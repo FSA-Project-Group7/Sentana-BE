@@ -192,5 +192,26 @@ namespace Sentana.API.Controllers
                 return StatusCode(500, ApiResponse<string>.Fail(500, $"Lỗi hệ thống: {ex.Message}"));
             }
         }
+
+        // US83 - Export Debt Report
+        [HttpGet("export-debt")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> ExportDebtReport()
+        {
+            try
+            {
+                var fileBytes = await _invoiceService.ExportDebtReportAsync();
+
+                // Nếu file rỗng (không có nợ) thì vẫn trả về file Excel chỉ có header
+                string fileName = $"Debt_Report_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+                string contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+                return File(fileBytes, contentType, fileName);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<string>.Fail(500, $"Lỗi xuất file Excel: {ex.Message}"));
+            }
+        }
     }
 }

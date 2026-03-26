@@ -212,10 +212,10 @@ namespace Sentana.API.Services.SBuilding
 		}
 
 		//Lấy danh sách đã xóa mềm
-		public async Task<IEnumerable<BuildingResponseDto>> GetDeletedBuildingsAsync()
+		public async Task<IEnumerable<BuildingResponseDto>> GetDeletedBuildingsAsync(int? managerId = null)
 		{
 			return await _context.Buildings
-				.Where(b => b.IsDeleted == true) // Chỉ lấy các tòa nhà đã xóa mềm
+				.Where(b => b.ManagerId == managerId && b.IsDeleted == true) 
 				.Select(b => new BuildingResponseDto
 				{
 					BuildingId = b.BuildingId,
