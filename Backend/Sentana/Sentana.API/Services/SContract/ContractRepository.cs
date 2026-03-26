@@ -42,7 +42,7 @@ namespace Sentana.API.Repositories
                 return null;
 
             return await _context.Accounts
-                .Include(a => a.Role) // 🔥 FIX QUAN TRỌNG
+                .Include(a => a.Role)
                 .FirstOrDefaultAsync(a =>
                     a.AccountId == accountId &&
                     a.IsDeleted == false);
@@ -95,6 +95,9 @@ namespace Sentana.API.Repositories
 
             return await _context.Contracts
                 .Include(c => c.Apartment)
+                    .ThenInclude(a => a.ApartmentResidents.Where(ar => ar.IsDeleted == false)) // Lấy danh sách người ở cùng
+                .Include(c => c.Apartment)
+                    .ThenInclude(a => a.ApartmentServices.Where(s => s.IsDeleted == false)) // Lấy danh sách dịch vụ
                 .Include(c => c.Account)
                     .ThenInclude(a => a!.Info)
                 .Include(c => c.CurrentVersion)
@@ -114,6 +117,7 @@ namespace Sentana.API.Repositories
                 .OrderByDescending(c => c.CreatedAt)
                 .ToListAsync();
         }
+
         public async Task<Contract?> GetContractByAccountIdAsync(int accountId)
         {
             return await _context.Contracts
