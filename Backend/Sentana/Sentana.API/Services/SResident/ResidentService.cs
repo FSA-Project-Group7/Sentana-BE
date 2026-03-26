@@ -1,19 +1,25 @@
 using Microsoft.EntityFrameworkCore;
 using OfficeOpenXml;
+using Sentana.API.DTOs.Email;
 using Sentana.API.DTOs.Resident;
 using Sentana.API.DTOs.Technician;
 using Sentana.API.Enums;
 using Sentana.API.Helpers;
 using Sentana.API.Models;
+using Sentana.API.Services;
+using Sentana.API.Services.SEmail;
+using Sentana.API.Services.SRabbitMQ;
 using Sentana.API.Services.SResident;
 
 public class ResidentService : IResidentService
 {
     private readonly SentanaContext _context;
+    private readonly IRabbitMQProducer _rabbitMQProducer;
 
-    public ResidentService(SentanaContext context)
+    public ResidentService(SentanaContext context, IRabbitMQProducer rabbitMQProducer)
     {
         _context = context;
+        _rabbitMQProducer = rabbitMQProducer;
     }
 
     private async Task<string> GenerateResidentCode()
@@ -85,7 +91,8 @@ public class ResidentService : IResidentService
         {
             throw new Exception("Người sở hữu CCCD này đã có tài khoản Cư dân hoặc có thể đã bị xóa. Vui lòng khôi phục thay vì tạo mới.");
         }
-        string hashedPassword = BCrypt.Net.BCrypt.HashPassword(request.Password);
+        string rawPassword = ValidationHelper.GenerateRandomPassword();
+        string hashedPassword = BCrypt.Net.BCrypt.HashPassword(rawPassword);
         string generatedCode = await GenerateResidentCode();
         DateTime currentTime = DateTime.Now;
         var existingInfo = await _context.InFos.FirstOrDefaultAsync(i => i.CmndCccd == request.IdentityCard);
@@ -95,6 +102,7 @@ public class ResidentService : IResidentService
             Email = request.Email,
             UserName = request.UserName,
             Password = hashedPassword,
+            IsFirstLogin = true,
             RoleId = 2,
             Status = GeneralStatus.Active,
             CreatedAt = currentTime,
@@ -122,6 +130,21 @@ public class ResidentService : IResidentService
         }
         _context.Accounts.Add(newAccount);
         await _context.SaveChangesAsync();
+
+        string subject = "Chào mừng bạn đến với Sentana - Thông tin tài khoản Cư dân";
+        string body = $@"
+            <h3>Kính chào {request.FullName},</h3>
+            <p>Ban quản lý tòa nhà Sentana xin thông báo tài khoản Cư dân của bạn đã được khởi tạo thành công.</p>
+            <p><b>Tên đăng nhập:</b> {request.UserName}</p>
+            <p><b>Mật khẩu tạm thời:</b> {rawPassword}</p>  
+            <p><b><a href='http://localhost:5173/login' target='_blank' style='color: #0056b3; text-decoration: none;'>Nhấn vào đây để đăng nhập vào hệ thống</a></b></p>
+            <br/>
+            <p><i>Lưu ý: Để đảm bảo an toàn thông tin, hệ thống sẽ yêu cầu bạn đổi mật khẩu trong lần đăng nhập đầu tiên.</i></p>
+            <p>Trân trọng,</p>
+            <p>Ban quản lý Sentana.</p>";
+
+        var emailMsg = new EmailMessageDto { To = request.Email, Subject = subject, Body = body};
+        await _rabbitMQProducer.SendEmailMessage(emailMsg);
         return MapToResponse(newAccount, existingInfo);
     }
 

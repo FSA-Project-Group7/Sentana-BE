@@ -19,5 +19,7 @@ namespace Sentana.API.Services.SBuilding
         Task<bool> ResetPasswordAsync(ResetPasswordRequestDto request);
         Task<TokenModelDto?> RenewTokenAsync(TokenModelDto request);
         Task<bool> LogoutAsync(int accountId);
+
+        Task<bool> SetupPasswordAsync(int accountId, SetupPasswordRequestDto request);
     }
 }

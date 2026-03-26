@@ -13,10 +13,6 @@ namespace Sentana.API.DTOs.Technician
         [Required(ErrorMessage = "Tên đăng nhập không được để trống!")]
         public string UserName { get; set; }
 
-        [Required(ErrorMessage = "Mật khẩu không được để trống!")]
-        [RegularExpression(ValidationHelper.PasswordRegex, ErrorMessage = "Mật khẩu phải ít nhất 8 ký tự, gồm chữ cái, chữ số và ký tự đặc biệt")]
-        public string Password { get; set; } = string.Empty;
-
         [Required(ErrorMessage = "Họ tên không được để trống")]
         [RegularExpression(ValidationHelper.FullNameRegex, ErrorMessage = "Họ và tên chỉ được chứa chữ cái và khoảng trắng")]
         public string FullName { get; set; } = string.Empty;
