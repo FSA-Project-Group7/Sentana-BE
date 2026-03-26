@@ -5,7 +5,10 @@ using Sentana.API.Helpers;
 using Sentana.API.Models;
 using Sentana.API.Repositories;
 using Sentana.API.Services.SStorage;
+using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace Sentana.API.Services
 {
@@ -103,7 +106,7 @@ namespace Sentana.API.Services
 
                 contract.CurrentVersionId = version.VersionId;
 
-                // 2. GÁN CHỦ HỢP ĐỒNG (Yêu cầu 1: Fix RelationshipId = 1)
+                // 2. GÁN CHỦ HỢP ĐỒNG (Fix RelationshipId = 1)
                 await _context.ApartmentResidents.AddAsync(new ApartmentResident
                 {
                     ApartmentId = request.ApartmentId,
@@ -115,17 +118,16 @@ namespace Sentana.API.Services
                     IsDeleted = false
                 });
 
-                // 3. THÊM CÁC THÀNH VIÊN KHÁC TỪ DẤU (+) (Yêu cầu 2)
+                // 3. THÊM CÁC THÀNH VIÊN KHÁC TỪ DẤU (+)
                 if (request.AdditionalResidents != null && request.AdditionalResidents.Any())
                 {
                     foreach (var r in request.AdditionalResidents)
                     {
-                        // Note: Thực tế nên validate xem AccountId này có tồn tại không trước khi add để chặt chẽ hơn
                         await _context.ApartmentResidents.AddAsync(new ApartmentResident
                         {
                             ApartmentId = request.ApartmentId,
                             AccountId = r.AccountId,
-                            RelationshipId = r.RelationshipId, // Quan hệ vợ/chồng, con cái... từ FE gửi lên
+                            RelationshipId = r.RelationshipId,
                             Status = GeneralStatus.Active,
                             CreatedAt = DateTime.Now,
                             CreatedBy = accountId,
@@ -147,7 +149,7 @@ namespace Sentana.API.Services
                                 ServiceId = s.ServiceId,
                                 // Nếu Manager không nhập giá, lấy giá mặc định của hệ thống
                                 ActualPrice = s.ActualPrice ?? systemServices[s.ServiceId],
-                                StartDay = request.StartDay, // Dùng ngày bắt đầu hợp đồng làm ngày bắt đầu dịch vụ
+                                StartDay = request.StartDay,
                                 Status = GeneralStatus.Active,
                                 CreatedAt = DateTime.Now,
                                 CreatedBy = accountId,
@@ -156,6 +158,7 @@ namespace Sentana.API.Services
                         }
                     }
                 }
+
                 // 5. CẬP NHẬT TRẠNG THÁI PHÒNG
                 apartment.Status = ApartmentStatus.Occupied;
 
@@ -245,6 +248,7 @@ namespace Sentana.API.Services
                 return ApiResponse<object>.Fail(500, ex.Message);
             }
         }
+
         public async Task<ApiResponse<object>> TerminateContractAsync(int contractId, TerminateContractDto request)
         {
             var contract = await _contractRepository.GetContractWithApartmentAsync(contractId);
@@ -261,16 +265,22 @@ namespace Sentana.API.Services
             {
                 contract.Status = GeneralStatus.Inactive;
                 contract.UpdatedAt = DateTime.Now;
-
                 contract.EndDay = request.TerminationDate;
 
+                // 🔥 LOGIC MỚI: Chỉ gán phòng thành "Vacant" nếu phòng đang "Occupied" (Đang ở).
+                // Nếu phòng đang "Maintenance" (Bảo trì) thì GIỮ NGUYÊN không đổi.
                 if (contract.Apartment != null)
-                    contract.Apartment.Status = ApartmentStatus.Vacant;
+                {
+                    if (contract.Apartment.Status == ApartmentStatus.Occupied)
+                    {
+                        contract.Apartment.Status = ApartmentStatus.Vacant;
+                    }
+                }
 
                 if (contract.ApartmentId == null)
                     return ApiResponse<object>.Fail(400, "Apartment không hợp lệ");
-                
-                    int apartmentId = contract.ApartmentId.Value;
+
+                int apartmentId = contract.ApartmentId.Value;
 
                 var residents = await _context.ApartmentResidents
                     .Where(x => x.ApartmentId == apartmentId && x.IsDeleted == false)
@@ -313,19 +323,20 @@ namespace Sentana.API.Services
                 string paymentStatus = isFullyPaid
                         ? "Đã thanh toán đủ"
                         : "Chưa thanh toán đủ";
+
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-               return ApiResponse<object>.Success(new
-                    {
-                        TotalInvoice = totalInvoice,
-                        TotalPaid = totalPaid,
-                        AdditionalCost = additionalCost,
-                        RefundAmount = refund,
-                        IsFullyPaid = isFullyPaid,
-                        PaymentStatus = paymentStatus
-                    }, "Terminate thành công");
-                                }
+                return ApiResponse<object>.Success(new
+                {
+                    TotalInvoice = totalInvoice,
+                    TotalPaid = totalPaid,
+                    AdditionalCost = additionalCost,
+                    RefundAmount = refund,
+                    IsFullyPaid = isFullyPaid,
+                    PaymentStatus = paymentStatus
+                }, "Terminate thành công");
+            }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
