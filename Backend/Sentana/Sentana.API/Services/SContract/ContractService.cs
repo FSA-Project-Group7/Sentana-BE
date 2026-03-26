@@ -30,7 +30,6 @@ namespace Sentana.API.Services
 
         public async Task<ApiResponse<object>> CreateContractAsync(CreateContractDto request, int accountId)
         {
-            // --- VALIDATION CƠ BẢN ---
             if (request == null) return ApiResponse<object>.Fail(400, "Request không hợp lệ");
             if (request.StartDay >= request.EndDay) return ApiResponse<object>.Fail(400, "Ngày bắt đầu phải trước ngày kết thúc");
             if (request.File == null || !request.File.ContentType.Contains("pdf")) return ApiResponse<object>.Fail(400, "File PDF là bắt buộc");
@@ -40,14 +39,12 @@ namespace Sentana.API.Services
             if (manager == null || manager.Role?.RoleName != "Manager")
                 return ApiResponse<object>.Fail(403, "Chỉ Manager được quyền tạo hợp đồng");
 
-            // --- VALIDATE TÀI KHOẢN CHỦ HỢP ĐỒNG ---
             var residentAccount = await _context.Accounts.Include(a => a.Role)
                 .FirstOrDefaultAsync(a => a.AccountId == request.ResidentAccountId && a.IsDeleted == false);
 
             if (residentAccount == null || residentAccount.Status != GeneralStatus.Active || residentAccount.Role?.RoleName != "Resident")
                 return ApiResponse<object>.Fail(400, "Tài khoản chủ hợp đồng không hợp lệ hoặc không phải Cư dân");
 
-            // --- VALIDATE CĂN HỘ VÀ CHECK OVERLAP (Đặt trước) ---
             var apartment = await _contractRepository.GetApartmentAsync(request.ApartmentId);
             if (apartment == null) return ApiResponse<object>.Fail(400, "Căn hộ không tồn tại");
             if (apartment.Status == ApartmentStatus.Maintenance) return ApiResponse<object>.Fail(400, "Căn hộ đang bảo trì");
@@ -58,7 +55,6 @@ namespace Sentana.API.Services
 
             if (overlap) return ApiResponse<object>.Fail(400, "Thời gian hợp đồng bị trùng lặp với hợp đồng khác đang Active.");
 
-            // Lấy thông tin giá gốc của Dịch vụ từ DB (nếu có gửi kèm dịch vụ)
             Dictionary<int, decimal?> systemServices = new Dictionary<int, decimal?>();
             if (request.Services != null && request.Services.Any())
             {
@@ -68,13 +64,11 @@ namespace Sentana.API.Services
                     .ToDictionaryAsync(s => s.ServiceId, s => s.ServiceFee);
             }
 
-            // --- TRANSACTION BẮT ĐẦU ---
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
                 var fileUrl = await _minioService.UploadContractAsync(request.File, 0, 1);
 
-                // 1. TẠO HỢP ĐỒNG & VERSION
                 var contract = new Contract
                 {
                     ContractCode = "CT-" + DateTime.Now.Ticks,
@@ -91,7 +85,7 @@ namespace Sentana.API.Services
                     IsDeleted = false
                 };
                 await _context.Contracts.AddAsync(contract);
-                await _context.SaveChangesAsync(); // Lưu để lấy ContractId
+                await _context.SaveChangesAsync();
 
                 var version = new ContractVersion
                 {
@@ -106,19 +100,17 @@ namespace Sentana.API.Services
 
                 contract.CurrentVersionId = version.VersionId;
 
-                // 2. GÁN CHỦ HỢP ĐỒNG (Fix RelationshipId = 1)
                 await _context.ApartmentResidents.AddAsync(new ApartmentResident
                 {
                     ApartmentId = request.ApartmentId,
                     AccountId = request.ResidentAccountId,
-                    RelationshipId = 1, // Fix cứng là Chủ hộ
+                    RelationshipId = 1,
                     Status = GeneralStatus.Active,
                     CreatedAt = DateTime.Now,
                     CreatedBy = accountId,
                     IsDeleted = false
                 });
 
-                // 3. THÊM CÁC THÀNH VIÊN KHÁC TỪ DẤU (+)
                 if (request.AdditionalResidents != null && request.AdditionalResidents.Any())
                 {
                     foreach (var r in request.AdditionalResidents)
@@ -136,7 +128,6 @@ namespace Sentana.API.Services
                     }
                 }
 
-                // 4. THÊM CÁC DỊCH VỤ TỪ DẤU (+)
                 if (request.Services != null && request.Services.Any())
                 {
                     foreach (var s in request.Services)
@@ -147,7 +138,6 @@ namespace Sentana.API.Services
                             {
                                 ApartmentId = request.ApartmentId,
                                 ServiceId = s.ServiceId,
-                                // Nếu Manager không nhập giá, lấy giá mặc định của hệ thống
                                 ActualPrice = s.ActualPrice ?? systemServices[s.ServiceId],
                                 StartDay = request.StartDay,
                                 Status = GeneralStatus.Active,
@@ -159,7 +149,6 @@ namespace Sentana.API.Services
                     }
                 }
 
-                // 5. CẬP NHẬT TRẠNG THÁI PHÒNG
                 apartment.Status = ApartmentStatus.Occupied;
 
                 await _context.SaveChangesAsync();
@@ -178,29 +167,21 @@ namespace Sentana.API.Services
         {
             var contract = await _contractRepository.GetContractDetailAsync(contractId);
 
-            if (contract == null)
-                return ApiResponse<object>.Fail(404, "Không tìm thấy");
-
-            if (contract.Status != GeneralStatus.Active)
-                return ApiResponse<object>.Fail(400, "Chỉ update contract active");
+            if (contract == null) return ApiResponse<object>.Fail(404, "Không tìm thấy");
+            if (contract.Status != GeneralStatus.Active) return ApiResponse<object>.Fail(400, "Chỉ update contract active");
 
             var newStart = request.StartDay ?? contract.StartDay;
             var newEnd = request.EndDay ?? contract.EndDay;
 
-            if (newStart >= newEnd)
-                return ApiResponse<object>.Fail(400, "Ngày không hợp lệ");
+            if (newStart >= newEnd) return ApiResponse<object>.Fail(400, "Ngày không hợp lệ");
 
             var overlap = await _context.Contracts.AnyAsync(c =>
                 c.ContractId != contractId &&
                 c.ApartmentId == contract.ApartmentId &&
                 c.IsDeleted == false &&
-                (
-                    newStart < c.EndDay &&
-                    newEnd > c.StartDay
-                ));
+                (newStart < c.EndDay && newEnd > c.StartDay));
 
-            if (overlap)
-                return ApiResponse<object>.Fail(400, "Contract bị overlap");
+            if (overlap) return ApiResponse<object>.Fail(400, "Contract bị overlap");
 
             using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -212,13 +193,13 @@ namespace Sentana.API.Services
                 contract.Deposit = request.Deposit ?? contract.Deposit;
                 contract.UpdatedAt = DateTime.Now;
 
+                // 1. Xử lý File PDF
                 if (request.File != null)
                 {
                     if (!request.File.ContentType.Contains("pdf"))
                         return ApiResponse<object>.Fail(400, "Chỉ PDF");
 
                     var fileUrl = await _minioService.UploadContractAsync(request.File, contractId, 2);
-
                     var lastVersion = await _contractRepository.GetLatestContractVersionAsync(contractId);
                     var newVersion = (lastVersion?.VersionNumber ?? 0) + 1;
 
@@ -237,6 +218,91 @@ namespace Sentana.API.Services
                     contract.CurrentVersionId = version.VersionId;
                 }
 
+                // 2. Xử lý Cư dân phụ (AdditionalResidents)
+                if (contract.ApartmentId.HasValue && request.AdditionalResidents != null)
+                {
+                    int aptId = contract.ApartmentId.Value;
+
+                    var existingResidents = await _context.ApartmentResidents
+                        .Where(r => r.ApartmentId == aptId && r.AccountId != contract.AccountId)
+                        .ToListAsync();
+
+                    foreach (var r in existingResidents)
+                    {
+                        r.IsDeleted = true; // Xóa mềm toàn bộ trước
+                    }
+
+                    foreach (var newRes in request.AdditionalResidents)
+                    {
+                        var exist = existingResidents.FirstOrDefault(x => x.AccountId == newRes.AccountId);
+                        if (exist != null)
+                        {
+                            exist.IsDeleted = false; // Mở lại nếu có gửi lên
+                            exist.RelationshipId = newRes.RelationshipId;
+                            // ĐÃ XÓA exist.UpdatedAt để fix lỗi
+                        }
+                        else
+                        {
+                            await _context.ApartmentResidents.AddAsync(new ApartmentResident
+                            {
+                                ApartmentId = aptId,
+                                AccountId = newRes.AccountId,
+                                RelationshipId = newRes.RelationshipId,
+                                Status = GeneralStatus.Active,
+                                CreatedAt = DateTime.Now,
+                                IsDeleted = false
+                            });
+                        }
+                    }
+                }
+
+                // 3. Xử lý Dịch vụ cố định (Services)
+                if (contract.ApartmentId.HasValue && request.Services != null)
+                {
+                    int aptId = contract.ApartmentId.Value;
+
+                    var existingServices = await _context.ApartmentServices
+                        .Where(s => s.ApartmentId == aptId)
+                        .ToListAsync();
+
+                    foreach (var s in existingServices)
+                    {
+                        s.IsDeleted = true; // Xóa mềm toàn bộ trước
+                    }
+
+                    var serviceIds = request.Services.Select(s => s.ServiceId).ToList();
+                    var systemServices = await _context.Services
+                        .Where(s => serviceIds.Contains(s.ServiceId))
+                        .ToDictionaryAsync(s => s.ServiceId, s => s.ServiceFee);
+
+                    foreach (var newSrv in request.Services)
+                    {
+                        if (systemServices.ContainsKey(newSrv.ServiceId))
+                        {
+                            var exist = existingServices.FirstOrDefault(x => x.ServiceId == newSrv.ServiceId);
+                            if (exist != null)
+                            {
+                                exist.IsDeleted = false; // Mở lại nếu có gửi lên
+                                exist.ActualPrice = newSrv.ActualPrice ?? systemServices[newSrv.ServiceId];
+                                // ĐÃ XÓA exist.UpdatedAt để fix lỗi
+                            }
+                            else
+                            {
+                                await _context.ApartmentServices.AddAsync(new ApartmentService
+                                {
+                                    ApartmentId = aptId,
+                                    ServiceId = newSrv.ServiceId,
+                                    ActualPrice = newSrv.ActualPrice ?? systemServices[newSrv.ServiceId],
+                                    StartDay = contract.StartDay,
+                                    Status = GeneralStatus.Active,
+                                    CreatedAt = DateTime.Now,
+                                    IsDeleted = false
+                                });
+                            }
+                        }
+                    }
+                }
+
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
@@ -253,11 +319,8 @@ namespace Sentana.API.Services
         {
             var contract = await _contractRepository.GetContractWithApartmentAsync(contractId);
 
-            if (contract == null)
-                return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng");
-
-            if (contract.Status != GeneralStatus.Active)
-                return ApiResponse<object>.Fail(400, "Contract không active");
+            if (contract == null) return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng");
+            if (contract.Status != GeneralStatus.Active) return ApiResponse<object>.Fail(400, "Contract không active");
 
             using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -267,8 +330,6 @@ namespace Sentana.API.Services
                 contract.UpdatedAt = DateTime.Now;
                 contract.EndDay = request.TerminationDate;
 
-                // 🔥 LOGIC MỚI: Chỉ gán phòng thành "Vacant" nếu phòng đang "Occupied" (Đang ở).
-                // Nếu phòng đang "Maintenance" (Bảo trì) thì GIỮ NGUYÊN không đổi.
                 if (contract.Apartment != null)
                 {
                     if (contract.Apartment.Status == ApartmentStatus.Occupied)
@@ -313,16 +374,11 @@ namespace Sentana.API.Services
 
                 decimal totalInvoice = invoices.Sum(x => x.TotalMoney ?? 0);
                 decimal totalPaid = payments.Sum(x => x.AmountPaid ?? 0);
-
                 decimal additionalCost = request.AdditionalCost;
-
                 decimal refund = totalPaid - totalInvoice - additionalCost;
-
                 bool isFullyPaid = totalPaid >= (totalInvoice + additionalCost);
 
-                string paymentStatus = isFullyPaid
-                        ? "Đã thanh toán đủ"
-                        : "Chưa thanh toán đủ";
+                string paymentStatus = isFullyPaid ? "Đã thanh toán đủ" : "Chưa thanh toán đủ";
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
@@ -348,14 +404,9 @@ namespace Sentana.API.Services
         {
             var contract = await _contractRepository.GetContractWithApartmentAsync(contractId);
 
-            if (contract == null)
-                return ApiResponse<object>.Fail(404, "Không tìm thấy");
-
-            if (contract.Status != GeneralStatus.Active)
-                return ApiResponse<object>.Fail(400, "Contract không active");
-
-            if (request.NewEndDate <= contract.EndDay)
-                return ApiResponse<object>.Fail(400, "Ngày không hợp lệ");
+            if (contract == null) return ApiResponse<object>.Fail(404, "Không tìm thấy");
+            if (contract.Status != GeneralStatus.Active) return ApiResponse<object>.Fail(400, "Contract không active");
+            if (request.NewEndDate <= contract.EndDay) return ApiResponse<object>.Fail(400, "Ngày không hợp lệ");
 
             var overlap = await _context.Contracts.AnyAsync(c =>
                 c.ContractId != contractId &&
@@ -364,8 +415,7 @@ namespace Sentana.API.Services
                 request.NewEndDate > c.StartDay
             );
 
-            if (overlap)
-                return ApiResponse<object>.Fail(400, "Gia hạn bị overlap");
+            if (overlap) return ApiResponse<object>.Fail(400, "Gia hạn bị overlap");
 
             contract.EndDay = request.NewEndDate;
             contract.UpdatedAt = DateTime.Now;
@@ -378,11 +428,55 @@ namespace Sentana.API.Services
         public async Task<ApiResponse<object>> GetContractDetailAsync(int contractId)
         {
             var contract = await _contractRepository.GetContractDetailAsync(contractId);
+            if (contract == null) return ApiResponse<object>.Fail(404, "Không tìm thấy");
 
-            if (contract == null)
-                return ApiResponse<object>.Fail(404, "Không tìm thấy");
+            var detailDto = new ContractDetailDto
+            {
+                ContractId = contract.ContractId,
+                ContractCode = contract.ContractCode,
+                ApartmentId = contract.ApartmentId,
+                ApartmentName = contract.Apartment?.ApartmentName,
+                AccountId = contract.AccountId,
+                TenantName = contract.Account?.Info?.FullName,
 
-            return ApiResponse<object>.Success(contract, "OK");
+                // ĐÃ FIX: Gán thẳng trực tiếp vì contract.StartDay đã là kiểu DateOnly?
+                StartDay = contract.StartDay,
+                EndDay = contract.EndDay,
+
+                MonthlyRent = contract.MonthlyRent,
+                Deposit = contract.Deposit,
+                Status = contract.Status,
+                CreatedAt = contract.CreatedAt,
+                File = contract.CurrentVersion?.File
+            };
+
+            // Lấy danh sách người ở cùng
+            if (contract.Apartment != null && contract.Apartment.ApartmentResidents != null)
+            {
+                detailDto.AdditionalResidents = contract.Apartment.ApartmentResidents
+                    .Where(r => r.IsDeleted == false && r.AccountId != contract.AccountId) // Bỏ qua chủ hộ
+                    .Select(r => new ResidentItemDto
+                    {
+                        AccountId = r.AccountId ?? 0,
+                        RelationshipId = r.RelationshipId ?? 0
+                    })
+                    .ToList();
+            }
+
+            // Lấy danh sách dịch vụ
+            if (contract.Apartment != null && contract.Apartment.ApartmentServices != null)
+            {
+                detailDto.SelectedServices = contract.Apartment.ApartmentServices
+                    .Where(s => s.IsDeleted == false)
+                    .Select(s => new ServiceItemDto
+                    {
+                        ServiceId = s.ServiceId ?? 0,
+                        ActualPrice = s.ActualPrice
+                    })
+                    .ToList();
+            }
+
+            return ApiResponse<object>.Success(detailDto, "OK");
         }
 
         public async Task<ApiResponse<object>> GetContractListAsync()
@@ -394,11 +488,112 @@ namespace Sentana.API.Services
         public async Task<ApiResponse<object>> GetMyContractAsync(int accountId)
         {
             var contract = await _contractRepository.GetContractByAccountIdAsync(accountId);
-
-            if (contract == null)
-                return ApiResponse<object>.Fail(404, "Không có contract");
-
+            if (contract == null) return ApiResponse<object>.Fail(404, "Không có contract");
             return ApiResponse<object>.Success(contract, "OK");
+        }
+
+        // ==============================================================
+        // HÀM XỬ LÝ CHỨC NĂNG THÙNG RÁC (SOFT DELETE, HARD DELETE, RESTORE)
+        // ==============================================================
+
+        public async Task<ApiResponse<object>> GetDeletedContractsAsync()
+        {
+            var deletedContracts = await _context.Contracts
+                .Include(c => c.Account).ThenInclude(a => a.Info)
+                .Include(c => c.Apartment)
+                .Where(c => c.IsDeleted == true)
+                .Select(c => new
+                {
+                    ContractId = c.ContractId,
+                    ContractCode = c.ContractCode,
+                    UpdatedAt = c.UpdatedAt,
+                    Account = new
+                    {
+                        Info = new
+                        {
+                            FullName = c.Account != null && c.Account.Info != null ? c.Account.Info.FullName : "N/A",
+                            PhoneNumber = c.Account != null && c.Account.Info != null ? c.Account.Info.PhoneNumber : "N/A"
+                        },
+                        Email = c.Account != null ? c.Account.Email : "N/A"
+                    },
+                    Apartment = new
+                    {
+                        ApartmentCode = c.Apartment != null ? c.Apartment.ApartmentCode : "N/A"
+                    }
+                })
+                .ToListAsync();
+
+            return ApiResponse<object>.Success(deletedContracts, "OK");
+        }
+
+        public async Task<ApiResponse<object>> SoftDeleteContractAsync(int contractId)
+        {
+            try
+            {
+                var contract = await _context.Contracts.FirstOrDefaultAsync(c => c.ContractId == contractId && c.IsDeleted != true);
+
+                if (contract == null)
+                    return ApiResponse<object>.Fail(404, $"Không tìm thấy hợp đồng mang ID {contractId} hoặc hợp đồng đã bị xóa trước đó.");
+
+                contract.IsDeleted = true;
+                contract.UpdatedAt = DateTime.Now;
+
+                await _context.SaveChangesAsync();
+
+                return ApiResponse<object>.Success(null, "Đã chuyển hợp đồng vào thùng rác thành công.");
+            }
+            catch (Exception ex)
+            {
+                return ApiResponse<object>.Fail(500, "Lỗi Server khi xóa mềm: " + ex.Message);
+            }
+        }
+
+        public async Task<ApiResponse<object>> RestoreContractAsync(int contractId)
+        {
+            try
+            {
+                var contract = await _context.Contracts.FirstOrDefaultAsync(c => c.ContractId == contractId && c.IsDeleted == true);
+
+                if (contract == null)
+                    return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng này trong thùng rác.");
+
+                contract.IsDeleted = false;
+                contract.UpdatedAt = DateTime.Now;
+
+                await _context.SaveChangesAsync();
+
+                return ApiResponse<object>.Success(null, "Đã khôi phục hợp đồng thành công.");
+            }
+            catch (Exception ex)
+            {
+                return ApiResponse<object>.Fail(500, "Lỗi Server khi khôi phục: " + ex.Message);
+            }
+        }
+
+        public async Task<ApiResponse<object>> HardDeleteContractAsync(int contractId)
+        {
+            try
+            {
+                var contract = await _context.Contracts.FirstOrDefaultAsync(c => c.ContractId == contractId && c.IsDeleted == true);
+
+                if (contract == null)
+                    return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng này trong thùng rác.");
+
+                var versions = await _context.ContractVersions.Where(v => v.ContractId == contractId).ToListAsync();
+                if (versions.Any())
+                {
+                    _context.ContractVersions.RemoveRange(versions);
+                }
+
+                _context.Contracts.Remove(contract);
+                await _context.SaveChangesAsync();
+
+                return ApiResponse<object>.Success(null, "Đã xóa vĩnh viễn hợp đồng khỏi hệ thống.");
+            }
+            catch (Exception ex)
+            {
+                return ApiResponse<object>.Fail(500, "Lỗi Server khi xóa vĩnh viễn: " + ex.Message);
+            }
         }
     }
 }

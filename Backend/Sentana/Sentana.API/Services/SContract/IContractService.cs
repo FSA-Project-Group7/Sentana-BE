@@ -17,5 +17,9 @@ namespace Sentana.API.Services
 
         Task<ApiResponse<object>> GetContractListAsync();
         Task<ApiResponse<object>> GetMyContractAsync(int accountId);
+        Task<ApiResponse<object>> GetDeletedContractsAsync();
+        Task<ApiResponse<object>> SoftDeleteContractAsync(int contractId);
+        Task<ApiResponse<object>> RestoreContractAsync(int contractId);
+        Task<ApiResponse<object>> HardDeleteContractAsync(int contractId);
     }
 }

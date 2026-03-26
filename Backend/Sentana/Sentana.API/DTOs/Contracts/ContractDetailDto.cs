@@ -1,4 +1,6 @@
 ﻿using Sentana.API.Enums;
+using System.Collections.Generic;
+using System;
 
 namespace Sentana.API.DTOs.Contracts
 {
@@ -33,5 +35,20 @@ namespace Sentana.API.DTOs.Contracts
         public GeneralStatus? Status { get; set; }
 
         public DateTime? CreatedAt { get; set; }
+
+        public List<ResidentItemDto> AdditionalResidents { get; set; } = new List<ResidentItemDto>();
+        public List<ServiceItemDto> SelectedServices { get; set; } = new List<ServiceItemDto>();
+    }
+
+    public class ResidentItemDto
+    {
+        public int AccountId { get; set; }
+        public int RelationshipId { get; set; }
+    }
+
+    public class ServiceItemDto
+    {
+        public int ServiceId { get; set; }
+        public decimal? ActualPrice { get; set; }
     }
 }
