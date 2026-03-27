@@ -32,6 +32,7 @@ namespace Sentana.API.Services.SBuilding
         {
             var user = await _context.Accounts
                 .Include(a => a.Role)
+                .Include(a => a.Info)
                 .FirstOrDefaultAsync(a =>
                     (a.UserName == request.UserName || a.Email == request.UserName)
                     && a.Status == GeneralStatus.Active);
@@ -74,7 +75,8 @@ namespace Sentana.API.Services.SBuilding
                 new Claim(JwtRegisteredClaimNames.Sub, user.UserName),
                 new Claim("AccountId", user.AccountId.ToString()),
                 new Claim("RoleId", user.RoleId.ToString()),
-                new Claim(ClaimTypes.Role, user.Role?.RoleName ?? "Resident")
+                new Claim(ClaimTypes.Role, user.Role?.RoleName ?? "Resident"),
+                new Claim(JwtRegisteredClaimNames.Name, user.Info?.FullName ?? user.UserName),
             };
 
             var token = new JwtSecurityToken(
@@ -329,6 +331,7 @@ namespace Sentana.API.Services.SBuilding
             // tìm người dùng trong DB
             var user = await _context.Accounts
                 .Include(a => a.Role)
+                .Include(a => a.Info)
                 .FirstOrDefaultAsync(a => a.UserName == userName);
 
             // kiểm tra xem user có tồn tại và token còn hạn không
@@ -374,28 +377,44 @@ namespace Sentana.API.Services.SBuilding
 
         public async Task<bool> SetupPasswordAsync(int accountId, SetupPasswordRequestDto request)
         {
-            var user = await _context.Accounts.FindAsync(accountId);
-
-            // Chốt chặn 1: Bắt buộc phải là tài khoản đăng nhập lần đầu mới cho dùng hàm này
+            var user = await _context.Accounts
+                .Include(a => a.Info)
+                .FirstOrDefaultAsync(a => a.AccountId == accountId);
             if (user == null || user.IsFirstLogin == false)
                 throw new Exception("Tài khoản không hợp lệ hoặc đã được thiết lập mật khẩu trước đó.");
-
-            // Chốt chặn 2: Kiểm tra mật khẩu cũ (mật khẩu gửi qua mail)
             if (!BCrypt.Net.BCrypt.Verify(request.OldPassword, user.Password))
                 throw new Exception("Mật khẩu hiện tại không chính xác.");
-
-            // Cập nhật mật khẩu mới
+            if (await _context.Accounts.AnyAsync(a => a.Email == request.Email && a.AccountId != accountId))
+                throw new Exception("Email này đã được sử dụng bởi một tài khoản khác.");
+            bool isPhoneDuplicate = await _context.InFos.AnyAsync(i =>
+                i.PhoneNumber == request.PhoneNumber &&
+                i.InfoId != user.InfoId);
+            if (isPhoneDuplicate)
+                throw new Exception("Số điện thoại này đã được sử dụng bởi một người khác.");
             user.Password = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
-
-            // Tắt cờ đăng nhập lần đầu
             user.IsFirstLogin = false;
-
             user.RefreshToken = null;
             user.RefreshTokenExpiryTime = null;
             user.UpdatedAt = DateTime.Now;
-
+            user.Email = request.Email;
+            if (user.Info == null)
+            {
+                user.Info = new InFo
+                {
+                    FullName = request.FullName,
+                    PhoneNumber = request.PhoneNumber,
+                    BirthDay = request.BirthDay,
+                    CreatedAt = DateTime.Now
+                };
+            }
+            else
+            {
+                user.Info.FullName = request.FullName;
+                user.Info.PhoneNumber = request.PhoneNumber;
+                user.Info.BirthDay = request.BirthDay;
+                user.Info.UpdatedAt = DateTime.Now;
+            }
             await _context.SaveChangesAsync();
-
             return true;
         }
     }
