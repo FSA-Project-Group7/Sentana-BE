@@ -32,6 +32,7 @@ namespace Sentana.API.Services
         {
             if (request == null) return ApiResponse<object>.Fail(400, "Request không hợp lệ");
             if (request.StartDay >= request.EndDay) return ApiResponse<object>.Fail(400, "Ngày bắt đầu phải trước ngày kết thúc");
+            if (request.MonthlyRent < 0 || request.Deposit < 0) return ApiResponse<object>.Fail(400, "Tiền thuê và tiền cọc không được là số âm");
             if (request.File == null || !request.File.ContentType.Contains("pdf")) return ApiResponse<object>.Fail(400, "File PDF là bắt buộc");
             if (request.File.Length > 5 * 1024 * 1024) return ApiResponse<object>.Fail(400, "File quá lớn (max 5MB)");
 
@@ -49,6 +50,7 @@ namespace Sentana.API.Services
             if (apartment == null) return ApiResponse<object>.Fail(400, "Căn hộ không tồn tại");
             if (apartment.Status == ApartmentStatus.Maintenance) return ApiResponse<object>.Fail(400, "Căn hộ đang bảo trì");
 
+            // Check chống trùng lịch an toàn tuyệt đối
             var overlap = await _context.Contracts.AnyAsync(c =>
                 c.ApartmentId == request.ApartmentId && c.Status == GeneralStatus.Active && c.IsDeleted == false &&
                 (request.StartDay < c.EndDay && request.EndDay > c.StartDay));
@@ -169,6 +171,7 @@ namespace Sentana.API.Services
 
             if (contract == null) return ApiResponse<object>.Fail(404, "Không tìm thấy");
             if (contract.Status != GeneralStatus.Active) return ApiResponse<object>.Fail(400, "Chỉ update contract active");
+            if (request.MonthlyRent < 0 || request.Deposit < 0) return ApiResponse<object>.Fail(400, "Tiền thuê và tiền cọc không được là số âm");
 
             var newStart = request.StartDay ?? contract.StartDay;
             var newEnd = request.EndDay ?? contract.EndDay;
@@ -179,9 +182,10 @@ namespace Sentana.API.Services
                 c.ContractId != contractId &&
                 c.ApartmentId == contract.ApartmentId &&
                 c.IsDeleted == false &&
+                c.Status == GeneralStatus.Active &&
                 (newStart < c.EndDay && newEnd > c.StartDay));
 
-            if (overlap) return ApiResponse<object>.Fail(400, "Contract bị overlap");
+            if (overlap) return ApiResponse<object>.Fail(400, "Thời gian hợp đồng bị trùng lặp");
 
             using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -198,6 +202,8 @@ namespace Sentana.API.Services
                 {
                     if (!request.File.ContentType.Contains("pdf"))
                         return ApiResponse<object>.Fail(400, "Chỉ PDF");
+                    if (request.File.Length > 5 * 1024 * 1024)
+                        return ApiResponse<object>.Fail(400, "File quá lớn (max 5MB)");
 
                     var fileUrl = await _minioService.UploadContractAsync(request.File, contractId, 2);
                     var lastVersion = await _contractRepository.GetLatestContractVersionAsync(contractId);
@@ -239,7 +245,6 @@ namespace Sentana.API.Services
                         {
                             exist.IsDeleted = false; // Mở lại nếu có gửi lên
                             exist.RelationshipId = newRes.RelationshipId;
-                            // ĐÃ XÓA exist.UpdatedAt để fix lỗi
                         }
                         else
                         {
@@ -284,7 +289,6 @@ namespace Sentana.API.Services
                             {
                                 exist.IsDeleted = false; // Mở lại nếu có gửi lên
                                 exist.ActualPrice = newSrv.ActualPrice ?? systemServices[newSrv.ServiceId];
-                                // ĐÃ XÓA exist.UpdatedAt để fix lỗi
                             }
                             else
                             {
@@ -350,6 +354,8 @@ namespace Sentana.API.Services
                 foreach (var r in residents)
                 {
                     r.IsDeleted = true;
+                    // Bổ sung đổi status sang Inactive để rạch ròi
+                    r.Status = GeneralStatus.Inactive;
                 }
 
                 var services = await _context.ApartmentServices
@@ -360,6 +366,7 @@ namespace Sentana.API.Services
                 {
                     s.EndDay = request.TerminationDate;
                     s.IsDeleted = true;
+                    s.Status = GeneralStatus.Inactive;
                 }
 
                 var invoices = await _context.Invoices
@@ -408,14 +415,16 @@ namespace Sentana.API.Services
             if (contract.Status != GeneralStatus.Active) return ApiResponse<object>.Fail(400, "Contract không active");
             if (request.NewEndDate <= contract.EndDay) return ApiResponse<object>.Fail(400, "Ngày không hợp lệ");
 
+            // Cập nhật công thức check Overlap chuẩn (Start < End2 && End < Start2)
             var overlap = await _context.Contracts.AnyAsync(c =>
                 c.ContractId != contractId &&
                 c.ApartmentId == contract.ApartmentId &&
                 c.IsDeleted == false &&
-                request.NewEndDate > c.StartDay
+                c.Status == GeneralStatus.Active &&
+                (contract.StartDay < c.EndDay && request.NewEndDate > c.StartDay)
             );
 
-            if (overlap) return ApiResponse<object>.Fail(400, "Gia hạn bị overlap");
+            if (overlap) return ApiResponse<object>.Fail(400, "Thời gian gia hạn bị trùng lặp với hợp đồng khác.");
 
             contract.EndDay = request.NewEndDate;
             contract.UpdatedAt = DateTime.Now;
@@ -439,7 +448,6 @@ namespace Sentana.API.Services
                 AccountId = contract.AccountId,
                 TenantName = contract.Account?.Info?.FullName,
 
-                // ĐÃ FIX: Gán thẳng trực tiếp vì contract.StartDay đã là kiểu DateOnly?
                 StartDay = contract.StartDay,
                 EndDay = contract.EndDay,
 
