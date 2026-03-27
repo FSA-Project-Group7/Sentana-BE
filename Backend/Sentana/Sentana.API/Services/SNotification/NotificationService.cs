@@ -1,7 +1,7 @@
-﻿using System.Security.Claims;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Notification;
 using Sentana.API.Models;
+using System.Security.Claims;
 
 namespace Sentana.API.Services.SNotification
 {
@@ -18,38 +18,37 @@ namespace Sentana.API.Services.SNotification
         {
             var accountIdClaim = user.FindFirst("AccountId")?.Value;
             if (!int.TryParse(accountIdClaim, out var accountId))
-                throw new UnauthorizedAccessException("Token không hợp lệ.");
+                throw new UnauthorizedAccessException("Phiên làm việc hết hạn.");
 
-            var notifications = await _context.Notifications
+            // 1. Lấy dữ liệu từ DB (biến tạm: listFromDb)
+            var listFromDb = await _context.Notifications
                 .Where(n => n.AccountId == accountId)
-                .OrderBy(n => n.IsRead)
-                .ThenByDescending(n => n.CreatedAt)
-                .Take(20)
-                .Select(n => new NotificationDto
-                {
-                    NotificationId = n.NotificationId,
-                    Title = n.Title,
-                    Message = n.Message,
-                    IsRead = n.IsRead,
-                    CreatedAt = n.CreatedAt.ToString("HH:mm dd/MM/yyyy")
-                })
+                .OrderByDescending(n => n.CreatedAt)
+                .Take(50)
                 .ToListAsync();
 
-            return notifications;
+            // 2. Chuyển sang DTO và format ngày tháng (Xử lý tại Memory)
+            return listFromDb.Select(n => new NotificationDto
+            {
+                NotificationId = n.NotificationId,
+                Title = n.Title ?? "Thông báo hệ thống",
+                Message = n.Message ?? "",
+                IsRead = n.IsRead,
+                CreatedAt = n.CreatedAt.ToString("HH:mm dd/MM/yyyy")
+            }).ToList();
         }
 
         public async Task<(bool IsSuccess, string Message)> MarkAsReadAsync(int notificationId, ClaimsPrincipal user)
         {
             var accountIdClaim = user.FindFirst("AccountId")?.Value;
             if (!int.TryParse(accountIdClaim, out var accountId))
-                return (false, "Token không hợp lệ.");
+                return (false, "Xác thực không hợp lệ.");
 
-            // Tìm thông báo và Validate quyền sở hữu (Authorization Check)
             var notification = await _context.Notifications
                 .FirstOrDefaultAsync(n => n.NotificationId == notificationId && n.AccountId == accountId);
 
             if (notification == null)
-                return (false, "Không tìm thấy thông báo hoặc bạn không có quyền truy cập.");
+                return (false, "Thông báo không tồn tại.");
 
             if (!notification.IsRead)
             {
@@ -57,7 +56,7 @@ namespace Sentana.API.Services.SNotification
                 await _context.SaveChangesAsync();
             }
 
-            return (true, "Đã đánh dấu đọc.");
+            return (true, "Thành công.");
         }
     }
 }
