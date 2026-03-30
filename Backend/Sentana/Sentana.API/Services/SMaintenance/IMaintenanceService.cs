@@ -1,4 +1,5 @@
-﻿using Sentana.API.DTOs.Maintenance;
+﻿using Sentana.API.DTOs.Common;
+using Sentana.API.DTOs.Maintenance;
 using System.Threading.Tasks;
 
 namespace Sentana.API.Services.SMaintenance
@@ -13,5 +14,7 @@ namespace Sentana.API.Services.SMaintenance
         Task<(bool IsSuccess, string Message, object? Data)> CreateResidentRequestAsync(CreateMaintenanceDto request, int residentId);
         Task<(bool IsSuccess, string Message, object? Data)> GetResidentRequestsAsync(int residentId);
         Task<(bool IsSuccess, string Message, object? Data)> GetMyActiveApartmentsAsync(int residentId);
+
+        Task<PagedResult<MaintenanceResponseDto>> GetRequestsForManagerAsync(int managerId, int pageIndex = 1, int pageSize = 10);
     }
 }
