@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Sentana.API.DTOs.Common;
 using Sentana.API.DTOs.Maintenance;
 using Sentana.API.Enums;
 using Sentana.API.Models;
@@ -164,5 +165,63 @@ namespace Sentana.API.Services.SMaintenance
             await _context.SaveChangesAsync();
             return (true, "Đã sửa xong.");
         }
+
+        public async Task<PagedResult<MaintenanceResponseDto>> GetRequestsForManagerAsync(int managerId, int pageIndex = 1, int pageSize = 10)
+        {
+            
+            var query = _context.MaintenanceRequests
+                .Include(m => m.Apartment)
+                    .ThenInclude(a => a.Building)
+                .Include(m => m.Category)
+                .Include(m => m.Account) 
+                    .ThenInclude(acc => acc.Info)
+                .Include(m => m.AssignedToNavigation) 
+                    .ThenInclude(tech => tech.Info)
+                .Where(m => m.IsDeleted == false &&
+                            m.Apartment != null &&
+                            m.Apartment.Building != null &&
+                            m.Apartment.Building.ManagerId == managerId)
+                .OrderByDescending(m => m.CreateDay) 
+                .AsQueryable();
+            var totalRecords = await query.CountAsync();
+            var items = await query
+                .Skip((pageIndex - 1) * pageSize)
+                .Take(pageSize)
+                .Select(m => new MaintenanceResponseDto
+                {
+                    RequestId = m.RequestId,
+                    Title = m.Title,
+                    Description = m.Description,
+                    Priority = (MaintenancePriority)(m.Priority ?? (byte)MaintenancePriority.Low),
+                    Status = (MaintenanceRequestStatus)(m.Status ?? MaintenanceRequestStatus.Pending),
+
+                    CreateDay = m.CreateDay,
+                    FixDay = m.FixDay,
+                    UpdatedAt = m.UpdatedAt,
+
+                    ApartmentId = m.ApartmentId,
+                    ApartmentName = m.Apartment.ApartmentName ?? m.Apartment.ApartmentCode,
+                    CategoryId = m.CategoryId,
+                    CategoryName = m.Category != null ? m.Category.CategoryName : "Khác",
+
+                    AccountId = m.AccountId,
+                    ResidentName = m.Account != null && m.Account.Info != null ? m.Account.Info.FullName : "Cư dân ẩn danh",
+
+                    AssignedTo = m.AssignedTo,
+                    AssignedTechnicianName = m.AssignedToNavigation != null && m.AssignedToNavigation.Info != null ? m.AssignedToNavigation.Info.FullName : null,
+                    ImageUrl = m.ImageUrl,
+
+                    ResolutionNote = m.ResolutionNote
+                })
+                .ToListAsync();
+            return new PagedResult<MaintenanceResponseDto>
+            {
+                Items = items,
+                TotalCount = totalRecords,
+                PageNumber = pageIndex,
+                PageSize = pageSize
+            };
+        }
+
     }
 }

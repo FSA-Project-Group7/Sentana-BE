@@ -49,7 +49,7 @@ namespace Sentana.API.Controllers
                                   .FirstOrDefault() ?? "Dữ liệu đầu vào không hợp lệ.";
                 return BadRequest(ApiResponse<object>.Fail(400, firstError));
             }
-             var managerIdStr = User.FindFirstValue("AccountId");
+            var managerIdStr = User.FindFirstValue("AccountId");
             if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
             {
                 return Unauthorized(ApiResponse<object>.Fail(401, "Không thể xác định danh tính người quản lý. Vui lòng đăng nhập lại."));
@@ -108,22 +108,22 @@ namespace Sentana.API.Controllers
             }
         }
 
-		[HttpPut("toggleAvailability/{id}")]
-		[Authorize(Roles = "Manager")]
-		public async Task<IActionResult> ToggleTechAvailability(int id)
-		{
-			try
-			{
-				string message = await _technicianService.ToggleTechAvailability(id);
-				return Ok(ApiResponse<object>.Success(null, message));
-			}
-			catch (Exception ex)
-			{
-				return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
-			}
-		}
+        [HttpPut("toggleAvailability/{id}")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> ToggleTechAvailability(int id)
+        {
+            try
+            {
+                string message = await _technicianService.ToggleTechAvailability(id);
+                return Ok(ApiResponse<object>.Success(null, message));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
+            }
+        }
 
-		[HttpDelete("DeleteTechnician/{id}")]
+        [HttpDelete("DeleteTechnician/{id}")]
         [Authorize(Roles = "Manager")]
         public async Task<IActionResult> DeleteTechnician(int id)
         {
@@ -202,6 +202,22 @@ namespace Sentana.API.Controllers
             catch (Exception ex)
             {
                 return BadRequest(ApiResponse<object>.Fail(400, ex.Message));
+            }
+        }
+
+        [HttpGet("available")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetTechnicianAvailability()
+        {
+            try
+            {
+                var availability = await _technicianService.GetAvailableTechnicians();
+                return Ok(ApiResponse<IEnumerable<TechnicianAvailableDto>>.Success(availability, "Lấy thông tin khả dụng của kỹ thuật viên thành công."));
+            }
+            catch (Exception ex)
+            {
+                var errorResponse = ApiResponse<List<TechnicianAvailableDto>>.Fail(500, "Đã xảy ra lỗi trong quá trình xử lý: " + ex.Message);
+                return StatusCode(500, errorResponse);
             }
         }
     }
