@@ -64,8 +64,7 @@ public class PaymentService : IPaymentService
         if (existed)
             return ApiResponse<object>.Fail(400, "Invoice đã có proof chờ duyệt.");
 
-        var fileUrl = await _minioService.UploadContractAsync(request.File, 0, 0);
-
+        var fileUrl = await _minioService.UploadFileAsync(request.File, "payment-proofs");
         var transaction = new PaymentTransaction
         {
             InvoiceId = invoiceId,
