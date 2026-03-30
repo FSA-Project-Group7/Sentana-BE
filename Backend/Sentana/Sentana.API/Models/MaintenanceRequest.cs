@@ -47,4 +47,6 @@ public partial class MaintenanceRequest
     public virtual Account? AssignedToNavigation { get; set; }
 
     public virtual IssueCategory? Category { get; set; }
+
+    public string? ImageUrl { get; set; }
 }
