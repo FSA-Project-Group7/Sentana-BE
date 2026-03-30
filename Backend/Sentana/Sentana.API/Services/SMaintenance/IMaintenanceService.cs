@@ -13,5 +13,6 @@ namespace Sentana.API.Services.SMaintenance
         Task<(bool IsSuccess, string Message, object? Data)> CreateResidentRequestAsync(CreateMaintenanceDto request, int residentId);
         Task<(bool IsSuccess, string Message, object? Data)> GetResidentRequestsAsync(int residentId);
         Task<(bool IsSuccess, string Message, object? Data)> GetMyActiveApartmentsAsync(int residentId);
+        Task<(bool IsSuccess, string Message, object? Data)> GetIssueCategoriesAsync();
     }
 }

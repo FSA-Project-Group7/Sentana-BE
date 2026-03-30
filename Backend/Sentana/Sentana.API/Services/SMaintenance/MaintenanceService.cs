@@ -2,6 +2,7 @@
 using Sentana.API.DTOs.Maintenance;
 using Sentana.API.Enums;
 using Sentana.API.Models;
+using Sentana.API.Services.SStorage;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,11 +14,23 @@ namespace Sentana.API.Services.SMaintenance
     public class MaintenanceService : IMaintenanceService
     {
         private readonly SentanaContext _context;
+        private readonly IMinioService _minioService;
 
-        public MaintenanceService(SentanaContext context)
+        public MaintenanceService(SentanaContext context, IMinioService minioService)
         {
             _context = context;
+            _minioService = minioService;
         }
+
+        // HÀM MỚI: Lấy danh sách Category thay vì hardcode ở Frontend
+        public async Task<(bool IsSuccess, string Message, object? Data)> GetIssueCategoriesAsync()
+        {
+            var categories = await _context.IssueCategories
+                .Select(c => new { c.CategoryId, c.CategoryName })
+                .ToListAsync();
+            return (true, "Lấy danh mục thành công", categories);
+        }
+
         public async Task<(bool IsSuccess, string Message, object? Data)> GetMyActiveApartmentsAsync(int residentId)
         {
             try
@@ -45,6 +58,14 @@ namespace Sentana.API.Services.SMaintenance
         {
             try
             {
+                string? uploadedImageUrl = null;
+
+                // XỬ LÝ UPLOAD ẢNH: Gửi file vào folder "maintenance-images" trên MinIO
+                if (request.Photo != null && request.Photo.Length > 0)
+                {
+                    uploadedImageUrl = await _minioService.UploadFileAsync(request.Photo, "maintenance-images");
+                }
+
                 var newRequest = new MaintenanceRequest
                 {
                     AccountId = residentId,
@@ -52,6 +73,7 @@ namespace Sentana.API.Services.SMaintenance
                     CategoryId = request.CategoryId,
                     Title = request.Title,
                     Description = request.Description,
+                    ImageUrl = uploadedImageUrl, // Lưu đường dẫn ảnh vào Database
                     Priority = 1,
                     Status = MaintenanceRequestStatus.Pending,
                     CreateDay = DateTime.Now,
@@ -67,7 +89,6 @@ namespace Sentana.API.Services.SMaintenance
             }
             catch (Exception ex)
             {
-                // Trích xuất lỗi chính xác từ Database (Thường là lỗi Foreign Key)
                 var errorMessage = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
                 return (false, $"Từ chối lưu: {errorMessage}", null);
             }
@@ -86,6 +107,7 @@ namespace Sentana.API.Services.SMaintenance
                     Title = m.Title,
                     CategoryName = m.Category != null ? m.Category.CategoryName : "Khác",
                     Description = m.Description,
+                    ImageUrl = m.ImageUrl, // Lấy đường dẫn ảnh trả về cho Frontend hiển thị
                     ApartmentCode = m.Apartment != null ? m.Apartment.ApartmentCode : "N/A",
                     Status = (m.Status ?? MaintenanceRequestStatus.Pending).ToString(),
                     CreateDay = m.CreateDay,
@@ -133,7 +155,7 @@ namespace Sentana.API.Services.SMaintenance
             await _context.SaveChangesAsync();
             return (true, "Đã nhận task.");
         }
-            
+
         public async Task<(bool IsSuccess, string Message)> StartProcessingTaskAsync(int requestId, int currentTechId)
         {
             var task = await _context.MaintenanceRequests.FindAsync(requestId);
