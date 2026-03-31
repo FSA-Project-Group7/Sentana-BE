@@ -151,21 +151,21 @@ namespace Sentana.API.Services.SInvoice
                     calculatedBaseTotal += rent;
                 }
 
-                if (invoice.ElectricMeter != null)
+                var elecUsage = invoice.ElectricNumber ?? 0;
+                if (elecUsage > 0 || invoice.ElectricMeter != null)
                 {
-                    var usage = (invoice.ElectricMeter.NewIndex ?? 0) - (invoice.ElectricMeter.OldIndex ?? 0);
-                    var price = invoice.ElectricMeter.Price ?? 0;
-                    decimal elecMoney = usage * price;
-                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền điện ({usage} kWh)", Amount = elecMoney });
+                    var price = invoice.ElectricMeter?.Price ?? 3500m;
+                    decimal elecMoney = elecUsage * price;
+                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền điện ({elecUsage:0.##} kWh)", Amount = elecMoney });
                     calculatedBaseTotal += elecMoney;
                 }
 
-                if (invoice.WaterMeter != null)
+                var waterUsage = invoice.WaterNumber ?? 0;
+                if (waterUsage > 0 || invoice.WaterMeter != null)
                 {
-                    var usage = (invoice.WaterMeter.NewIndex ?? 0) - (invoice.WaterMeter.OldIndex ?? 0);
-                    var price = invoice.WaterMeter.Price ?? 0;
-                    decimal waterMoney = usage * price;
-                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền nước ({usage} khối)", Amount = waterMoney });
+                    var price = invoice.WaterMeter?.Price ?? 25000m;
+                    decimal waterMoney = waterUsage * price;
+                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền nước ({waterUsage:0.##} khối)", Amount = waterMoney });
                     calculatedBaseTotal += waterMoney;
                 }
 
