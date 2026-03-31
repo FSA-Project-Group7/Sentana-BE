@@ -23,8 +23,6 @@ namespace Sentana.API.Services.SMaintenance
         private readonly IMinioService _minioService;
         private readonly IHubContext<NotificationHub> _hubContext;
 
-        public MaintenanceService(SentanaContext context, IMinioService minioService, IHubContext<NotificationHub> hubContext)
-        // FIX 2: CHỈ GIỮ LẠI 1 CONSTRUCTOR NÀY THÔI (Đã xóa constructor cũ)
         public MaintenanceService(
             SentanaContext context,
             IMinioService minioService,
