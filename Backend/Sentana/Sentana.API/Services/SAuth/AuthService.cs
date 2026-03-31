@@ -263,10 +263,6 @@ namespace Sentana.API.Services.SBuilding
             var user = await _context.Accounts.FindAsync(accountId);
             if (user == null) return false;
 
-            // Kiểm tra mật khẩu cũ
-            if (!BCrypt.Net.BCrypt.Verify(request.OldPassword, user.Password))
-                throw new Exception("Mật khẩu cũ không chính xác.");
-
             // Cập nhật mật khẩu mới
             user.Password = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
             user.RefreshToken = null;
