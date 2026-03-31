@@ -151,21 +151,21 @@ namespace Sentana.API.Services.SInvoice
                     calculatedBaseTotal += rent;
                 }
 
-                if (invoice.ElectricMeter != null)
+                var elecUsage = invoice.ElectricNumber ?? 0;
+                if (elecUsage > 0 || invoice.ElectricMeter != null)
                 {
-                    var usage = (invoice.ElectricMeter.NewIndex ?? 0) - (invoice.ElectricMeter.OldIndex ?? 0);
-                    var price = invoice.ElectricMeter.Price ?? 0;
-                    decimal elecMoney = usage * price;
-                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền điện ({usage} kWh)", Amount = elecMoney });
+                    var price = invoice.ElectricMeter?.Price ?? 3500m;
+                    decimal elecMoney = elecUsage * price;
+                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền điện ({elecUsage:0.##} kWh)", Amount = elecMoney });
                     calculatedBaseTotal += elecMoney;
                 }
 
-                if (invoice.WaterMeter != null)
+                var waterUsage = invoice.WaterNumber ?? 0;
+                if (waterUsage > 0 || invoice.WaterMeter != null)
                 {
-                    var usage = (invoice.WaterMeter.NewIndex ?? 0) - (invoice.WaterMeter.OldIndex ?? 0);
-                    var price = invoice.WaterMeter.Price ?? 0;
-                    decimal waterMoney = usage * price;
-                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền nước ({usage} khối)", Amount = waterMoney });
+                    var price = invoice.WaterMeter?.Price ?? 25000m;
+                    decimal waterMoney = waterUsage * price;
+                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền nước ({waterUsage:0.##} khối)", Amount = waterMoney });
                     calculatedBaseTotal += waterMoney;
                 }
 
@@ -178,7 +178,12 @@ namespace Sentana.API.Services.SInvoice
                 if (invoice.TotalMoney > calculatedBaseTotal)
                 {
                     decimal additionalFee = (invoice.TotalMoney ?? 0) - calculatedBaseTotal;
-                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = "Phụ phí / Nợ phát sinh", Amount = additionalFee });
+
+                    string feeReason = !string.IsNullOrWhiteSpace(invoice.Note)
+                        ? $"Phụ phí ({invoice.Note})"
+                        : "Phụ phí / Nợ phát sinh";
+
+                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = feeReason, Amount = additionalFee });
                 }
 
                 result.Add(dto);
@@ -476,19 +481,25 @@ namespace Sentana.API.Services.SInvoice
         {
             var invoice = await _context.Invoices.FirstOrDefaultAsync(i => i.InvoiceId == invoiceId && i.IsDeleted == false);
 
-            if (invoice == null) return (false, "Không tìm thấy hóa đơn.");
-            if (invoice.Status != Enums.InvoiceStatus.Unpaid) return (false, "Chỉ được chỉnh sửa khi hóa đơn chưa thanh toán.");
+            if (invoice == null) return (false, "Hệ thống không tìm thấy hóa đơn.");
+            if (invoice.Status != InvoiceStatus.Unpaid) return (false, "Chỉ được chỉnh sửa khi hóa đơn chưa thanh toán.");
 
             if (request.AdditionalFee.HasValue && request.AdditionalFee.Value > 0)
             {
                 invoice.TotalMoney += request.AdditionalFee.Value;
                 invoice.Debt += request.AdditionalFee.Value;
+
+                // Ghi nhận lý do phụ phí
+                if (!string.IsNullOrWhiteSpace(request.Note))
+                {
+                    invoice.Note = request.Note;
+                }
             }
 
             _context.Invoices.Update(invoice);
             bool isSaved = await _context.SaveChangesAsync() > 0;
 
-            return isSaved ? (true, "Cập nhật hóa đơn thành công.") : (false, "Lỗi khi cập nhật.");
+            return isSaved ? (true, "Cập nhật hóa đơn thành công.") : (false, "Phát sinh lỗi trong quá trình lưu trữ.");
         }
 
         // Gửi email nhắc nợ 
