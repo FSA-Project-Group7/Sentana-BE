@@ -11,5 +11,6 @@
         public decimal? Debt { get; set; }
         public string StatusName { get; set; } = string.Empty;
         public string? CreatedAt { get; set; }
+        public string? BillingPeriod { get; set; }
     }
 }
