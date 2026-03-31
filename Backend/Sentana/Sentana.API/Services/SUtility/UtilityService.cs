@@ -5,7 +5,11 @@ using Sentana.API.Models;
 using System.Security.Claims;
 using Sentana.API.Helpers;
 using OfficeOpenXml;
-
+using System;
+using System.Linq;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 
 namespace Sentana.API.Services
 {
@@ -18,23 +22,42 @@ namespace Sentana.API.Services
             _context = context;
         }
 
-        // Hàm kiểm tra phòng
-        private async Task<(bool IsValid, string ErrorMessage)> CheckApartmentValidAsync(int apartmentId)
+        // Hàm kiểm tra phòng và lấy ngày bắt đầu Hợp đồng
+        private async Task<(bool IsValid, string ErrorMessage, DateTime? ContractStartDate)> CheckApartmentValidAsync(int apartmentId)
         {
             var apartment = await _context.Apartments.FirstOrDefaultAsync(a => a.ApartmentId == apartmentId && a.IsDeleted == false);
-            if (apartment == null) return (false, "Không tìm thấy căn hộ.");
-            if (apartment.Status != Enums.ApartmentStatus.Occupied) return (false, "Căn hộ hiện không có người ở, không thể ghi số Điện/Nước.");
-            return (true, string.Empty);
+            if (apartment == null) return (false, "Hệ thống không tìm thấy thông tin căn hộ này.", null);
+            if (apartment.Status != Enums.ApartmentStatus.Occupied) return (false, "Căn hộ này hiện đang trống, chưa có người thuê nên không thể ghi chỉ số.", null);
+
+            var activeContract = await _context.Contracts
+                .Where(c => c.ApartmentId == apartmentId && c.Status == Enums.GeneralStatus.Active && c.IsDeleted == false)
+                .OrderByDescending(c => c.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (activeContract == null || !activeContract.StartDay.HasValue)
+                return (false, "Căn hộ này hiện chưa có hợp đồng thuê nhà hợp lệ trên hệ thống.", null);
+
+            DateTime contractStartDate = activeContract.StartDay.Value.ToDateTime(TimeOnly.MinValue);
+
+            return (true, string.Empty, contractStartDate);
         }
 
-        // Input chỉ số điện
+        // Nhập chỉ số điện
         public async Task<(bool IsSuccess, string Message)> InputElectricityIndexAsync(InputElectricIndexDto request, int currentUserId)
         {
-            // Kiểm tra phòng
             var aptCheck = await CheckApartmentValidAsync(request.ApartmentId);
             if (!aptCheck.IsValid) return (false, aptCheck.ErrorMessage);
 
-            // Chống nhập trùng Data trong cùng tháng
+            int requestTotalMonths = request.RegistrationDate.Year * 12 + request.RegistrationDate.Month;
+            int contractStartTotalMonths = aptCheck.ContractStartDate!.Value.Year * 12 + aptCheck.ContractStartDate.Value.Month;
+
+            // Bắt lỗi nhập trước ngày thuê
+            if (requestTotalMonths < contractStartTotalMonths)
+            {
+                return (false, $"Khách hàng mới dọn vào từ tháng {aptCheck.ContractStartDate.Value.Month}/{aptCheck.ContractStartDate.Value.Year}. Bạn chỉ có thể ghi chỉ số bắt đầu từ mốc thời gian này trở đi.");
+            }
+
+            // Bắt lỗi nhập trùng
             var existingRecord = await _context.ElectricMeters
                 .FirstOrDefaultAsync(e => e.ApartmentId == request.ApartmentId
                                        && e.RegistrationDate.HasValue
@@ -42,44 +65,47 @@ namespace Sentana.API.Services
                                        && e.RegistrationDate.Value.Year == request.RegistrationDate.Year
                                        && e.IsDeleted == false);
             if (existingRecord != null)
-                return (false, $"Căn hộ này đã được chốt số điện cho tháng {request.RegistrationDate.Month}/{request.RegistrationDate.Year}.");
+                return (false, $"Tháng {request.RegistrationDate.Month}/{request.RegistrationDate.Year} đã được chốt chỉ số điện rồi, bạn không cần nhập lại nữa.");
 
-            int currentTotalMonths = request.RegistrationDate.Year * 12 + request.RegistrationDate.Month;
-
+            // Lấy tháng gần nhất đã nhập để kiểm tra tính tuần tự
             var previousRecord = await _context.ElectricMeters
                 .Where(e => e.ApartmentId == request.ApartmentId
                          && e.RegistrationDate.HasValue
-                         && (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) < currentTotalMonths
+                         && (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) < requestTotalMonths
                          && e.IsDeleted == false)
                 .OrderByDescending(e => e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month)
                 .FirstOrDefaultAsync();
 
+            if (requestTotalMonths > contractStartTotalMonths)
+            {
+                if (previousRecord == null)
+                    return (false, $"Bạn chưa chốt số điện của tháng đầu tiên khách dọn vào. Vui lòng ghi sổ theo thứ tự từ tháng {aptCheck.ContractStartDate.Value.Month}/{aptCheck.ContractStartDate.Value.Year}.");
+
+                int previousTotalMonths = previousRecord.RegistrationDate!.Value.Year * 12 + previousRecord.RegistrationDate.Value.Month;
+                if (requestTotalMonths - previousTotalMonths > 1)
+                    return (false, $"Tháng gần nhất bạn ghi sổ là tháng {previousRecord.RegistrationDate.Value.Month}/{previousRecord.RegistrationDate.Value.Year}. Vui lòng nhập cho tháng kế tiếp, không được bỏ trống tháng ở giữa.");
+            }
+
             decimal oldIndex = previousRecord?.NewIndex ?? 0m;
 
+            // Kiểm tra tính hợp lý với dữ liệu tương lai
             var nextRecord = await _context.ElectricMeters
                 .Where(e => e.ApartmentId == request.ApartmentId
                          && e.RegistrationDate.HasValue
-                         && (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) > currentTotalMonths
+                         && (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) > requestTotalMonths
                          && e.IsDeleted == false)
                 .OrderBy(e => e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month)
                 .FirstOrDefaultAsync();
 
             if (nextRecord != null && nextRecord.NewIndex.HasValue && request.NewIndex > nextRecord.NewIndex.Value)
-            {
-                return (false, $"Chỉ số tháng này ({request.NewIndex}) đang lớn hơn chỉ số của tháng tương lai ({nextRecord.RegistrationDate.Value.Month}/{nextRecord.RegistrationDate.Value.Year} là {nextRecord.NewIndex.Value}).");
-            }
+                return (false, $"Vô lý quá, chỉ số bạn đang nhập ({request.NewIndex}) lại lớn hơn cả tháng tương lai ({nextRecord.RegistrationDate!.Value.Month}/{nextRecord.RegistrationDate.Value.Year} đang là {nextRecord.NewIndex.Value}). Hãy kiểm tra lại số liệu.");
 
             var validationResult = ValidationHelper.ValidateUtilityIndex(request.NewIndex, oldIndex, request.RegistrationDate);
-            if (!validationResult.IsValid)
-            {
-                return (false, validationResult.ErrorMessage);
-            }
+            if (!validationResult.IsValid) return (false, validationResult.ErrorMessage);
 
-            // Lấy đơn giá động
             var electricService = await _context.Services.FirstOrDefaultAsync(s => s.ServiceName.Contains("Điện") && s.IsDeleted == false);
             decimal pricePerKwh = electricService?.ServiceFee ?? 3500m;
 
-            // Lưu Data
             var newElectricMeter = new ElectricMeter
             {
                 ApartmentId = request.ApartmentId,
@@ -95,17 +121,21 @@ namespace Sentana.API.Services
             _context.ElectricMeters.Add(newElectricMeter);
             bool isSaved = await _context.SaveChangesAsync() > 0;
 
-            return isSaved ? (true, "Ghi nhận chỉ số điện thành công!") : (false, "Lỗi khi lưu dữ liệu vào hệ thống.");
+            return isSaved ? (true, "Đã lưu chỉ số điện thành công!") : (false, "Có lỗi xảy ra khi lưu vào cơ sở dữ liệu.");
         }
 
-        // Input chỉ số nước
+        // Nhập chỉ số nước
         public async Task<(bool IsSuccess, string Message)> InputWaterIndexAsync(InputWaterIndexDto request, int currentUserId)
         {
-            // Kiểm tra phòng
             var aptCheck = await CheckApartmentValidAsync(request.ApartmentId);
             if (!aptCheck.IsValid) return (false, aptCheck.ErrorMessage);
 
-            // Chống nhập trùng Data trong cùng tháng
+            int requestTotalMonths = request.RegistrationDate.Year * 12 + request.RegistrationDate.Month;
+            int contractStartTotalMonths = aptCheck.ContractStartDate!.Value.Year * 12 + aptCheck.ContractStartDate.Value.Month;
+
+            if (requestTotalMonths < contractStartTotalMonths)
+                return (false, $"Khách hàng mới dọn vào từ tháng {aptCheck.ContractStartDate.Value.Month}/{aptCheck.ContractStartDate.Value.Year}. Bạn chỉ có thể ghi chỉ số bắt đầu từ mốc thời gian này trở đi.");
+
             var existingRecord = await _context.WaterMeters
                 .FirstOrDefaultAsync(e => e.ApartmentId == request.ApartmentId
                                        && e.RegistrationDate.HasValue
@@ -113,44 +143,45 @@ namespace Sentana.API.Services
                                        && e.RegistrationDate.Value.Year == request.RegistrationDate.Year
                                        && e.IsDeleted == false);
             if (existingRecord != null)
-                return (false, $"Đã chốt số nước cho tháng {request.RegistrationDate.Month}/{request.RegistrationDate.Year}.");
-
-            int currentTotalMonths = request.RegistrationDate.Year * 12 + request.RegistrationDate.Month;
+                return (false, $"Tháng {request.RegistrationDate.Month}/{request.RegistrationDate.Year} đã được chốt số nước rồi, bạn không cần nhập lại nữa.");
 
             var previousRecord = await _context.WaterMeters
                 .Where(e => e.ApartmentId == request.ApartmentId
                          && e.RegistrationDate.HasValue
-                         && (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) < currentTotalMonths
+                         && (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) < requestTotalMonths
                          && e.IsDeleted == false)
                 .OrderByDescending(e => e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month)
                 .FirstOrDefaultAsync();
+
+            if (requestTotalMonths > contractStartTotalMonths)
+            {
+                if (previousRecord == null)
+                    return (false, $"Bạn chưa chốt số nước của tháng đầu tiên khách dọn vào. Vui lòng ghi sổ theo thứ tự từ tháng {aptCheck.ContractStartDate.Value.Month}/{aptCheck.ContractStartDate.Value.Year} trước nhé.");
+
+                int previousTotalMonths = previousRecord.RegistrationDate!.Value.Year * 12 + previousRecord.RegistrationDate.Value.Month;
+                if (requestTotalMonths - previousTotalMonths > 1)
+                    return (false, $"Tháng gần nhất bạn ghi sổ là tháng {previousRecord.RegistrationDate.Value.Month}/{previousRecord.RegistrationDate.Value.Year}. Vui lòng nhập cho tháng kế tiếp, không được bỏ trống tháng ở giữa.");
+            }
 
             decimal oldIndex = previousRecord?.NewIndex ?? 0m;
 
             var nextRecord = await _context.WaterMeters
                 .Where(e => e.ApartmentId == request.ApartmentId
                          && e.RegistrationDate.HasValue
-                         && (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) > currentTotalMonths
+                         && (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) > requestTotalMonths
                          && e.IsDeleted == false)
                 .OrderBy(e => e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month)
                 .FirstOrDefaultAsync();
 
             if (nextRecord != null && nextRecord.NewIndex.HasValue && request.NewIndex > nextRecord.NewIndex.Value)
-            {
-                return (false, $"Chỉ số tháng này ({request.NewIndex}) đang lớn hơn chỉ số của tháng tương lai ({nextRecord.RegistrationDate.Value.Month}/{nextRecord.RegistrationDate.Value.Year} là {nextRecord.NewIndex.Value}).");
-            }
+                return (false, $"Vô lý quá, chỉ số bạn đang nhập ({request.NewIndex}) lại lớn hơn cả tháng tương lai ({nextRecord.RegistrationDate!.Value.Month}/{nextRecord.RegistrationDate.Value.Year} đang là {nextRecord.NewIndex.Value}). Hãy kiểm tra lại số liệu.");
 
             var validationResult = ValidationHelper.ValidateUtilityIndex(request.NewIndex, oldIndex, request.RegistrationDate);
-            if (!validationResult.IsValid)
-            {
-                return (false, validationResult.ErrorMessage);
-            }
+            if (!validationResult.IsValid) return (false, validationResult.ErrorMessage);
 
-            // Lấy đơn giá động
             var waterService = await _context.Services.FirstOrDefaultAsync(s => s.ServiceName.Contains("Nước") && s.IsDeleted == false);
             decimal pricePerM3 = waterService?.ServiceFee ?? 25000m;
 
-            // Lưu Data
             var newWaterMeter = new WaterMeter
             {
                 ApartmentId = request.ApartmentId,
@@ -166,19 +197,18 @@ namespace Sentana.API.Services
             _context.WaterMeters.Add(newWaterMeter);
             bool isSaved = await _context.SaveChangesAsync() > 0;
 
-            return isSaved ? (true, "Ghi nhận chỉ số nước thành công!") : (false, "Lỗi khi lưu dữ liệu nước.");
+            return isSaved ? (true, "Đã lưu chỉ số nước thành công!") : (false, "Có lỗi xảy ra khi lưu vào cơ sở dữ liệu.");
         }
 
-        // Utility history
+        // Lịch sử điện nước
         public async Task<(bool IsSuccess, string Message, List<UtilityHistoryDto>? Data)> GetUtilityHistoryAsync(ClaimsPrincipal user, int? targetApartmentId, int? month, int? year)
         {
             var valResult = ValidationHelper.ValidateMonthYear(month, year);
             if (!valResult.IsValid) return (false, valResult.ErrorMessage, null);
 
-            // lấy thông tin người dùng
             var accountIdClaim = user.FindFirst("AccountId")?.Value;
             if (!int.TryParse(accountIdClaim, out var callerAccountId))
-                return (false, "Token không hợp lệ.", null);
+                return (false, "Phiên đăng nhập không hợp lệ.", null);
 
             var role = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? string.Empty;
             var isManager = string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase);
@@ -187,10 +217,10 @@ namespace Sentana.API.Services
 
             if (isManager)
             {
-                if (!targetApartmentId.HasValue) return (false, "Vui lòng cung cấp ID căn hộ.", null);
+                if (!targetApartmentId.HasValue) return (false, "Vui lòng chọn một căn hộ để xem.", null);
                 resolvedApartmentId = targetApartmentId.Value;
             }
-            else // Nếu là Resident
+            else
             {
                 var contract = await _context.Contracts
                     .Where(c => c.AccountId == callerAccountId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
@@ -198,9 +228,9 @@ namespace Sentana.API.Services
                     .FirstOrDefaultAsync();
 
                 if (contract == null || !contract.ApartmentId.HasValue)
-                    return (false, "Không tìm thấy hợp đồng thuê nhà đang hiệu lực của bạn.", null);
+                    return (false, "Bạn hiện chưa có hợp đồng thuê nhà nào đang hoạt động.", null);
 
-                resolvedApartmentId = contract.ApartmentId.Value; // Tự động lấy phòng của Cư dân
+                resolvedApartmentId = contract.ApartmentId.Value;
             }
 
             var elecQuery = _context.ElectricMeters.Where(e => e.ApartmentId == resolvedApartmentId && e.IsDeleted == false);
@@ -236,12 +266,13 @@ namespace Sentana.API.Services
                 });
             }
 
-            return (true, "Thành công", history);
+            return (true, "Lấy dữ liệu thành công", history);
         }
 
+        // Import Excel
         public async Task<(bool IsSuccess, string Message)> ImportUtilityExcelAsync(IFormFile file, string utilityType, int currentUserId)
         {
-            if (file == null || file.Length == 0) return (false, "File không được để trống.");
+            if (file == null || file.Length == 0) return (false, "Bạn chưa chọn file Excel nào.");
 
             ExcelPackage.License.SetNonCommercialPersonal("Sentana Project");
 
@@ -249,12 +280,11 @@ namespace Sentana.API.Services
             using var package = new ExcelPackage(stream);
             var worksheet = package.Workbook.Worksheets.FirstOrDefault();
             if (worksheet == null || worksheet.Dimension == null)
-                return (false, "File Excel trống hoặc không đúng định dạng.");
+                return (false, "File Excel đang trống hoặc bị sai định dạng chuẩn.");
 
             int rowCount = worksheet.Dimension.Rows;
             int successCount = 0;
 
-            // cột 1: ApartmentId, cột 2: NewIndex, cột 3: Ngày chốt (yyyy-MM-dd)
             for (int row = 2; row <= rowCount; row++)
             {
                 if (int.TryParse(worksheet.Cells[row, 1].Text, out int aptId) &&
@@ -277,9 +307,9 @@ namespace Sentana.API.Services
             }
 
             if (successCount == 0)
-                return (false, "Không có bản ghi nào hợp lệ được import. Vui lòng kiểm tra lại định dạng dữ liệu trong file Excel.");
+                return (false, "Không thể import được dòng nào. Vui lòng kiểm tra lại file xem có bị nhảy cóc tháng hoặc sai thông tin phòng không.");
 
-            return (true, $"Import thành công {successCount} bản ghi.");
+            return (true, $"Đã cập nhật thành công {successCount} dòng dữ liệu từ file Excel.");
         }
     }
 }
