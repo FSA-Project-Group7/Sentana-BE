@@ -57,6 +57,23 @@ namespace Sentana.API.Services
 
             if (overlap) return ApiResponse<object>.Fail(400, "Thời gian hợp đồng bị trùng lặp với hợp đồng khác đang Active.");
 
+            // 👉 FIX 1: ĐÁNH CHẶN NGƯỜI Ở GHÉP - Ngăn lỗi 500 do FE gửi ID ảo
+            if (request.AdditionalResidents != null && request.AdditionalResidents.Any())
+            {
+                foreach (var r in request.AdditionalResidents)
+                {
+                    if (r.AccountId <= 0)
+                    {
+                        return ApiResponse<object>.Fail(400, $"Frontend đang gửi dữ liệu người ở ghép bị lỗi (AccountId = {r.AccountId}). Vui lòng check lại Payload!");
+                    }
+
+                    var exists = await _context.Accounts.AnyAsync(a => a.AccountId == r.AccountId && a.IsDeleted == false); if (!exists)
+                    {
+                        return ApiResponse<object>.Fail(400, $"Tài khoản người ở ghép mang ID {r.AccountId} không tồn tại trong DB!");
+                    }
+                }
+            }
+
             Dictionary<int, decimal?> systemServices = new Dictionary<int, decimal?>();
             if (request.Services != null && request.Services.Any())
             {
@@ -354,7 +371,6 @@ namespace Sentana.API.Services
                 foreach (var r in residents)
                 {
                     r.IsDeleted = true;
-                    // Bổ sung đổi status sang Inactive để rạch ròi
                     r.Status = GeneralStatus.Inactive;
                 }
 
@@ -415,7 +431,6 @@ namespace Sentana.API.Services
             if (contract.Status != GeneralStatus.Active) return ApiResponse<object>.Fail(400, "Contract không active");
             if (request.NewEndDate <= contract.EndDay) return ApiResponse<object>.Fail(400, "Ngày không hợp lệ");
 
-            // Cập nhật công thức check Overlap chuẩn (Start < End2 && End < Start2)
             var overlap = await _context.Contracts.AnyAsync(c =>
                 c.ContractId != contractId &&
                 c.ApartmentId == contract.ApartmentId &&
@@ -434,10 +449,31 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(null, "Extend thành công");
         }
 
+        // 👉 FIX 2: TÍNH TOÁN REFUND TRẢ VỀ CHO MANAGER (BUG 58)
         public async Task<ApiResponse<object>> GetContractDetailAsync(int contractId)
         {
-            var contract = await _contractRepository.GetContractDetailAsync(contractId);
+            var contract = await _context.Contracts
+                .Include(c => c.Account).ThenInclude(a => a.Info)
+                .Include(c => c.Apartment).ThenInclude(a => a.ApartmentResidents)
+                .Include(c => c.Apartment).ThenInclude(a => a.ApartmentServices)
+                .Include(c => c.CurrentVersion)
+                .FirstOrDefaultAsync(c => c.ContractId == contractId && c.IsDeleted == false);
+
             if (contract == null) return ApiResponse<object>.Fail(404, "Không tìm thấy");
+
+            decimal? refundAmount = null;
+            if (contract.Status == GeneralStatus.Inactive) // 0 = Terminated
+            {
+                var invoices = await _context.Invoices.Where(x => x.ContractId == contractId).ToListAsync();
+                var invoiceIds = invoices.Select(x => x.InvoiceId).ToList();
+                var payments = await _context.PaymentTransactions.Where(x => x.InvoiceId != null && invoiceIds.Contains(x.InvoiceId.Value)).ToListAsync();
+
+                decimal totalInvoice = invoices.Sum(x => x.TotalMoney ?? 0);
+                decimal totalPaid = payments.Sum(x => x.AmountPaid ?? 0);
+                decimal additionalCost = contract.AdditionalCost ?? 0;
+
+                refundAmount = totalPaid - totalInvoice - additionalCost;
+            }
 
             var detailDto = new ContractDetailDto
             {
@@ -455,7 +491,12 @@ namespace Sentana.API.Services
                 Deposit = contract.Deposit,
                 Status = contract.Status,
                 CreatedAt = contract.CreatedAt,
-                File = contract.CurrentVersion?.File
+                File = contract.CurrentVersion?.File,
+
+                // TRẢ VỀ CÁC THÔNG SỐ TÀI CHÍNH
+                AdditionalCost = contract.AdditionalCost,
+                TerminationReason = contract.TerminationReason,
+                RefundAmount = refundAmount
             };
 
             // Lấy danh sách người ở cùng
@@ -493,11 +534,54 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(list, "OK");
         }
 
+        // 👉 FIX 3: TRẢ VỀ DANH SÁCH LỊCH SỬ CHO CƯ DÂN (BUG 59 VÀ 58)
         public async Task<ApiResponse<object>> GetMyContractAsync(int accountId)
         {
-            var contract = await _contractRepository.GetContractByAccountIdAsync(accountId);
-            if (contract == null) return ApiResponse<object>.Fail(404, "Không có contract");
-            return ApiResponse<object>.Success(contract, "OK");
+            var contracts = await _context.Contracts
+                .Include(c => c.Apartment)
+                .Where(c => c.AccountId == accountId && c.IsDeleted == false)
+                .OrderByDescending(c => c.CreatedAt)
+                .ToListAsync();
+
+            if (!contracts.Any()) return ApiResponse<object>.Fail(404, "Bạn chưa có hợp đồng nào.");
+
+            var resultList = new List<object>();
+
+            foreach (var contract in contracts)
+            {
+                decimal? refundAmount = null;
+                if (contract.Status == GeneralStatus.Inactive)
+                {
+                    var invoices = await _context.Invoices.Where(x => x.ContractId == contract.ContractId).ToListAsync();
+                    var invoiceIds = invoices.Select(x => x.InvoiceId).ToList();
+                    var payments = await _context.PaymentTransactions.Where(x => x.InvoiceId != null && invoiceIds.Contains(x.InvoiceId.Value)).ToListAsync();
+
+                    decimal totalInvoice = invoices.Sum(x => x.TotalMoney ?? 0);
+                    decimal totalPaid = payments.Sum(x => x.AmountPaid ?? 0);
+                    decimal additionalCost = contract.AdditionalCost ?? 0;
+
+                    refundAmount = totalPaid - totalInvoice - additionalCost;
+                }
+
+                resultList.Add(new
+                {
+                    ContractId = contract.ContractId,
+                    ContractCode = contract.ContractCode,
+                    ApartmentId = contract.ApartmentId,
+                    ApartmentCode = contract.Apartment?.ApartmentCode ?? "N/A",
+                    StartDay = contract.StartDay,
+                    EndDay = contract.EndDay,
+                    MonthlyRent = contract.MonthlyRent,
+                    Deposit = contract.Deposit,
+                    Status = contract.Status,
+                    FileUrl = contract.File,
+                    AdditionalCost = contract.AdditionalCost,
+                    TerminationReason = contract.TerminationReason,
+                    RefundAmount = refundAmount
+                });
+            }
+
+            return ApiResponse<object>.Success(resultList, "OK");
         }
 
         // ==============================================================

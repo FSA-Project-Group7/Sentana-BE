@@ -43,6 +43,7 @@ public partial class Contract
     public virtual Account? Account { get; set; }
 
     public virtual Apartment? Apartment { get; set; }
+    public string? TerminationReason { get; set; }
 
     public virtual ICollection<Invoice> Invoices { get; set; } = new List<Invoice>();
     public int? CurrentVersionId { get; set; }

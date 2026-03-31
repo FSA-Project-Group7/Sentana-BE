@@ -35,7 +35,7 @@ namespace Sentana.API.DTOs.Contracts
         public GeneralStatus? Status { get; set; }
 
         public DateTime? CreatedAt { get; set; }
-
+        public string? TerminationReason { get; set; }
         public List<ResidentItemDto> AdditionalResidents { get; set; } = new List<ResidentItemDto>();
         public List<ServiceItemDto> SelectedServices { get; set; } = new List<ServiceItemDto>();
     }
