@@ -165,11 +165,13 @@ namespace Sentana.API.Services.SInvoice
             return result;
         }
 
-        // Sinh hóa đơn hàng tháng
         public async Task<(bool IsSuccess, string Message, int GeneratedCount)> GenerateMonthlyInvoicesAsync(GenerateInvoiceRequestDto request, int currentUserId)
         {
             var validation = ValidationHelper.ValidateMonthYear(request.Month, request.Year);
             if (!validation.IsValid) return (false, validation.ErrorMessage, 0);
+
+            int targetMonth = request.Month;
+            int targetYear = request.Year;
 
             var query = _context.Apartments.Where(a => a.Status == ApartmentStatus.Occupied && a.IsDeleted == false);
 
@@ -177,28 +179,19 @@ namespace Sentana.API.Services.SInvoice
                 query = query.Where(a => a.ApartmentId == request.ApartmentId.Value);
 
             var activeApartments = await query.ToListAsync();
-            if (!activeApartments.Any()) return (false, "Hiện không có căn hộ nào đang cho thuê để tạo hóa đơn.", 0);
+            if (!activeApartments.Any()) return (false, "Hệ thống không tìm thấy căn hộ đáp ứng điều kiện phát hành hóa đơn.", 0);
 
             int generatedCount = 0;
-            // Phân loại đếm số lượng lỗi để báo cáo chi tiết
             int alreadyExistsCount = 0;
             int invalidTimeCount = 0;
-            int skipMonthCount = 0;
+            int lockedPastCount = 0;
+            int exceedMergeLimitCount = 0;
             int missingUtilityCount = 0;
 
             var emailTasks = new List<Task>();
 
             foreach (var apt in activeApartments)
             {
-                var existingInvoice = await _context.Invoices
-                    .FirstOrDefaultAsync(i => i.ApartmentId == apt.ApartmentId && i.BillingMonth == request.Month && i.BillingYear == request.Year && i.IsDeleted == false);
-
-                if (existingInvoice != null)
-                {
-                    alreadyExistsCount++;
-                    continue;
-                }
-
                 var contract = await _context.Contracts
                     .Include(c => c.Account)
                     .Where(c => c.ApartmentId == apt.ApartmentId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
@@ -209,67 +202,90 @@ namespace Sentana.API.Services.SInvoice
 
                 DateTime contractStartDate = contract.StartDay.Value.ToDateTime(TimeOnly.MinValue);
 
-                int requestTotalMonths = request.Year * 12 + request.Month;
-                int contractStartTotalMonths = contractStartDate.Year * 12 + contractStartDate.Month;
+                int requestMonthId = targetYear * 12 + targetMonth;
+                int contractStartMonthId = contractStartDate.Year * 12 + contractStartDate.Month;
 
-                // Chưa tới hạn hợp đồng
-                if (requestTotalMonths < contractStartTotalMonths)
+                if (requestMonthId < contractStartMonthId)
                 {
                     invalidTimeCount++;
                     continue;
                 }
 
-                // Phát hiện bị nhảy cóc hóa đơn tháng trước
-                if (requestTotalMonths > contractStartTotalMonths)
+                var latestInvoice = await _context.Invoices
+                    .Where(i => i.ApartmentId == apt.ApartmentId && i.IsDeleted == false)
+                    .OrderByDescending(i => (i.BillingYear ?? 0) * 12 + (i.BillingMonth ?? 0))
+                    .FirstOrDefaultAsync();
+
+                int lastInvoiceMonthId = latestInvoice != null
+                    ? (latestInvoice.BillingYear ?? 0) * 12 + (latestInvoice.BillingMonth ?? 0)
+                    : contractStartMonthId - 1;
+
+                if (requestMonthId <= lastInvoiceMonthId)
                 {
-                    int prevMonth = request.Month == 1 ? 12 : request.Month - 1;
-                    int prevYear = request.Month == 1 ? request.Year - 1 : request.Year;
-
-                    var prevInvoice = await _context.Invoices.FirstOrDefaultAsync(i =>
-                        i.ApartmentId == apt.ApartmentId && i.BillingMonth == prevMonth && i.BillingYear == prevYear && i.IsDeleted == false);
-
-                    if (prevInvoice == null)
-                    {
-                        skipMonthCount++;
-                        continue;
-                    }
+                    if (requestMonthId == lastInvoiceMonthId) alreadyExistsCount++;
+                    else lockedPastCount++;
+                    continue;
                 }
 
-                // Kiểm tra xem đã chốt số Điện và Nước chưa
-                var elecMeter = await _context.ElectricMeters
-                    .FirstOrDefaultAsync(e => e.ApartmentId == apt.ApartmentId && e.RegistrationDate.HasValue && e.RegistrationDate.Value.Month == request.Month && e.RegistrationDate.Value.Year == request.Year && e.IsDeleted == false);
+                int gap = requestMonthId - lastInvoiceMonthId;
+                if (gap > 3)
+                {
+                    exceedMergeLimitCount++;
+                    continue;
+                }
 
-                var waterMeter = await _context.WaterMeters
-                    .FirstOrDefaultAsync(w => w.ApartmentId == apt.ApartmentId && w.RegistrationDate.HasValue && w.RegistrationDate.Value.Month == request.Month && w.RegistrationDate.Value.Year == request.Year && w.IsDeleted == false);
+                var elecMeterCurrent = await _context.ElectricMeters
+                    .FirstOrDefaultAsync(e => e.ApartmentId == apt.ApartmentId && e.RegistrationDate.HasValue && e.RegistrationDate.Value.Month == targetMonth && e.RegistrationDate.Value.Year == targetYear && e.IsDeleted == false);
 
-                if (elecMeter == null || waterMeter == null)
+                var waterMeterCurrent = await _context.WaterMeters
+                    .FirstOrDefaultAsync(w => w.ApartmentId == apt.ApartmentId && w.RegistrationDate.HasValue && w.RegistrationDate.Value.Month == targetMonth && w.RegistrationDate.Value.Year == targetYear && w.IsDeleted == false);
+
+                if (elecMeterCurrent == null || waterMeterCurrent == null)
                 {
                     missingUtilityCount++;
                     continue;
                 }
 
-                decimal rentAmount = contract?.MonthlyRent ?? 0m;
-                decimal elecConsumption = (elecMeter.NewIndex ?? 0) - (elecMeter.OldIndex ?? 0);
-                decimal elecMoney = elecConsumption * (elecMeter.Price ?? 3500m);
+                var unbilledElecs = await _context.ElectricMeters
+                    .Where(e => e.ApartmentId == apt.ApartmentId && e.IsDeleted == false &&
+                                e.RegistrationDate.HasValue &&
+                                (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) > lastInvoiceMonthId &&
+                                (e.RegistrationDate.Value.Year * 12 + e.RegistrationDate.Value.Month) <= requestMonthId)
+                    .ToListAsync();
 
-                decimal waterConsumption = (waterMeter.NewIndex ?? 0) - (waterMeter.OldIndex ?? 0);
-                decimal waterMoney = waterConsumption * (waterMeter.Price ?? 25000m);
+                var unbilledWaters = await _context.WaterMeters
+                    .Where(w => w.ApartmentId == apt.ApartmentId && w.IsDeleted == false &&
+                                w.RegistrationDate.HasValue &&
+                                (w.RegistrationDate.Value.Year * 12 + w.RegistrationDate.Value.Month) > lastInvoiceMonthId &&
+                                (w.RegistrationDate.Value.Year * 12 + w.RegistrationDate.Value.Month) <= requestMonthId)
+                    .ToListAsync();
+
+                decimal elecConsumption = unbilledElecs.Sum(e => (e.NewIndex ?? 0) - (e.OldIndex ?? 0));
+                decimal elecMoney = unbilledElecs.Sum(e => ((e.NewIndex ?? 0) - (e.OldIndex ?? 0)) * (e.Price ?? 3500m));
+
+                decimal waterConsumption = unbilledWaters.Sum(w => (w.NewIndex ?? 0) - (w.OldIndex ?? 0));
+                decimal waterMoney = unbilledWaters.Sum(w => ((w.NewIndex ?? 0) - (w.OldIndex ?? 0)) * (w.Price ?? 25000m));
+
+                decimal rentAmount = contract.MonthlyRent ?? 0m;
+                decimal totalRent = rentAmount * gap;
 
                 var services = await _context.ApartmentServices
                     .Where(s => s.ApartmentId == apt.ApartmentId && s.Status == GeneralStatus.Active && s.IsDeleted == false)
                     .ToListAsync();
-                decimal totalServiceFee = services.Sum(s => s.ActualPrice ?? 0m);
 
-                decimal totalAmount = rentAmount + elecMoney + waterMoney + totalServiceFee;
+                decimal serviceFeePerMonth = services.Sum(s => s.ActualPrice ?? 0m);
+                decimal totalServiceFee = serviceFeePerMonth * gap;
+
+                decimal totalAmount = totalRent + elecMoney + waterMoney + totalServiceFee;
 
                 var invoice = new Invoice
                 {
                     ApartmentId = apt.ApartmentId,
-                    ContractId = contract?.ContractId,
-                    ElectricMeterId = elecMeter?.ElectricMeterId,
-                    WaterMeterId = waterMeter?.WaterMeterId,
-                    BillingMonth = request.Month,
-                    BillingYear = request.Year,
+                    ContractId = contract.ContractId,
+                    ElectricMeterId = elecMeterCurrent.ElectricMeterId,
+                    WaterMeterId = waterMeterCurrent.WaterMeterId,
+                    BillingMonth = targetMonth,
+                    BillingYear = targetYear,
                     ElectricNumber = elecConsumption,
                     WaterNumber = waterConsumption,
                     ServiceFee = totalServiceFee,
@@ -284,13 +300,15 @@ namespace Sentana.API.Services.SInvoice
                 _context.Invoices.Add(invoice);
                 generatedCount++;
 
-                if (contract != null && contract.AccountId.HasValue)
+                if (contract.AccountId.HasValue)
                 {
                     var notification = new Notification
                     {
                         AccountId = contract.AccountId.Value,
-                        Title = "Hóa đơn dịch vụ mới",
-                        Message = $"Ban quản lý đã xuất hóa đơn tháng {request.Month}/{request.Year} cho căn hộ {apt.ApartmentCode}. Vui lòng kiểm tra và thanh toán.",
+                        Title = "Thông báo phát hành hóa đơn",
+                        Message = gap > 1
+                            ? $"Hóa đơn kỳ {targetMonth}/{targetYear} (bao gồm gộp {gap} kỳ) đã được phát hành cho căn hộ {apt.ApartmentCode}."
+                            : $"Hóa đơn kỳ {targetMonth}/{targetYear} đã được phát hành cho căn hộ {apt.ApartmentCode}.",
                         IsRead = false,
                         CreatedAt = DateTime.Now
                     };
@@ -299,17 +317,19 @@ namespace Sentana.API.Services.SInvoice
                     if (contract.Account != null && !string.IsNullOrEmpty(contract.Account.Email))
                     {
                         string residentName = contract.Account.UserName ?? "Quý khách";
-                        string emailSubject = $"[SENTANA] Thông báo cước phí tháng {request.Month}/{request.Year}";
+                        string mergeText = gap > 1 ? $"<p style='color:#dc3545;'>Ghi chú: Hóa đơn này đã được tính toán gộp chi phí của {gap} kỳ chưa thanh toán.</p>" : "";
+                        string emailSubject = $"[SENTANA] Thông báo cước phí dịch vụ kỳ {targetMonth}/{targetYear}";
                         string emailBody = $@"
-                            <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 8px;'>
-                                <h2 style='color: #00c292;'>THÔNG BÁO CƯỚC PHÍ DỊCH VỤ</h2>
-                                <p>Kính gửi {residentName} (Căn hộ {apt.ApartmentCode}),</p>
-                                <p>Hóa đơn dịch vụ tháng <strong>{request.Month}/{request.Year}</strong> của bạn đã được khởi tạo.</p>
-                                <p>Tổng số tiền cần thanh toán: <strong style='color:#dc3545; font-size: 1.2em;'>{totalAmount:N0} VNĐ</strong>.</p>
-                                <p>Vui lòng đăng nhập vào ứng dụng Sentana để xem chi tiết.</p>
-                                <br/>
-                                <p>Trân trọng,<br/>Ban Quản Lý Tòa Nhà Sentana.</p>
-                            </div>";
+                    <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 8px;'>
+                        <h2 style='color: #00c292;'>THÔNG BÁO CƯỚC PHÍ DỊCH VỤ</h2>
+                        <p>Kính gửi {residentName} (Căn hộ {apt.ApartmentCode}),</p>
+                        <p>Hóa đơn dịch vụ kỳ <strong>{targetMonth}/{targetYear}</strong> đã được hệ thống ghi nhận.</p>
+                        {mergeText}
+                        <p>Tổng dư nợ cần thanh toán: <strong style='color:#dc3545; font-size: 1.2em;'>{totalAmount:N0} VNĐ</strong>.</p>
+                        <p>Quý khách vui lòng kiểm tra chi tiết và thực hiện thanh toán qua Cổng thông tin Cư dân Sentana.</p>
+                        <br/>
+                        <p>Trân trọng,<br/>Ban Quản Lý Tòa Nhà Sentana.</p>
+                    </div>";
 
                         emailTasks.Add(_emailService.SendEmailAsync(contract.Account.Email, emailSubject, emailBody));
                     }
@@ -317,12 +337,13 @@ namespace Sentana.API.Services.SInvoice
             }
 
             var msgParts = new List<string>();
-            if (alreadyExistsCount > 0) msgParts.Add($"{alreadyExistsCount} phòng đã có hóa đơn");
-            if (missingUtilityCount > 0) msgParts.Add($"{missingUtilityCount} phòng bị thiếu số điện/nước");
-            if (skipMonthCount > 0) msgParts.Add($"{skipMonthCount} phòng chưa làm hóa đơn tháng trước");
+            if (alreadyExistsCount > 0) msgParts.Add($"{alreadyExistsCount} phòng đã ban hành");
+            if (missingUtilityCount > 0) msgParts.Add($"{missingUtilityCount} phòng khuyết chỉ số tiêu thụ");
+            if (lockedPastCount > 0) msgParts.Add($"{lockedPastCount} phòng bị khóa truy xuất quá khứ");
+            if (exceedMergeLimitCount > 0) msgParts.Add($"{exceedMergeLimitCount} phòng vượt giới hạn gộp (tối đa 3 tháng)");
             if (invalidTimeCount > 0) msgParts.Add($"{invalidTimeCount} phòng chưa tới hạn hợp đồng");
 
-            string skipSummary = msgParts.Any() ? $" Đã bỏ qua: {string.Join(", ", msgParts)}." : "";
+            string skipSummary = msgParts.Any() ? $" Trạng thái loại trừ: {string.Join(", ", msgParts)}." : "";
 
             if (generatedCount > 0)
             {
@@ -335,15 +356,15 @@ namespace Sentana.API.Services.SInvoice
                         _ = Task.WhenAll(emailTasks);
                     }
 
-                    return (true, $"Tạo thành công {generatedCount} hóa đơn.{skipSummary}", generatedCount);
+                    return (true, $"Tiến trình hoàn tất. Đã ban hành {generatedCount} hóa đơn.{skipSummary}", generatedCount);
                 }
                 catch (DbUpdateException)
                 {
-                    return (false, "Phát hiện thao tác tạo hóa đơn trùng lặp. Hệ thống đã chặn lại để bảo vệ dữ liệu.", 0);
+                    return (false, "Xung đột tiến trình. Vui lòng kiểm tra lại thao tác.", 0);
                 }
             }
 
-            return (false, $"Không tạo được hóa đơn nào.{skipSummary}", 0);
+            return (false, $"Tiến trình bị gián đoạn. Không có hóa đơn hợp lệ để ban hành.{skipSummary}", 0);
         }
 
         // View invoice list 
