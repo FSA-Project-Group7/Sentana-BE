@@ -9,6 +9,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.SignalR;
+using Sentana.API.Hubs;
 
 namespace Sentana.API.Services.SMaintenance
 {
@@ -16,11 +18,17 @@ namespace Sentana.API.Services.SMaintenance
     {
         private readonly SentanaContext _context;
         private readonly IMinioService _minioService;
+        private readonly IHubContext<NotificationHub> _hubContext;
 
-        public MaintenanceService(SentanaContext context, IMinioService minioService)
+        // FIX 2: CHỈ GIỮ LẠI 1 CONSTRUCTOR NÀY THÔI (Đã xóa constructor cũ)
+        public MaintenanceService(
+            SentanaContext context,
+            IMinioService minioService,
+            IHubContext<NotificationHub> hubContext)
         {
             _context = context;
             _minioService = minioService;
+            _hubContext = hubContext;
         }
 
         // HÀM MỚI: Lấy danh sách Category thay vì hardcode ở Frontend
@@ -57,6 +65,7 @@ namespace Sentana.API.Services.SMaintenance
 
         public async Task<(bool IsSuccess, string Message, object? Data)> CreateResidentRequestAsync(CreateMaintenanceDto request, int residentId)
         {
+            using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
                 string? uploadedImageUrl = null;
@@ -74,7 +83,7 @@ namespace Sentana.API.Services.SMaintenance
                     CategoryId = request.CategoryId,
                     Title = request.Title,
                     Description = request.Description,
-                    ImageUrl = uploadedImageUrl, // Lưu đường dẫn ảnh vào Database
+                    ImageUrl = uploadedImageUrl,
                     Priority = 1,
                     Status = MaintenanceRequestStatus.Pending,
                     CreateDay = DateTime.Now,
@@ -86,10 +95,40 @@ namespace Sentana.API.Services.SMaintenance
                 await _context.MaintenanceRequests.AddAsync(newRequest);
                 await _context.SaveChangesAsync();
 
+                // 3. XỬ LÝ SIGNALR: BẮN THÔNG BÁO REALTIME CHO MANAGER
+                var apartmentInfo = await _context.Apartments
+                    .Include(a => a.Building)
+                    .Where(a => a.ApartmentId == request.ApartmentId)
+                    .Select(a => new {
+                        ApartmentCode = a.ApartmentCode,
+                        ManagerId = a.Building != null ? a.Building.ManagerId : null
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (apartmentInfo != null && apartmentInfo.ManagerId.HasValue)
+                {
+                    var managerIdStr = apartmentInfo.ManagerId.Value.ToString();
+
+                    // Gói thông tin gửi lên Frontend của Manager
+                    var payload = new
+                    {
+                        requestId = newRequest.RequestId,
+                        apartmentCode = apartmentInfo.ApartmentCode,
+                        title = newRequest.Title,
+                        time = DateTime.Now.ToString("HH:mm dd/MM/yyyy"),
+                        message = $"Có sự cố mới từ P.{apartmentInfo.ApartmentCode}"
+                    };
+
+                    await _hubContext.Clients.User(managerIdStr)
+                        .SendAsync("ReceiveNewMaintenanceRequest", payload);
+                }
+
+                await transaction.CommitAsync(); // Hoàn tất an toàn
                 return (true, "Đã gửi yêu cầu bảo trì thành công.", newRequest);
             }
             catch (Exception ex)
             {
+                await transaction.RollbackAsync(); // Hoàn tác nếu lỗi
                 var errorMessage = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
                 return (false, $"Từ chối lưu: {errorMessage}", null);
             }
@@ -190,21 +229,21 @@ namespace Sentana.API.Services.SMaintenance
 
         public async Task<PagedResult<MaintenanceResponseDto>> GetRequestsForManagerAsync(int managerId, int pageIndex = 1, int pageSize = 10)
         {
-            
             var query = _context.MaintenanceRequests
                 .Include(m => m.Apartment)
                     .ThenInclude(a => a.Building)
                 .Include(m => m.Category)
-                .Include(m => m.Account) 
+                .Include(m => m.Account)
                     .ThenInclude(acc => acc.Info)
-                .Include(m => m.AssignedToNavigation) 
+                .Include(m => m.AssignedToNavigation)
                     .ThenInclude(tech => tech.Info)
                 .Where(m => m.IsDeleted == false &&
                             m.Apartment != null &&
                             m.Apartment.Building != null &&
                             m.Apartment.Building.ManagerId == managerId)
-                .OrderByDescending(m => m.CreateDay) 
+                .OrderByDescending(m => m.CreateDay)
                 .AsQueryable();
+
             var totalRecords = await query.CountAsync();
             var items = await query
                 .Skip((pageIndex - 1) * pageSize)
@@ -236,6 +275,7 @@ namespace Sentana.API.Services.SMaintenance
                     ResolutionNote = m.ResolutionNote
                 })
                 .ToListAsync();
+
             return new PagedResult<MaintenanceResponseDto>
             {
                 Items = items,
@@ -244,6 +284,5 @@ namespace Sentana.API.Services.SMaintenance
                 PageSize = pageSize
             };
         }
-
     }
 }
