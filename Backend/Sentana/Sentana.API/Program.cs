@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Minio;
 using OfficeOpenXml;
+using Sentana.API.Hubs;
 using Sentana.API.Models;
 using Sentana.API.Repositories;
 using Sentana.API.Services;
@@ -13,6 +14,7 @@ using Sentana.API.Services.SBuilding;
 using Sentana.API.Services.SEmail;
 using Sentana.API.Services.SInfo;
 using Sentana.API.Services.SInvoice;
+using Sentana.API.Services.SMaintenance;
 using Sentana.API.Services.SNotification;
 using Sentana.API.Services.SPayment;
 using Sentana.API.Services.SRabbitMQ;
@@ -20,7 +22,6 @@ using Sentana.API.Services.SService;
 using Sentana.API.Services.SStorage;
 using Sentana.API.Services.STechnician;
 using System.Text;
-using Sentana.API.Services.SMaintenance;
 
 
 namespace Sentana.API
@@ -95,7 +96,9 @@ namespace Sentana.API
             builder.Services.AddHostedService<Sentana.API.BackgroundServices.NotificationCleanupService>();
             builder.Services.AddHostedService<Sentana.API.BackgroundServices.EmailConsumerService>();
             builder.Services.AddScoped<IMaintenanceService, MaintenanceService>();
-
+           /* my bot ContractManagement
+             Đăng ký Background Worker tự động check hợp đồng hết hạn*/
+            builder.Services.AddHostedService<Sentana.API.Workers.ContractExpirationWorker>();
             builder.Services.AddControllers()
 				.AddJsonOptions(options =>
 				{
@@ -134,6 +137,7 @@ namespace Sentana.API
 
                 c.CustomSchemaIds(type => type.FullName);
             });
+            builder.Services.AddSignalR();
 
             var app = builder.Build();
 
@@ -151,7 +155,7 @@ namespace Sentana.API
 			// cho đăng nhập
 			app.UseAuthentication();
             app.UseAuthorization();
-
+            app.MapHub<NotificationHub>("/hubs/notification");
             app.MapControllers();
 
             app.Run();

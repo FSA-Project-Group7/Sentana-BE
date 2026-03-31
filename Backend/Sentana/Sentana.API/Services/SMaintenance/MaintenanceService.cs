@@ -1,39 +1,174 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Sentana.API.DTOs.Common;
 using Sentana.API.DTOs.Maintenance;
 using Sentana.API.Enums;
 using Sentana.API.Models;
+using Sentana.API.Services.SStorage;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.SignalR;
+using Sentana.API.Hubs;
 
 namespace Sentana.API.Services.SMaintenance
 {
     public class MaintenanceService : IMaintenanceService
     {
         private readonly SentanaContext _context;
+        private readonly IMinioService _minioService;
+        private readonly IHubContext<NotificationHub> _hubContext;
 
-        public MaintenanceService(SentanaContext context)
+        // FIX 2: CHỈ GIỮ LẠI 1 CONSTRUCTOR NÀY THÔI (Đã xóa constructor cũ)
+        public MaintenanceService(
+            SentanaContext context,
+            IMinioService minioService,
+            IHubContext<NotificationHub> hubContext)
         {
             _context = context;
+            _minioService = minioService;
+            _hubContext = hubContext;
         }
 
-        // US22 & US23: Lấy danh sách Task 
+        // HÀM MỚI: Lấy danh sách Category thay vì hardcode ở Frontend
+        public async Task<(bool IsSuccess, string Message, object? Data)> GetIssueCategoriesAsync()
+        {
+            var categories = await _context.IssueCategories
+                .Select(c => new { c.CategoryId, c.CategoryName })
+                .ToListAsync();
+            return (true, "Lấy danh mục thành công", categories);
+        }
+
+        public async Task<(bool IsSuccess, string Message, object? Data)> GetMyActiveApartmentsAsync(int residentId)
+        {
+            try
+            {
+                var myApartments = await _context.ApartmentResidents
+                    .Include(ar => ar.Apartment)
+                    .Where(ar => ar.AccountId == residentId && (int)ar.Status == 1 && ar.IsDeleted == false)
+                    .Select(ar => new
+                    {
+                        ApartmentId = ar.ApartmentId,
+                        ApartmentCode = ar.Apartment != null ? ar.Apartment.ApartmentCode : "N/A"
+                    })
+                    .Distinct()
+                    .ToListAsync();
+
+                return (true, "Lấy danh sách phòng thành công.", myApartments);
+            }
+            catch (Exception ex)
+            {
+                return (false, $"Lỗi hệ thống: {ex.Message}", null);
+            }
+        }
+
+        public async Task<(bool IsSuccess, string Message, object? Data)> CreateResidentRequestAsync(CreateMaintenanceDto request, int residentId)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                string? uploadedImageUrl = null;
+
+                // XỬ LÝ UPLOAD ẢNH: Gửi file vào folder "maintenance-images" trên MinIO
+                if (request.Photo != null && request.Photo.Length > 0)
+                {
+                    uploadedImageUrl = await _minioService.UploadFileAsync(request.Photo, "maintenance-images");
+                }
+
+                var newRequest = new MaintenanceRequest
+                {
+                    AccountId = residentId,
+                    ApartmentId = request.ApartmentId,
+                    CategoryId = request.CategoryId,
+                    Title = request.Title,
+                    Description = request.Description,
+                    ImageUrl = uploadedImageUrl,
+                    Priority = 1,
+                    Status = MaintenanceRequestStatus.Pending,
+                    CreateDay = DateTime.Now,
+                    CreatedAt = DateTime.Now,
+                    CreatedBy = residentId,
+                    IsDeleted = false
+                };
+
+                await _context.MaintenanceRequests.AddAsync(newRequest);
+                await _context.SaveChangesAsync();
+
+                // 3. XỬ LÝ SIGNALR: BẮN THÔNG BÁO REALTIME CHO MANAGER
+                var apartmentInfo = await _context.Apartments
+                    .Include(a => a.Building)
+                    .Where(a => a.ApartmentId == request.ApartmentId)
+                    .Select(a => new {
+                        ApartmentCode = a.ApartmentCode,
+                        ManagerId = a.Building != null ? a.Building.ManagerId : null
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (apartmentInfo != null && apartmentInfo.ManagerId.HasValue)
+                {
+                    var managerIdStr = apartmentInfo.ManagerId.Value.ToString();
+
+                    // Gói thông tin gửi lên Frontend của Manager
+                    var payload = new
+                    {
+                        requestId = newRequest.RequestId,
+                        apartmentCode = apartmentInfo.ApartmentCode,
+                        title = newRequest.Title,
+                        time = DateTime.Now.ToString("HH:mm dd/MM/yyyy"),
+                        message = $"Có sự cố mới từ P.{apartmentInfo.ApartmentCode}"
+                    };
+
+                    await _hubContext.Clients.User(managerIdStr)
+                        .SendAsync("ReceiveNewMaintenanceRequest", payload);
+                }
+
+                await transaction.CommitAsync(); // Hoàn tất an toàn
+                return (true, "Đã gửi yêu cầu bảo trì thành công.", newRequest);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync(); // Hoàn tác nếu lỗi
+                var errorMessage = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                return (false, $"Từ chối lưu: {errorMessage}", null);
+            }
+        }
+
+        public async Task<(bool IsSuccess, string Message, object? Data)> GetResidentRequestsAsync(int residentId)
+        {
+            var requests = await _context.MaintenanceRequests
+                .Include(m => m.Category)
+                .Include(m => m.Apartment)
+                .Where(m => m.AccountId == residentId && m.IsDeleted == false)
+                .OrderByDescending(m => m.CreateDay)
+                .Select(m => new
+                {
+                    RequestId = m.RequestId,
+                    Title = m.Title,
+                    CategoryName = m.Category != null ? m.Category.CategoryName : "Khác",
+                    Description = m.Description,
+                    ImageUrl = m.ImageUrl, // Lấy đường dẫn ảnh trả về cho Frontend hiển thị
+                    ApartmentCode = m.Apartment != null ? m.Apartment.ApartmentCode : "N/A",
+                    Status = (m.Status ?? MaintenanceRequestStatus.Pending).ToString(),
+                    CreateDay = m.CreateDay,
+                    FixDay = m.FixDay,
+                    ResolutionNote = m.ResolutionNote
+                })
+                .ToListAsync();
+
+            return (true, "Lấy danh sách thành công.", requests);
+        }
+
         public async Task<(bool IsSuccess, string Message, object? Data)> GetMyAssignedTasksAsync(int currentTechId, int pageIndex = 1, int pageSize = 10)
         {
             var query = _context.MaintenanceRequests
                 .Include(m => m.Category)
                 .Include(m => m.Apartment)
-                .Where(m => m.AssignedTo == currentTechId
-                         && m.IsDeleted == false
-                         && m.Status != MaintenanceRequestStatus.Closed
-                         && m.Status != MaintenanceRequestStatus.Canceled
-                         // Đảm bảo Căn hộ chưa bị xóa (Soft Deleted)
-                         && (m.Apartment == null || m.Apartment.IsDeleted == false));
+                .Where(m => m.AssignedTo == currentTechId && m.IsDeleted == false);
 
             var totalItems = await query.CountAsync();
-            var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
-
-            // Truy vấn lấy Data theo trang
-            var tasks = await query
+            var items = await query
                 .OrderByDescending(m => m.Priority)
-                .ThenBy(m => m.CreateDay)
                 .Skip((pageIndex - 1) * pageSize)
                 .Take(pageSize)
                 .Select(m => new MaintenanceTaskDto
@@ -43,196 +178,111 @@ namespace Sentana.API.Services.SMaintenance
                     Description = m.Description,
                     CategoryName = m.Category != null ? m.Category.CategoryName : "Khác",
                     ApartmentCode = m.Apartment != null ? m.Apartment.ApartmentCode : "N/A",
-
-                    Priority = ((MaintenancePriority)(m.Priority ?? (byte)1)).ToString(),
                     Status = (m.Status ?? MaintenanceRequestStatus.Pending).ToString(),
-
                     CreateDay = m.CreateDay
                 })
                 .ToListAsync();
 
-            var resultData = new
-            {
-                TotalItems = totalItems,
-                TotalPages = totalPages,
-                CurrentPage = pageIndex,
-                PageSize = pageSize,
-                Items = tasks
-            };
-
-            return (true, "Lấy danh sách thành công", resultData);
+            return (true, "Thành công", new { Items = items, TotalItems = totalItems });
         }
 
-        // US24: Accept Task
         public async Task<(bool IsSuccess, string Message)> AcceptTaskAsync(int requestId, int currentTechId)
         {
-            var task = await _context.MaintenanceRequests
-                .Include(m => m.Apartment)
-                .FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
-
-            if (task == null) return (false, "Không tìm thấy yêu cầu bảo trì này.");
-
-            // Chặn nhận việc nếu Căn hộ đã bị xóa
-            if (task.Apartment != null && task.Apartment.IsDeleted == true)
-                return (false, "Căn hộ này đã bị ngưng hoạt động. Không thể tiếp nhận yêu cầu.");
-
-            if (task.Status != (MaintenanceRequestStatus)1)
-                return (false, "Chỉ có thể nhận các yêu cầu đang ở trạng thái Chờ (Pending).");
-
-            if (task.AssignedTo.HasValue && task.AssignedTo != currentTechId)
-            {
-                return (false, "Yêu cầu này đã được gán đích danh cho một kỹ thuật viên khác.");
-            }
-
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            try
-            {
-                task.Status = (MaintenanceRequestStatus)2; // ACCEPTED
-                task.AssignedTo = currentTechId;
-                task.UpdatedAt = DateTime.Now;
-                task.UpdatedBy = currentTechId;
-
-                var log = new History
-                {
-                    AccountId = currentTechId,
-                    Action = 2, // Update
-                    Screen = "Task Acceptance",
-                    Description = $"Kỹ thuật viên đã tiếp nhận yêu cầu bảo trì #{task.RequestId}",
-                    CreatedAt = DateTime.Now
-                };
-                _context.Histories.Add(log);
-
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                return (true, "Đã tiếp nhận yêu cầu bảo trì thành công.");
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                return (false, $"Lỗi hệ thống: {ex.Message}");
-            }
+            var task = await _context.MaintenanceRequests.FindAsync(requestId);
+            if (task == null) return (false, "Không thấy task.");
+            task.Status = (MaintenanceRequestStatus)2;
+            task.AssignedTo = currentTechId;
+            await _context.SaveChangesAsync();
+            return (true, "Đã nhận task.");
         }
 
-        // US25: Start Processing Task 
         public async Task<(bool IsSuccess, string Message)> StartProcessingTaskAsync(int requestId, int currentTechId)
         {
-            var isAlreadyBusy = await _context.MaintenanceRequests
-                .AnyAsync(m => m.AssignedTo == currentTechId
-                            && m.Status == (MaintenanceRequestStatus)3
-                            && m.IsDeleted == false);
-
-            if (isAlreadyBusy)
-                return (false, "Bạn đang có một công việc chưa hoàn thành. Vui lòng báo cáo xong (Fix) công việc hiện tại trước khi bắt đầu cái mới!");
-
-            var task = await _context.MaintenanceRequests
-                .Include(m => m.Apartment)
-                .FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
-
-            if (task == null) return (false, "Không tìm thấy yêu cầu bảo trì này.");
-            if (task.AssignedTo != currentTechId) return (false, "Bạn không có quyền xử lý yêu cầu này.");
-
-            if (task.Apartment != null && task.Apartment.IsDeleted == true)
-                return (false, "Căn hộ này đã bị ngưng hoạt động. Hệ thống sẽ tự động hủy yêu cầu này.");
-
-            if (task.Status != (MaintenanceRequestStatus)2)
-                return (false, "Chỉ có thể bắt đầu làm những yêu cầu đã được Tiếp nhận (ACCEPTED).");
-
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            try
-            {
-                task.Status = (MaintenanceRequestStatus)3; // PROCESSING
-                task.UpdatedAt = DateTime.Now;
-                task.UpdatedBy = currentTechId;
-
-                // US27: Tự động thành BUSY
-                var techAccount = await _context.Accounts.FindAsync(currentTechId);
-                if (techAccount != null)
-                {
-                    techAccount.TechAvailability = (byte)TechAvailability.Busy;
-                }
-
-                var log = new History
-                {
-                    AccountId = currentTechId,
-                    Action = 2, // Update
-                    Screen = "Maintenance Dashboard",
-                    Description = $"Bắt đầu xử lý (Processing) yêu cầu bảo trì #{task.RequestId}",
-                    CreatedAt = DateTime.Now
-                };
-                _context.Histories.Add(log);
-
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                return (true, "Đã cập nhật trạng thái thành Đang xử lý (PROCESSING).");
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                return (false, $"Lỗi hệ thống: {ex.Message}");
-            }
+            var task = await _context.MaintenanceRequests.FindAsync(requestId);
+            if (task == null) return (false, "Không thấy task.");
+            task.Status = (MaintenanceRequestStatus)3;
+            await _context.SaveChangesAsync();
+            return (true, "Đang xử lý.");
         }
 
-        // US26: Fixed Task
         public async Task<(bool IsSuccess, string Message)> FixTaskAsync(int requestId, FixTaskRequestDto request, int currentTechId)
         {
-            var task = await _context.MaintenanceRequests.FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
+            var task = await _context.MaintenanceRequests.FindAsync(requestId);
+            if (task == null) return (false, "Không thấy task.");
+            task.Status = (MaintenanceRequestStatus)4;
+            task.ResolutionNote = request.ResolutionNote;
+            task.FixDay = DateTime.Now;
 
-            if (task == null) return (false, "Không tìm thấy yêu cầu bảo trì này.");
-            if (task.AssignedTo != currentTechId) return (false, "Bạn không có quyền cập nhật yêu cầu này.");
-
-            if (task.Status != (MaintenanceRequestStatus)3)
-                return (false, "Chỉ có thể báo cáo hoàn thành cho các yêu cầu Đang xử lý (PROCESSING).");
-
-            if (string.IsNullOrWhiteSpace(request.ResolutionNote))
-                return (false, "Ghi chú cách giải quyết (Resolution note) không được để trống.");
-
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            try
+            var notif = new Notification
             {
-                task.Status = (MaintenanceRequestStatus)4; // FIXED
-                task.ResolutionNote = request.ResolutionNote;
-                task.FixDay = DateTime.Now;
-                task.UpdatedAt = DateTime.Now;
-                task.UpdatedBy = currentTechId;
+                AccountId = task.AccountId ?? 0,
+                Title = "Bảo trì hoàn tất",
+                Message = $"Sự cố '{task.Title}' đã được xử lý xong.",
+                IsRead = false,
+                CreatedAt = DateTime.Now
+            };
+            _context.Notifications.Add(notif);
 
-                // US27: chuyển về Available
-                var hasOtherProcessingTasks = await _context.MaintenanceRequests
-                    .AnyAsync(m => m.AssignedTo == currentTechId
-                                && m.Status == (MaintenanceRequestStatus)3
-                                && m.RequestId != requestId
-                                && m.IsDeleted == false);
+            await _context.SaveChangesAsync();
+            return (true, "Đã sửa xong.");
+        }
 
-                if (!hasOtherProcessingTasks)
+        public async Task<PagedResult<MaintenanceResponseDto>> GetRequestsForManagerAsync(int managerId, int pageIndex = 1, int pageSize = 10)
+        {
+            var query = _context.MaintenanceRequests
+                .Include(m => m.Apartment)
+                    .ThenInclude(a => a.Building)
+                .Include(m => m.Category)
+                .Include(m => m.Account)
+                    .ThenInclude(acc => acc.Info)
+                .Include(m => m.AssignedToNavigation)
+                    .ThenInclude(tech => tech.Info)
+                .Where(m => m.IsDeleted == false &&
+                            m.Apartment != null &&
+                            m.Apartment.Building != null &&
+                            m.Apartment.Building.ManagerId == managerId)
+                .OrderByDescending(m => m.CreateDay)
+                .AsQueryable();
+
+            var totalRecords = await query.CountAsync();
+            var items = await query
+                .Skip((pageIndex - 1) * pageSize)
+                .Take(pageSize)
+                .Select(m => new MaintenanceResponseDto
                 {
-                    var techAccount = await _context.Accounts.FindAsync(currentTechId);
-                    if (techAccount != null)
-                    {
-                        techAccount.TechAvailability = (byte)TechAvailability.Free;
-                    }
-                }
+                    RequestId = m.RequestId,
+                    Title = m.Title,
+                    Description = m.Description,
+                    Priority = (MaintenancePriority)(m.Priority ?? (byte)MaintenancePriority.Low),
+                    Status = (MaintenanceRequestStatus)(m.Status ?? MaintenanceRequestStatus.Pending),
 
-                var log = new History
-                {
-                    AccountId = currentTechId,
-                    Action = 3, // Complete/Fix
-                    Screen = "Maintenance Dashboard",
-                    Description = $"Đã sửa xong yêu cầu #{task.RequestId}. Ghi chú: {request.ResolutionNote}",
-                    CreatedAt = DateTime.Now
-                };
-                _context.Histories.Add(log);
+                    CreateDay = m.CreateDay,
+                    FixDay = m.FixDay,
+                    UpdatedAt = m.UpdatedAt,
 
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
+                    ApartmentId = m.ApartmentId,
+                    ApartmentName = m.Apartment.ApartmentName ?? m.Apartment.ApartmentCode,
+                    CategoryId = m.CategoryId,
+                    CategoryName = m.Category != null ? m.Category.CategoryName : "Khác",
 
-                return (true, "Đã báo cáo hoàn thành yêu cầu bảo trì thành công.");
-            }
-            catch (Exception ex)
+                    AccountId = m.AccountId,
+                    ResidentName = m.Account != null && m.Account.Info != null ? m.Account.Info.FullName : "Cư dân ẩn danh",
+
+                    AssignedTo = m.AssignedTo,
+                    AssignedTechnicianName = m.AssignedToNavigation != null && m.AssignedToNavigation.Info != null ? m.AssignedToNavigation.Info.FullName : null,
+                    ImageUrl = m.ImageUrl,
+
+                    ResolutionNote = m.ResolutionNote
+                })
+                .ToListAsync();
+
+            return new PagedResult<MaintenanceResponseDto>
             {
-                await transaction.RollbackAsync();
-                return (false, $"Lỗi hệ thống: {ex.Message}");
-            }
+                Items = items,
+                TotalCount = totalRecords,
+                PageNumber = pageIndex,
+                PageSize = pageSize
+            };
         }
     }
 }
