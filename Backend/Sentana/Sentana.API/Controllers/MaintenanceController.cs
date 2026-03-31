@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sentana.API.DTOs.Common;
 using Sentana.API.DTOs.Maintenance;
+using Sentana.API.Helpers;
 using Sentana.API.Services.SMaintenance;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -93,5 +95,30 @@ namespace Sentana.API.Controllers
             if (!result.IsSuccess) return BadRequest(new { result.Message });
             return Ok(new { result.Message });
         }
+
+        [HttpGet("manager/request")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetRequestsForManager([FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 10)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst("AccountId");
+                if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int managerId))
+                {
+                    var failResponse = ApiResponse<PagedResult<MaintenanceResponseDto>>.Fail(401, "Phiên đăng nhập không hợp lệ hoặc không xác định được danh tính Quản lý.");
+                    return Unauthorized(failResponse);
+                }
+                var result = await _maintenanceService.GetRequestsForManagerAsync(managerId, pageIndex, pageSize);
+                var successResponse = ApiResponse<PagedResult<MaintenanceResponseDto>>.Success(result, "Lấy danh sách yêu cầu bảo trì thành công.");
+                return Ok(successResponse);
+            }
+            catch (Exception ex)
+            {
+                var errorResponse = ApiResponse<PagedResult<MaintenanceResponseDto>>.Fail(500, "Đã xảy ra lỗi trong quá trình xử lý: " + ex.Message);
+                return StatusCode(500, errorResponse);
+            }
+        }
+
+
     }
 }

@@ -334,6 +334,25 @@ namespace Sentana.API.Services.STechnician
             return await _context.SaveChangesAsync() > 0;
         }
 
-
+        public async Task<IEnumerable<TechnicianAvailableDto>> GetAvailableTechnicians()
+        {
+            var query = _context.Accounts
+                 .Where(a => a.RoleId == 3
+                 && a.Status == GeneralStatus.Active
+                 && a.IsDeleted == false
+                 && a.TechAvailability == (byte)TechAvailability.Free
+                 && !a.MaintenanceRequestAssignedToNavigations.Any(mr =>
+                        mr.Status == MaintenanceRequestStatus.Pending ||
+                        mr.Status == MaintenanceRequestStatus.Processing ||
+                        mr.Status == MaintenanceRequestStatus.Fixed))
+                .Select(a => new TechnicianAvailableDto
+                {
+                    TechnicianId = a.AccountId,
+                    FullName = a.Info != null ? a.Info.FullName : null,
+                    PhoneNumber = a.Info != null ? a.Info.PhoneNumber : null,
+                    Email = a.Email
+                });
+            return await query.ToListAsync();
+        }
     }
 }
