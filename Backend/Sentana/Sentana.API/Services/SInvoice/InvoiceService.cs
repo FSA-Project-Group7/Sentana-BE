@@ -33,20 +33,18 @@ namespace Sentana.API.Services.SInvoice
         {
             var accountIdClaim = user.FindFirst("AccountId")?.Value;
             if (!int.TryParse(accountIdClaim, out var callerAccountId))
-                throw new UnauthorizedAccessException("Token không hợp lệ.");
+                throw new UnauthorizedAccessException("Xác thực danh tính thất bại.");
 
             var role = user.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
             var isManager = string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase);
 
             var targetApartmentIds = new List<int>();
 
-            // Xác định danh sách phòng cần xem 
             if (isManager)
             {
                 if (apartmentId.HasValue) targetApartmentIds.Add(apartmentId.Value);
                 else if (accountId.HasValue)
                 {
-                    // Manager truyền vào Account ID
                     var aptIds = await _context.Contracts
                         .Where(c => c.AccountId == accountId.Value && c.Status == GeneralStatus.Active && c.IsDeleted == false)
                         .Select(c => c.ApartmentId)
@@ -54,7 +52,7 @@ namespace Sentana.API.Services.SInvoice
                     targetApartmentIds.AddRange(aptIds);
                 }
             }
-            else // Nếu là Resident thì tự ra hóa đơn của họ
+            else
             {
                 var aptIds = await _context.Contracts
                     .Where(c => c.AccountId == callerAccountId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
@@ -65,7 +63,6 @@ namespace Sentana.API.Services.SInvoice
 
             if (!targetApartmentIds.Any()) return new List<InvoiceResponseDto>();
 
-            // Tạo hóa đơn chi tiết 
             var query = _context.Invoices
                 .Include(i => i.Apartment)
                 .Include(i => i.Contract)
@@ -80,16 +77,48 @@ namespace Sentana.API.Services.SInvoice
 
             var rawInvoices = await query.OrderByDescending(i => i.CreatedAt).ToListAsync();
 
-            // Nếu không truyền thời gian thì lấy hóa đơn mới nhất
             var invoicesToProcess = month.HasValue && year.HasValue
                 ? rawInvoices
                 : rawInvoices.GroupBy(i => i.ApartmentId).Select(g => g.First()).ToList();
 
             var result = new List<InvoiceResponseDto>();
 
-            // Ráp hóa đơn
             foreach (var invoice in invoicesToProcess)
             {
+                int gap = 1;
+                string billingPeriodStr = $"Tháng {invoice.BillingMonth}/{invoice.BillingYear}";
+
+                // Thuật toán truy hồi xác định hệ số gộp kỳ
+                if (invoice.Contract != null && invoice.Contract.StartDay.HasValue)
+                {
+                    DateTime contractStartDate = invoice.Contract.StartDay.Value.ToDateTime(TimeOnly.MinValue);
+                    int currentMonthId = (invoice.BillingYear ?? 0) * 12 + (invoice.BillingMonth ?? 0);
+
+                    var prevInvoice = await _context.Invoices
+                        .Where(i => i.ApartmentId == invoice.ApartmentId && i.IsDeleted == false && (i.BillingYear * 12 + i.BillingMonth) < currentMonthId)
+                        .OrderByDescending(i => i.BillingYear * 12 + i.BillingMonth)
+                        .FirstOrDefaultAsync();
+
+                    int lastMonthId = prevInvoice != null
+                        ? (prevInvoice.BillingYear ?? 0) * 12 + (prevInvoice.BillingMonth ?? 0)
+                        : (contractStartDate.Year * 12 + contractStartDate.Month) - 1;
+
+                    gap = currentMonthId - lastMonthId;
+                    if (gap < 1) gap = 1;
+
+                    if (gap > 1)
+                    {
+                        int startMonthId = lastMonthId + 1;
+                        int startYear = startMonthId / 12;
+                        int startMonth = startMonthId % 12;
+                        if (startMonth == 0) { startMonth = 12; startYear--; }
+
+                        billingPeriodStr = startYear < invoice.BillingYear
+                            ? $"Tháng {startMonth}/{startYear} - {invoice.BillingMonth}/{invoice.BillingYear}"
+                            : $"Tháng {startMonth} - {invoice.BillingMonth} / {invoice.BillingYear}";
+                    }
+                }
+
                 var dto = new InvoiceResponseDto
                 {
                     InvoiceId = invoice.InvoiceId,
@@ -98,65 +127,58 @@ namespace Sentana.API.Services.SInvoice
                     ContractId = invoice.ContractId,
                     BillingMonth = invoice.BillingMonth,
                     BillingYear = invoice.BillingYear,
+                    BillingPeriod = billingPeriodStr, // Gán chuỗi kỳ thanh toán đã xử lý
                     TotalMoney = invoice.TotalMoney,
                     ServiceFee = invoice.ServiceFee,
                     Pay = invoice.Pay,
                     Debt = invoice.Debt,
                     WaterNumber = invoice.WaterNumber,
                     ElectricNumber = invoice.ElectricNumber,
-                    DayCreat = invoice.DayCreat?.ToString("yyyy-MM-dd"),
-                    DayPay = invoice.DayPay?.ToString("yyyy-MM-dd"),
+                    DayCreat = invoice.CreatedAt?.ToString("dd/MM/yyyy HH:mm"), // Sử dụng CreatedAt thay vì DayCreat rỗng
+                    DayPay = invoice.DayPay?.ToString("dd/MM/yyyy"),
                     StatusName = invoice.Status?.ToString() ?? string.Empty,
                     Payments = invoice.Payments,
                     Details = new List<InvoiceDetailItemDto>()
                 };
 
+                decimal calculatedBaseTotal = 0m;
+
                 if (invoice.Contract != null)
-                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = "Tiền thuê phòng", Amount = invoice.Contract.MonthlyRent ?? 0 });
+                {
+                    decimal rent = (invoice.Contract.MonthlyRent ?? 0) * gap;
+                    string rentName = gap > 1 ? $"Tiền thuê phòng (Gộp {gap} tháng)" : "Tiền thuê phòng";
+                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = rentName, Amount = rent });
+                    calculatedBaseTotal += rent;
+                }
 
                 if (invoice.ElectricMeter != null)
                 {
                     var usage = (invoice.ElectricMeter.NewIndex ?? 0) - (invoice.ElectricMeter.OldIndex ?? 0);
                     var price = invoice.ElectricMeter.Price ?? 0;
-                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền điện ({usage} kWh)", Amount = usage * price });
+                    decimal elecMoney = usage * price;
+                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền điện ({usage} kWh)", Amount = elecMoney });
+                    calculatedBaseTotal += elecMoney;
                 }
 
                 if (invoice.WaterMeter != null)
                 {
                     var usage = (invoice.WaterMeter.NewIndex ?? 0) - (invoice.WaterMeter.OldIndex ?? 0);
                     var price = invoice.WaterMeter.Price ?? 0;
-                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền nước ({usage} khối)", Amount = usage * price });
+                    decimal waterMoney = usage * price;
+                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = $"Tiền nước ({usage} khối)", Amount = waterMoney });
+                    calculatedBaseTotal += waterMoney;
                 }
 
-                var services = await _context.ApartmentServices
-                    .Include(s => s.Service)
-                    .Where(s => s.ApartmentId == invoice.ApartmentId && s.Status == GeneralStatus.Active && s.IsDeleted == false)
-                    .ToListAsync();
+                decimal serviceFee = (invoice.ServiceFee ?? 0);
+                string serviceName = gap > 1 ? $"Phí dịch vụ (Gộp {gap} tháng)" : "Phí dịch vụ";
+                dto.Details.Add(new InvoiceDetailItemDto { FeeName = serviceName, Amount = serviceFee });
+                calculatedBaseTotal += serviceFee;
 
-                decimal currentDynamicServiceTotal = services.Sum(s => s.ActualPrice ?? 0m);
-                decimal historicalServiceFee = invoice.ServiceFee ?? 0m;
-
-                if (currentDynamicServiceTotal == historicalServiceFee)
+                // Bóc tách Phụ phí: Nếu Tổng tiền Hóa đơn > Tổng 4 loại phí cơ bản, phần chênh lệch chính là Phụ phí
+                if (invoice.TotalMoney > calculatedBaseTotal)
                 {
-                    foreach (var svc in services)
-                    {
-                        dto.Details.Add(new InvoiceDetailItemDto
-                        {
-                            FeeName = svc.Service?.ServiceName ?? "Phí dịch vụ",
-                            Amount = svc.ActualPrice ?? 0
-                        });
-                    }
-                }
-                else
-                {
-                    if (historicalServiceFee > 0)
-                    {
-                        dto.Details.Add(new InvoiceDetailItemDto
-                        {
-                            FeeName = "Phí dịch vụ (Đã chốt theo kỳ hóa đơn)",
-                            Amount = historicalServiceFee
-                        });
-                    }
+                    decimal additionalFee = (invoice.TotalMoney ?? 0) - calculatedBaseTotal;
+                    dto.Details.Add(new InvoiceDetailItemDto { FeeName = "Phụ phí / Nợ phát sinh", Amount = additionalFee });
                 }
 
                 result.Add(dto);
@@ -165,6 +187,7 @@ namespace Sentana.API.Services.SInvoice
             return result;
         }
 
+        // gen hóa đơn hàng tháng
         public async Task<(bool IsSuccess, string Message, int GeneratedCount)> GenerateMonthlyInvoicesAsync(GenerateInvoiceRequestDto request, int currentUserId)
         {
             var validation = ValidationHelper.ValidateMonthYear(request.Month, request.Year);
@@ -372,6 +395,7 @@ namespace Sentana.API.Services.SInvoice
         {
             var query = _context.Invoices
                 .Include(i => i.Apartment)
+                .Include(i => i.Contract)
                 .Where(i => i.IsDeleted == false);
 
             if (request.Month.HasValue) query = query.Where(i => i.BillingMonth == request.Month.Value);
@@ -386,19 +410,57 @@ namespace Sentana.API.Services.SInvoice
                 .Take(request.PageSize)
                 .ToListAsync();
 
-            // Map sang DTO
-            var items = invoices.Select(i => new InvoiceListItemDto
+            var items = new List<InvoiceListItemDto>();
+
+            foreach (var invoice in invoices)
             {
-                InvoiceId = i.InvoiceId,
-                ApartmentId = i.ApartmentId,
-                ApartmentCode = i.Apartment?.ApartmentCode,
-                BillingMonth = i.BillingMonth,
-                BillingYear = i.BillingYear,
-                TotalMoney = i.TotalMoney,
-                Debt = i.Debt,
-                StatusName = i.Status?.ToString() ?? string.Empty,
-                CreatedAt = i.CreatedAt?.ToString("yyyy-MM-dd HH:mm")
-            }).ToList();
+                int gap = 1;
+                string billingPeriodStr = $"Tháng {invoice.BillingMonth}/{invoice.BillingYear}";
+
+                if (invoice.Contract != null && invoice.Contract.StartDay.HasValue)
+                {
+                    DateTime contractStartDate = invoice.Contract.StartDay.Value.ToDateTime(TimeOnly.MinValue);
+                    int currentMonthId = (invoice.BillingYear ?? 0) * 12 + (invoice.BillingMonth ?? 0);
+
+                    var prevInvoice = await _context.Invoices
+                        .Where(i => i.ApartmentId == invoice.ApartmentId && i.IsDeleted == false && (i.BillingYear * 12 + i.BillingMonth) < currentMonthId)
+                        .OrderByDescending(i => i.BillingYear * 12 + i.BillingMonth)
+                        .FirstOrDefaultAsync();
+
+                    int lastMonthId = prevInvoice != null
+                        ? (prevInvoice.BillingYear ?? 0) * 12 + (prevInvoice.BillingMonth ?? 0)
+                        : (contractStartDate.Year * 12 + contractStartDate.Month) - 1;
+
+                    gap = currentMonthId - lastMonthId;
+                    if (gap < 1) gap = 1;
+
+                    if (gap > 1)
+                    {
+                        int startMonthId = lastMonthId + 1;
+                        int startYear = startMonthId / 12;
+                        int startMonth = startMonthId % 12;
+                        if (startMonth == 0) { startMonth = 12; startYear--; }
+
+                        billingPeriodStr = startYear < invoice.BillingYear
+                            ? $"Tháng {startMonth}/{startYear} - {invoice.BillingMonth}/{invoice.BillingYear}"
+                            : $"Tháng {startMonth} - {invoice.BillingMonth}/{invoice.BillingYear}";
+                    }
+                }
+
+                items.Add(new InvoiceListItemDto
+                {
+                    InvoiceId = invoice.InvoiceId,
+                    ApartmentId = invoice.ApartmentId,
+                    ApartmentCode = invoice.Apartment?.ApartmentCode,
+                    BillingMonth = invoice.BillingMonth,
+                    BillingYear = invoice.BillingYear,
+                    BillingPeriod = billingPeriodStr,
+                    TotalMoney = invoice.TotalMoney,
+                    Debt = invoice.Debt,
+                    StatusName = invoice.Status?.ToString() ?? string.Empty,
+                    CreatedAt = invoice.CreatedAt?.ToString("dd/MM/yyyy HH:mm")
+                });
+            }
 
             return new PagedResult<InvoiceListItemDto>
             {
