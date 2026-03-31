@@ -67,6 +67,21 @@ namespace Sentana.API.Services.SMaintenance
 
         public async Task<(bool IsSuccess, string Message, object? Data)> CreateResidentRequestAsync(CreateMaintenanceDto request, int residentId)
         {
+            // 👉 FIX BUG 60 (IDOR): Trạm kiểm soát bảo mật (BẮT BUỘC PHẢI CÓ)
+            // Kiểm tra xem Cư dân này có đang ở trong Căn hộ này và hợp đồng/quan hệ còn Active hay không
+            var isAuthorized = await _context.ApartmentResidents
+                .AnyAsync(ar => ar.AccountId == residentId
+                             && ar.ApartmentId == request.ApartmentId
+                             && ar.Status == GeneralStatus.Active
+                             && ar.IsDeleted == false);
+
+            if (!isAuthorized)
+            {
+                // Nếu cố tình truyền bừa ID phòng khác, hoặc phòng đã trả -> Đá văng ra ngoài!
+                return (false, "Bạn không có quyền tạo báo cáo cho căn hộ này, hoặc hợp đồng của bạn đã hết hạn/thanh lý.", null);
+            }
+
+            // ---------------- THUẬT TOÁN CHÍNH ----------------
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -97,7 +112,7 @@ namespace Sentana.API.Services.SMaintenance
                 await _context.MaintenanceRequests.AddAsync(newRequest);
                 await _context.SaveChangesAsync();
 
-                // 3. XỬ LÝ SIGNALR: BẮN THÔNG BÁO REALTIME CHO MANAGER
+                // XỬ LÝ SIGNALR: BẮN THÔNG BÁO REALTIME CHO MANAGER
                 var apartmentInfo = await _context.Apartments
                     .Include(a => a.Building)
                     .Where(a => a.ApartmentId == request.ApartmentId)
