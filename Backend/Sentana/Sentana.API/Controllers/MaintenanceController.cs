@@ -96,7 +96,7 @@ namespace Sentana.API.Controllers
             return Ok(new { result.Message });
         }
 
-        [HttpGet("manager/request")]
+        [HttpGet("request")]
         [Authorize(Roles = "Manager")]
         public async Task<IActionResult> GetRequestsForManager([FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 10)
         {
@@ -119,6 +119,30 @@ namespace Sentana.API.Controllers
             }
         }
 
+        [HttpPut("requests/{requestId}/assign")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> AssignTechnician(int requestId, [FromBody] AssignMaintenanceRequestDto dto)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst("AccountId");
+                if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int managerId))
+                {
+                    return Unauthorized(ApiResponse<string>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+                }
+                var result = await _maintenanceService.AssignTechnicianAsync(requestId, managerId, dto);
 
+                if (!result)
+                {
+                    return NotFound(ApiResponse<string>.Fail(404, "Không tìm thấy yêu cầu bảo trì."));
+                }
+
+                return Ok(ApiResponse<string>.Success(null, "Đã phân công kỹ thuật viên thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<string>.Fail(500, ex.Message));
+            }
+        }
     }
 }
