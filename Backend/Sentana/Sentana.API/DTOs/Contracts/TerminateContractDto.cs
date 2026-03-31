@@ -9,5 +9,6 @@ namespace Sentana.API.DTOs.Contracts
 
         [Range(0, double.MaxValue, ErrorMessage = "Chi phí thêm phải lớn hơn hoặc bằng 0.")]
         public decimal AdditionalCost { get; set; }
+        public string? TerminationReason { get; set; }
     }
 }
