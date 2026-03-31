@@ -18,7 +18,8 @@ namespace Sentana.API.Services.SMaintenance
         // Code từ nhánh của bạn (Lấy danh mục sự cố)
         Task<(bool IsSuccess, string Message, object? Data)> GetIssueCategoriesAsync();
 
-        // Code từ nhánh main của team (Lấy request cho Manager)
         Task<PagedResult<MaintenanceResponseDto>> GetRequestsForManagerAsync(int managerId, int pageIndex = 1, int pageSize = 10);
+
+        Task<bool> AssignTechnicianAsync(int requestId, int managerId, AssignMaintenanceRequestDto dto);
     }
 }

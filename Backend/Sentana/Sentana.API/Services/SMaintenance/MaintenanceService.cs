@@ -1,7 +1,10 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using Sentana.API.Constants;
 using Sentana.API.DTOs.Common;
 using Sentana.API.DTOs.Maintenance;
 using Sentana.API.Enums;
+using Sentana.API.Hubs;
 using Sentana.API.Models;
 using Sentana.API.Services.SStorage;
 using System;
@@ -16,11 +19,13 @@ namespace Sentana.API.Services.SMaintenance
     {
         private readonly SentanaContext _context;
         private readonly IMinioService _minioService;
+        private readonly IHubContext<NotificationHub> _hubContext;
 
-        public MaintenanceService(SentanaContext context, IMinioService minioService)
+        public MaintenanceService(SentanaContext context, IMinioService minioService, IHubContext<NotificationHub> hubContext)
         {
             _context = context;
             _minioService = minioService;
+            _hubContext = hubContext;
         }
 
         // HÀM MỚI: Lấy danh sách Category thay vì hardcode ở Frontend
@@ -245,5 +250,45 @@ namespace Sentana.API.Services.SMaintenance
             };
         }
 
+        public async Task<bool> AssignTechnicianAsync(int requestId, int managerId, AssignMaintenanceRequestDto dto)
+        {
+            var request = await _context.MaintenanceRequests
+            .Include(m => m.Apartment)
+            .Include(m => m.Category)
+            .Include(m => m.Account).ThenInclude(a => a.Info)
+            .FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
+            if (request == null) return false;
+            var techAccount = await _context.Accounts
+            .Include(a => a.Info)
+            .FirstOrDefaultAsync(a => a.AccountId == dto.TechnicianId && a.RoleId == 3 && a.IsDeleted == false);
+            if (techAccount == null || techAccount.Status != GeneralStatus.Active)
+                throw new Exception("Kỹ thuật viên không tồn tại hoặc tài khoản đã bị khóa.");
+            request.AssignedTo = dto.TechnicianId;
+            request.Priority = (byte)dto.Priority;
+            request.Status = MaintenanceRequestStatus.Pending;
+            request.UpdatedAt = DateTime.Now;
+            request.UpdatedBy = managerId;
+            techAccount.TechAvailability = (byte)TechAvailability.Busy;
+            techAccount.UpdatedAt = DateTime.Now;
+            techAccount.UpdatedBy = managerId;
+            await _context.SaveChangesAsync();
+            var payload = new MaintenanceResponseDto
+            {
+                RequestId = request.RequestId,
+                Title = request.Title,
+                Description = request.Description,
+                Priority = dto.Priority,
+                Status = MaintenanceRequestStatus.Pending,
+                CreateDay = request.CreateDay,
+                ApartmentName = request.Apartment?.ApartmentName,
+                CategoryName = request.Category?.CategoryName,
+                ResidentName = request.Account?.Info?.FullName,
+                ImageUrl = request.ImageUrl,
+                UpdatedAt = request.UpdatedAt
+            };
+            await _hubContext.Clients.User(dto.TechnicianId.ToString())
+            .SendAsync(SignalREvents.MAINTENANCE_ASSIGNEDTASK, payload);
+            return true;
+        }
     }
 }
