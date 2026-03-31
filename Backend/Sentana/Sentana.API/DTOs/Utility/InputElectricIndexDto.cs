@@ -13,5 +13,6 @@ namespace Sentana.API.DTOs.Utility
         [Required(ErrorMessage = "Chỉ số điện không được để trống.")]
         [Range(0, double.MaxValue, ErrorMessage = "Chỉ số điện không được là số âm.")]
         public decimal NewIndex { get; set; }
+        public bool IsMerge { get; set; } = false;
     }
 }
