@@ -52,6 +52,8 @@ public partial class Invoice
 
     public bool? IsDeleted { get; set; }
 
+    public string? Note { get; set; }
+
     public virtual Apartment? Apartment { get; set; }
 
     public virtual Contract? Contract { get; set; }
