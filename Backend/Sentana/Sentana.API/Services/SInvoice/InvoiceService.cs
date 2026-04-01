@@ -801,5 +801,49 @@ namespace Sentana.API.Services.SInvoice
 
             return await package.GetAsByteArrayAsync();
         }
+
+        // US73 - Change Invoice Status
+        public async Task<(bool IsSuccess, string Message)> ChangeInvoiceStatusAsync(int invoiceId, ChangeInvoiceStatusDto request, int currentUserId)
+        {
+            var invoice = await _context.Invoices.FirstOrDefaultAsync(i => i.InvoiceId == invoiceId && i.IsDeleted == false);
+
+            if (invoice == null)
+                return (false, "Hệ thống không tìm thấy hóa đơn này.");
+
+            if (invoice.Status == request.Status)
+                return (false, "Hóa đơn đã đang ở trạng thái này, không cần thay đổi.");
+
+            // cập nhật Trạng thái
+            invoice.Status = request.Status;
+
+            if (request.Status == InvoiceStatus.Paid)
+            {
+                invoice.Pay = invoice.TotalMoney;
+                invoice.Debt = 0;
+                invoice.DayPay = DateOnly.FromDateTime(DateTime.Now);
+            }
+            else if (request.Status == InvoiceStatus.Unpaid)
+            {
+                invoice.Pay = 0;
+                invoice.Debt = invoice.TotalMoney;
+                invoice.DayPay = null;
+            }
+
+            // ghi chú
+            if (!string.IsNullOrWhiteSpace(request.Note))
+            {
+                invoice.ManagerNote = request.Note;
+            }
+
+            invoice.UpdatedAt = DateTime.Now;
+            invoice.UpdatedBy = currentUserId;
+
+            _context.Invoices.Update(invoice);
+            bool isSaved = await _context.SaveChangesAsync() > 0;
+
+            return isSaved
+                ? (true, "Đã cập nhật trạng thái hóa đơn thành công.")
+                : (false, "Có lỗi xảy ra trong quá trình lưu dữ liệu.");
+        }
     }
 }
