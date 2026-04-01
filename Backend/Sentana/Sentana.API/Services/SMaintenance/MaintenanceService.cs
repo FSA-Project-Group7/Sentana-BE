@@ -12,8 +12,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.SignalR;
-using Sentana.API.Hubs;
 
 namespace Sentana.API.Services.SMaintenance
 {
@@ -33,7 +31,6 @@ namespace Sentana.API.Services.SMaintenance
             _hubContext = hubContext;
         }
 
-        // HÀM MỚI: Lấy danh sách Category thay vì hardcode ở Frontend
         public async Task<(bool IsSuccess, string Message, object? Data)> GetIssueCategoriesAsync()
         {
             var categories = await _context.IssueCategories
@@ -48,7 +45,7 @@ namespace Sentana.API.Services.SMaintenance
             {
                 var myApartments = await _context.ApartmentResidents
                     .Include(ar => ar.Apartment)
-                    .Where(ar => ar.AccountId == residentId && (int)ar.Status == 1 && ar.IsDeleted == false)
+                    .Where(ar => ar.AccountId == residentId && ar.Status == GeneralStatus.Active && ar.IsDeleted == false)
                     .Select(ar => new
                     {
                         ApartmentId = ar.ApartmentId,
@@ -67,8 +64,7 @@ namespace Sentana.API.Services.SMaintenance
 
         public async Task<(bool IsSuccess, string Message, object? Data)> CreateResidentRequestAsync(CreateMaintenanceDto request, int residentId)
         {
-            // 👉 FIX BUG 60 (IDOR): Trạm kiểm soát bảo mật (BẮT BUỘC PHẢI CÓ)
-            // Kiểm tra xem Cư dân này có đang ở trong Căn hộ này và hợp đồng/quan hệ còn Active hay không
+            // Kiểm tra xem Cư dân này có đang ở trong Căn hộ này và hợp đồng còn Active hay không
             var isAuthorized = await _context.ApartmentResidents
                 .AnyAsync(ar => ar.AccountId == residentId
                              && ar.ApartmentId == request.ApartmentId
@@ -77,17 +73,14 @@ namespace Sentana.API.Services.SMaintenance
 
             if (!isAuthorized)
             {
-                // Nếu cố tình truyền bừa ID phòng khác, hoặc phòng đã trả -> Đá văng ra ngoài!
-                return (false, "Bạn không có quyền tạo báo cáo cho căn hộ này, hoặc hợp đồng của bạn đã hết hạn/thanh lý.", null);
+                return (false, "Bạn không có quyền tạo báo cáo cho căn hộ này, hoặc hợp đồng của bạn đã hết hạn.", null);
             }
 
-            // ---------------- THUẬT TOÁN CHÍNH ----------------
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
                 string? uploadedImageUrl = null;
 
-                // XỬ LÝ UPLOAD ẢNH: Gửi file vào folder "maintenance-images" trên MinIO
                 if (request.Photo != null && request.Photo.Length > 0)
                 {
                     uploadedImageUrl = await _minioService.UploadFileAsync(request.Photo, "maintenance-images");
@@ -101,7 +94,7 @@ namespace Sentana.API.Services.SMaintenance
                     Title = request.Title,
                     Description = request.Description,
                     ImageUrl = uploadedImageUrl,
-                    Priority = 1,
+                    Priority = (byte)MaintenancePriority.Low,
                     Status = MaintenanceRequestStatus.Pending,
                     CreateDay = DateTime.Now,
                     CreatedAt = DateTime.Now,
@@ -113,39 +106,24 @@ namespace Sentana.API.Services.SMaintenance
                 await _context.SaveChangesAsync();
 
                 // XỬ LÝ SIGNALR: BẮN THÔNG BÁO REALTIME CHO MANAGER
-                var apartmentInfo = await _context.Apartments
-                    .Include(a => a.Building)
+                var fullRequest = await GetSingleRequestPayloadAsync(newRequest.RequestId);
+                var managerId = await _context.Apartments
                     .Where(a => a.ApartmentId == request.ApartmentId)
-                    .Select(a => new {
-                        ApartmentCode = a.ApartmentCode,
-                        ManagerId = a.Building != null ? a.Building.ManagerId : null
-                    })
+                    .Select(a => a.Building.ManagerId)
                     .FirstOrDefaultAsync();
 
-                if (apartmentInfo != null && apartmentInfo.ManagerId.HasValue)
+                if (managerId.HasValue && fullRequest != null)
                 {
-                    var managerIdStr = apartmentInfo.ManagerId.Value.ToString();
-
-                    // Gói thông tin gửi lên Frontend của Manager
-                    var payload = new
-                    {
-                        requestId = newRequest.RequestId,
-                        apartmentCode = apartmentInfo.ApartmentCode,
-                        title = newRequest.Title,
-                        time = DateTime.Now.ToString("HH:mm dd/MM/yyyy"),
-                        message = $"Có sự cố mới từ P.{apartmentInfo.ApartmentCode}"
-                    };
-
-                    await _hubContext.Clients.User(managerIdStr)
-                        .SendAsync("ReceiveNewMaintenanceRequest", payload);
+                    await _hubContext.Clients.User(managerId.Value.ToString())
+                        .SendAsync("ReceiveNewMaintenanceRequest", fullRequest);
                 }
 
-                await transaction.CommitAsync(); // Hoàn tất an toàn
+                await transaction.CommitAsync();
                 return (true, "Đã gửi yêu cầu bảo trì thành công.", newRequest);
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync(); // Hoàn tác nếu lỗi
+                await transaction.RollbackAsync();
                 var errorMessage = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
                 return (false, $"Từ chối lưu: {errorMessage}", null);
             }
@@ -164,7 +142,7 @@ namespace Sentana.API.Services.SMaintenance
                     Title = m.Title,
                     CategoryName = m.Category != null ? m.Category.CategoryName : "Khác",
                     Description = m.Description,
-                    ImageUrl = m.ImageUrl, // Lấy đường dẫn ảnh trả về cho Frontend hiển thị
+                    ImageUrl = m.ImageUrl,
                     ApartmentCode = m.Apartment != null ? m.Apartment.ApartmentCode : "N/A",
                     Status = (m.Status ?? MaintenanceRequestStatus.Pending).ToString(),
                     CreateDay = m.CreateDay,
@@ -176,6 +154,7 @@ namespace Sentana.API.Services.SMaintenance
             return (true, "Lấy danh sách thành công.", requests);
         }
 
+        // FIX BUG 53 & 54
         public async Task<(bool IsSuccess, string Message, object? Data)> GetMyAssignedTasksAsync(int currentTechId, int pageIndex = 1, int pageSize = 10)
         {
             var query = _context.MaintenanceRequests
@@ -186,6 +165,7 @@ namespace Sentana.API.Services.SMaintenance
             var totalItems = await query.CountAsync();
             var items = await query
                 .OrderByDescending(m => m.Priority)
+                .ThenBy(m => m.CreateDay)
                 .Skip((pageIndex - 1) * pageSize)
                 .Take(pageSize)
                 .Select(m => new MaintenanceTaskDto
@@ -195,6 +175,7 @@ namespace Sentana.API.Services.SMaintenance
                     Description = m.Description,
                     CategoryName = m.Category != null ? m.Category.CategoryName : "Khác",
                     ApartmentCode = m.Apartment != null ? m.Apartment.ApartmentCode : "N/A",
+                    Priority = ((MaintenancePriority)(m.Priority ?? 1)).ToString(),
                     Status = (m.Status ?? MaintenanceRequestStatus.Pending).ToString(),
                     CreateDay = m.CreateDay
                 })
@@ -203,45 +184,87 @@ namespace Sentana.API.Services.SMaintenance
             return (true, "Thành công", new { Items = items, TotalItems = totalItems });
         }
 
+        // FIX BUG 55
         public async Task<(bool IsSuccess, string Message)> AcceptTaskAsync(int requestId, int currentTechId)
         {
             var task = await _context.MaintenanceRequests.FindAsync(requestId);
-            if (task == null) return (false, "Không thấy task.");
-            task.Status = (MaintenanceRequestStatus)2;
-            task.AssignedTo = currentTechId;
+            if (task == null) return (false, "Không tìm thấy công việc.");
+
+            if (task.AssignedTo != currentTechId) return (false, "Lỗi phân quyền: Bạn không thể nhận công việc của người khác.");
+            if (task.Status != MaintenanceRequestStatus.Pending) return (false, "Trạng thái không hợp lệ. Công việc không ở trạng thái Chờ xử lý.");
+
+            task.UpdatedAt = DateTime.Now;
             await _context.SaveChangesAsync();
-            return (true, "Đã nhận task.");
+            return (true, "Đã xác nhận nhận việc.");
         }
 
+        // FIX BUG 56
         public async Task<(bool IsSuccess, string Message)> StartProcessingTaskAsync(int requestId, int currentTechId)
         {
-            var task = await _context.MaintenanceRequests.FindAsync(requestId);
-            if (task == null) return (false, "Không thấy task.");
-            task.Status = (MaintenanceRequestStatus)3;
+            var task = await _context.MaintenanceRequests
+                .Include(m => m.Apartment)
+                .ThenInclude(a => a.Building)
+                .FirstOrDefaultAsync(m => m.RequestId == requestId);
+
+            if (task == null) return (false, "Không tìm thấy công việc.");
+
+            if (task.AssignedTo != currentTechId) return (false, "Lỗi phân quyền: Bạn không thể thao tác trên công việc của người khác.");
+            if (task.Status != MaintenanceRequestStatus.Pending) return (false, "Trạng thái không hợp lệ. Chỉ có thể bắt đầu khi công việc đang ở trạng thái Chờ xử lý.");
+
+            task.Status = MaintenanceRequestStatus.Processing;
+            task.UpdatedAt = DateTime.Now;
             await _context.SaveChangesAsync();
-            return (true, "Đang xử lý.");
+
+            var payload = await GetSingleRequestPayloadAsync(task.RequestId);
+            var managerId = task.Apartment?.Building?.ManagerId;
+            var notifyIds = new List<string> { task.AccountId.ToString()! };
+            if (managerId.HasValue) notifyIds.Add(managerId.Value.ToString());
+
+            await _hubContext.Clients.Users(notifyIds).SendAsync("TaskProcessing", payload);
+
+            return (true, "Đã bắt đầu xử lý.");
         }
 
+        // FIX BUG 57
         public async Task<(bool IsSuccess, string Message)> FixTaskAsync(int requestId, FixTaskRequestDto request, int currentTechId)
         {
-            var task = await _context.MaintenanceRequests.FindAsync(requestId);
-            if (task == null) return (false, "Không thấy task.");
-            task.Status = (MaintenanceRequestStatus)4;
+            var task = await _context.MaintenanceRequests
+                .Include(m => m.Apartment)
+                .ThenInclude(a => a.Building)
+                .FirstOrDefaultAsync(m => m.RequestId == requestId);
+
+            if (task == null) return (false, "Không tìm thấy công việc.");
+
+            if (task.AssignedTo != currentTechId) return (false, "Lỗi phân quyền: Bạn không thể thao tác trên công việc của người khác.");
+            if (task.Status != MaintenanceRequestStatus.Processing) return (false, "Trạng thái không hợp lệ. Chỉ có thể báo cáo hoàn tất khi đang Đang xử lý.");
+
+            task.Status = MaintenanceRequestStatus.Fixed;
             task.ResolutionNote = request.ResolutionNote;
             task.FixDay = DateTime.Now;
+
+            var techAccount = await _context.Accounts.FindAsync(currentTechId);
+            if (techAccount != null) techAccount.TechAvailability = (byte)TechAvailability.Free;
 
             var notif = new Notification
             {
                 AccountId = task.AccountId ?? 0,
                 Title = "Bảo trì hoàn tất",
-                Message = $"Sự cố '{task.Title}' đã được xử lý xong.",
+                Message = $"Sự cố '{task.Title}' đã được kỹ thuật viên xử lý xong.",
                 IsRead = false,
                 CreatedAt = DateTime.Now
             };
             _context.Notifications.Add(notif);
 
             await _context.SaveChangesAsync();
-            return (true, "Đã sửa xong.");
+
+            var payload = await GetSingleRequestPayloadAsync(task.RequestId);
+            var managerId = task.Apartment?.Building?.ManagerId;
+            var notifyIds = new List<string> { task.AccountId.ToString()! };
+            if (managerId.HasValue) notifyIds.Add(managerId.Value.ToString());
+
+            await _hubContext.Clients.Users(notifyIds).SendAsync("ReceiveFixedTask", payload);
+
+            return (true, "Đã cập nhật hoàn tất công việc.");
         }
 
         public async Task<PagedResult<MaintenanceResponseDto>> GetRequestsForManagerAsync(int managerId, int pageIndex = 1, int pageSize = 10)
@@ -305,42 +328,69 @@ namespace Sentana.API.Services.SMaintenance
         public async Task<bool> AssignTechnicianAsync(int requestId, int managerId, AssignMaintenanceRequestDto dto)
         {
             var request = await _context.MaintenanceRequests
-            .Include(m => m.Apartment)
-            .Include(m => m.Category)
-            .Include(m => m.Account).ThenInclude(a => a.Info)
-            .FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
+                .FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
             if (request == null) return false;
+
             var techAccount = await _context.Accounts
-            .Include(a => a.Info)
-            .FirstOrDefaultAsync(a => a.AccountId == dto.TechnicianId && a.RoleId == 3 && a.IsDeleted == false);
+                .FirstOrDefaultAsync(a => a.AccountId == dto.TechnicianId && a.RoleId == 3 && a.IsDeleted == false);
             if (techAccount == null || techAccount.Status != GeneralStatus.Active)
                 throw new Exception("Kỹ thuật viên không tồn tại hoặc tài khoản đã bị khóa.");
+            if (techAccount.TechAvailability == (byte)TechAvailability.Busy)
+                throw new Exception("Kỹ thuật viên này đang bận xử lý công việc khác.");
+
             request.AssignedTo = dto.TechnicianId;
             request.Priority = (byte)dto.Priority;
             request.Status = MaintenanceRequestStatus.Pending;
             request.UpdatedAt = DateTime.Now;
             request.UpdatedBy = managerId;
+
             techAccount.TechAvailability = (byte)TechAvailability.Busy;
             techAccount.UpdatedAt = DateTime.Now;
             techAccount.UpdatedBy = managerId;
+
             await _context.SaveChangesAsync();
-            var payload = new MaintenanceResponseDto
+
+            var payload = await GetSingleRequestPayloadAsync(request.RequestId);
+            if (payload != null)
             {
-                RequestId = request.RequestId,
-                Title = request.Title,
-                Description = request.Description,
-                Priority = dto.Priority,
-                Status = MaintenanceRequestStatus.Pending,
-                CreateDay = request.CreateDay,
-                ApartmentName = request.Apartment?.ApartmentName,
-                CategoryName = request.Category?.CategoryName,
-                ResidentName = request.Account?.Info?.FullName,
-                ImageUrl = request.ImageUrl,
-                UpdatedAt = request.UpdatedAt
-            };
-            await _hubContext.Clients.User(dto.TechnicianId.ToString())
-            .SendAsync(SignalREvents.MAINTENANCE_ASSIGNEDTASK, payload);
+                await _hubContext.Clients.User(dto.TechnicianId.ToString())
+                    .SendAsync("ReceiveAssignedTask", payload);
+            }
+
             return true;
+        }
+
+        // HÀM HELPER DÙNG CHUNG ĐỂ LẤY PAYLOAD GỬI SIGNALR
+        private async Task<MaintenanceResponseDto?> GetSingleRequestPayloadAsync(int requestId)
+        {
+            return await _context.MaintenanceRequests
+                .Include(m => m.Apartment)
+                .Include(m => m.Category)
+                .Include(m => m.Account).ThenInclude(acc => acc.Info)
+                .Include(m => m.AssignedToNavigation).ThenInclude(tech => tech.Info)
+                .Where(m => m.RequestId == requestId)
+                .Select(m => new MaintenanceResponseDto
+                {
+                    RequestId = m.RequestId,
+                    Title = m.Title,
+                    Description = m.Description,
+                    Priority = (MaintenancePriority)(m.Priority ?? (byte)MaintenancePriority.Low),
+                    Status = (MaintenanceRequestStatus)(m.Status ?? MaintenanceRequestStatus.Pending),
+                    CreateDay = m.CreateDay,
+                    FixDay = m.FixDay,
+                    UpdatedAt = m.UpdatedAt,
+                    ApartmentId = m.ApartmentId,
+                    ApartmentName = m.Apartment.ApartmentName ?? m.Apartment.ApartmentCode,
+                    CategoryId = m.CategoryId,
+                    CategoryName = m.Category != null ? m.Category.CategoryName : "Khác",
+                    AccountId = m.AccountId,
+                    ResidentName = m.Account != null && m.Account.Info != null ? m.Account.Info.FullName : "Cư dân ẩn danh",
+                    AssignedTo = m.AssignedTo,
+                    AssignedTechnicianName = m.AssignedToNavigation != null && m.AssignedToNavigation.Info != null ? m.AssignedToNavigation.Info.FullName : null,
+                    ImageUrl = m.ImageUrl,
+                    ResolutionNote = m.ResolutionNote
+                })
+                .FirstOrDefaultAsync();
         }
     }
 }
