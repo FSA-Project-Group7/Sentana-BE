@@ -739,7 +739,8 @@ namespace Sentana.API.Services.SInvoice
 
             // 2. Nhóm dữ liệu theo Căn hộ + Chủ tài khoản (Tránh gộp nhầm nợ chủ cũ/mới)
             var exportData = unpaidInvoices
-                .GroupBy(i => new {
+                .GroupBy(i => new
+                {
                     i.ApartmentId,
                     ApartmentCode = i.Apartment?.ApartmentCode,
                     AccountId = i.Contract?.AccountId, // Điểm mấu chốt để phân biệt
@@ -747,7 +748,8 @@ namespace Sentana.API.Services.SInvoice
                                    ?? i.Contract?.Account?.UserName
                                    ?? "Không xác định"
                 })
-                .Select(g => new {
+                .Select(g => new
+                {
                     RoomNumber = g.Key.ApartmentCode ?? "N/A",
                     ResidentName = g.Key.ResidentName,
                     TotalAmountOwed = g.Sum(i => i.Debt ?? 0)
@@ -802,7 +804,7 @@ namespace Sentana.API.Services.SInvoice
             return await package.GetAsByteArrayAsync();
         }
 
-        // US73 - Change Invoice Status
+        // US73 - Change Invoice Status 
         public async Task<(bool IsSuccess, string Message)> ChangeInvoiceStatusAsync(int invoiceId, ChangeInvoiceStatusDto request, int currentUserId)
         {
             var invoice = await _context.Invoices.FirstOrDefaultAsync(i => i.InvoiceId == invoiceId && i.IsDeleted == false);
@@ -813,7 +815,12 @@ namespace Sentana.API.Services.SInvoice
             if (invoice.Status == request.Status)
                 return (false, "Hóa đơn đã đang ở trạng thái này, không cần thay đổi.");
 
-            // cập nhật Trạng thái
+            if (invoice.Status == InvoiceStatus.PendingVerification)
+                return (false, "Hóa đơn đang có giao dịch chuyển khoản chờ duyệt. Vui lòng xử lý tại màn hình Xét duyệt giao dịch.");
+
+            if (invoice.Status == InvoiceStatus.Draft && request.Status == InvoiceStatus.Paid)
+                return (false, "Không thể thanh toán hóa đơn đang ở trạng thái Nháp.");
+
             invoice.Status = request.Status;
 
             if (request.Status == InvoiceStatus.Paid)
@@ -829,21 +836,35 @@ namespace Sentana.API.Services.SInvoice
                 invoice.DayPay = null;
             }
 
-            // ghi chú
-            if (!string.IsNullOrWhiteSpace(request.Note))
+            // ghi chú 
+            string? cleanNote = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+
+            if (!string.IsNullOrEmpty(cleanNote))
             {
-                invoice.ManagerNote = request.Note;
+                string newLog = $"[{DateTime.Now:dd/MM/yy HH:mm}] {cleanNote}";
+
+                string combinedNote = string.IsNullOrWhiteSpace(invoice.ManagerNote)
+                    ? newLog
+                    : $"{invoice.ManagerNote} | {newLog}";
+
+                invoice.ManagerNote = combinedNote.Length > 500
+                    ? "..." + combinedNote.Substring(combinedNote.Length - 497)
+                    : combinedNote;
             }
 
             invoice.UpdatedAt = DateTime.Now;
             invoice.UpdatedBy = currentUserId;
 
-            _context.Invoices.Update(invoice);
-            bool isSaved = await _context.SaveChangesAsync() > 0;
-
-            return isSaved
-                ? (true, "Đã cập nhật trạng thái hóa đơn thành công.")
-                : (false, "Có lỗi xảy ra trong quá trình lưu dữ liệu.");
+            try
+            {
+                _context.Invoices.Update(invoice);
+                await _context.SaveChangesAsync();
+                return (true, "Đã cập nhật trạng thái hóa đơn thành công.");
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return (false, "Hóa đơn này vừa được cập nhật bởi một người khác. Vui lòng tải lại trang để xem dữ liệu mới nhất.");
+            }
         }
     }
 }
