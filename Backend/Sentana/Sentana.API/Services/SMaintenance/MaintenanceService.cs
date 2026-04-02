@@ -555,5 +555,109 @@ namespace Sentana.API.Services.SMaintenance
             }
             return (true, "Nghiệm thu KHÔNG ĐẠT: Đã trả lại trạng thái Đang xử lý và thông báo yêu cầu thợ làm lại.");
         }
-    }
+
+		public async Task<(bool IsSuccess, string Message)> ResidentAcceptTaskAsync(int requestId, int residentId)
+		{
+			var task = await _context.MaintenanceRequests
+				.Include(m => m.Apartment)
+				.FirstOrDefaultAsync(m => m.RequestId == requestId && m.AccountId == residentId);
+
+			if (task == null) return (false, "Không tìm thấy công việc hoặc bạn không có quyền truy cập.");
+			if (task.Status != MaintenanceRequestStatus.Fixed)
+				return (false, "Sự cố chưa được thợ báo cáo hoàn tất, không thể nghiệm thu.");
+
+			using var transaction = await _context.Database.BeginTransactionAsync();
+			try
+			{
+				// 1. Cập nhật trạng thái sự cố
+				task.Status = MaintenanceRequestStatus.Closed; // Đóng thẻ
+				task.UpdatedAt = DateTime.Now;
+				task.UpdatedBy = residentId;
+
+				// 2. Giải phóng Kỹ thuật viên (Chuyển thành Rảnh)
+				if (task.AssignedTo.HasValue)
+				{
+					var techAccount = await _context.Accounts.FindAsync(task.AssignedTo.Value);
+					if (techAccount != null) techAccount.TechAvailability = (byte)TechAvailability.Free;
+				}
+
+				await _context.SaveChangesAsync();
+
+				// 3. Thông báo SignalR cho Quản lý và Thợ
+				var payload = await GetSingleRequestPayloadAsync(task.RequestId);
+				var notifyIds = new List<string>();
+
+				// Add Manager ID
+				var managerId = task.Apartment?.Building?.ManagerId;
+				if (managerId.HasValue) notifyIds.Add(managerId.Value.ToString());
+
+				// Add Technician ID
+				if (task.AssignedTo.HasValue) notifyIds.Add(task.AssignedTo.Value.ToString());
+
+				if (notifyIds.Any())
+				{
+					// Bạn có thể tạo thêm Event Name mới, hoặc dùng lại MAINTENANCE_TASKCLOSED
+					await _hubContext.Clients.Users(notifyIds).SendAsync(SignalREvents.MAINTENANCE_TASKCLOSED, payload);
+				}
+
+				await transaction.CommitAsync();
+				return (true, "Nghiệm thu thành công! Cảm ơn bạn đã phản hồi.");
+			}
+			catch (Exception ex)
+			{
+				await transaction.RollbackAsync();
+				return (false, $"Lỗi hệ thống khi nghiệm thu: {ex.Message}");
+			}
+		}
+
+		public async Task<(bool IsSuccess, string Message)> ResidentRejectTaskAsync(int requestId, string reason, int residentId)
+		{
+			var task = await _context.MaintenanceRequests
+				.Include(m => m.Apartment)
+				.FirstOrDefaultAsync(m => m.RequestId == requestId && m.AccountId == residentId);
+
+			if (task == null) return (false, "Không tìm thấy công việc hoặc bạn không có quyền.");
+			if (task.Status != MaintenanceRequestStatus.Fixed)
+				return (false, "Chỉ có thể từ chối nghiệm thu khi thợ đã báo cáo hoàn tất (Fixed).");
+
+			// 1. Đẩy lùi trạng thái về Đang xử lý
+			task.Status = MaintenanceRequestStatus.Processing;
+			task.UpdatedAt = DateTime.Now;
+			task.UpdatedBy = residentId;
+
+			// 2. Ghi chú lý do từ chối
+			task.ResolutionNote = $"[CƯ DÂN YÊU CẦU LÀM LẠI: {reason}]\n--- Báo cáo cũ: {task.ResolutionNote}";
+
+			// 3. Tạo Notification trong DB cho Thợ
+			if (task.AssignedTo.HasValue)
+			{
+				var notif = new Notification
+				{
+					AccountId = task.AssignedTo.Value,
+					Title = "Cư dân yêu cầu làm lại",
+					Message = $"Sự cố '{task.Title}' chưa đạt yêu cầu. Lời nhắn: {reason}",
+					IsRead = false,
+					CreatedAt = DateTime.Now
+				};
+				_context.Notifications.Add(notif);
+			}
+
+			await _context.SaveChangesAsync();
+
+			// 4. Bắn SignalR cho Quản lý và Thợ
+			var payload = await GetSingleRequestPayloadAsync(task.RequestId);
+			var notifyIds = new List<string>();
+			var managerId = task.Apartment?.Building?.ManagerId;
+
+			if (managerId.HasValue) notifyIds.Add(managerId.Value.ToString());
+			if (task.AssignedTo.HasValue) notifyIds.Add(task.AssignedTo.Value.ToString());
+
+			if (notifyIds.Any())
+			{
+				await _hubContext.Clients.Users(notifyIds).SendAsync(SignalREvents.MAINTENANCE_TASKREJECTED, payload);
+			}
+
+			return (true, "Đã gửi yêu cầu xử lý lại cho Kỹ thuật viên.");
+		}
+	}
 }

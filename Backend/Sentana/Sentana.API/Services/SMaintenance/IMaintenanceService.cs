@@ -29,5 +29,8 @@ namespace Sentana.API.Services.SMaintenance
 
         // US19 - Track Maintenance Status (Resident)
         Task<MaintenanceStatusDto?> GetMaintenanceStatusAsync(int requestId, int residentId);
-    }
+
+		Task<(bool IsSuccess, string Message)> ResidentAcceptTaskAsync(int requestId, int residentId);
+		Task<(bool IsSuccess, string Message)> ResidentRejectTaskAsync(int requestId, string reason, int residentId);
+	}
 }
