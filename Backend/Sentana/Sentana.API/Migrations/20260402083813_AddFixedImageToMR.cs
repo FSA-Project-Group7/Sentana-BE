@@ -5,7 +5,7 @@
 namespace Sentana.API.Migrations
 {
     /// <inheritdoc />
-    public partial class AddFixedImageUrlToMR : Migration
+    public partial class AddFixedImageToMR : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -13,12 +13,6 @@ namespace Sentana.API.Migrations
             migrationBuilder.AddColumn<string>(
                 name: "FixedImageUrl",
                 table: "MaintenanceRequest",
-                type: "nvarchar(max)",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "TerminationReason",
-                table: "Contract",
                 type: "nvarchar(max)",
                 nullable: true);
         }
@@ -29,10 +23,6 @@ namespace Sentana.API.Migrations
             migrationBuilder.DropColumn(
                 name: "FixedImageUrl",
                 table: "MaintenanceRequest");
-
-            migrationBuilder.DropColumn(
-                name: "TerminationReason",
-                table: "Contract");
         }
     }
 }

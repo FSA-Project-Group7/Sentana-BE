@@ -12,8 +12,8 @@ using Sentana.API.Models;
 namespace Sentana.API.Migrations
 {
     [DbContext(typeof(SentanaContext))]
-    [Migration("20260401084525_AddFixedImageUrlToMR")]
-    partial class AddFixedImageUrlToMR
+    [Migration("20260402083813_AddFixedImageToMR")]
+    partial class AddFixedImageToMR
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -656,6 +656,9 @@ namespace Sentana.API.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
+
+                    b.Property<string>("ManagerNote")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Note")
                         .HasColumnType("nvarchar(max)");
