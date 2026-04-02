@@ -450,7 +450,7 @@ namespace Sentana.API.Migrations
 
                     b.HasIndex("ContractId");
 
-                    b.ToTable("ContractVersions");
+                    b.ToTable("ContractVersions", (string)null);
                 });
 
             modelBuilder.Entity("Sentana.API.Models.ElectricMeter", b =>
@@ -654,9 +654,6 @@ namespace Sentana.API.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
-                    b.Property<string>("ManagerNote")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("Note")
                         .HasColumnType("nvarchar(max)");
 
@@ -769,9 +766,6 @@ namespace Sentana.API.Migrations
                     b.Property<DateTime?>("FixDay")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("FixedImageUrl")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("ImageUrl")
                         .HasColumnType("nvarchar(max)");
 
@@ -860,7 +854,7 @@ namespace Sentana.API.Migrations
                     b.HasKey("NewsId")
                         .HasName("PK__News__954EBDF3375578DC");
 
-                    b.ToTable("News");
+                    b.ToTable("News", (string)null);
                 });
 
             modelBuilder.Entity("Sentana.API.Models.Notification", b =>
@@ -893,7 +887,7 @@ namespace Sentana.API.Migrations
 
                     b.HasIndex("AccountId");
 
-                    b.ToTable("Notifications");
+                    b.ToTable("Notifications", (string)null);
                 });
 
             modelBuilder.Entity("Sentana.API.Models.PaymentTransaction", b =>
@@ -978,7 +972,7 @@ namespace Sentana.API.Migrations
                     b.HasKey("RelationshipId")
                         .HasName("PK__Relation__31FEB881A6A95BFC");
 
-                    b.ToTable("Relationships");
+                    b.ToTable("Relationships", (string)null);
                 });
 
             modelBuilder.Entity("Sentana.API.Models.Role", b =>

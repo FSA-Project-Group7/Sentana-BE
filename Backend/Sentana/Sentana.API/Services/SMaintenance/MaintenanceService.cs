@@ -31,8 +31,7 @@ namespace Sentana.API.Services.SMaintenance
             _context = context;
             _minioService = minioService;
             _hubContext = hubContext;
-            _rabbitMQProducer = rabbitMQProducer; Task<(bool IsSuccess, string Message)> CloseTaskAsync(int requestId, int managerId);
-            Task<(bool IsSuccess, string Message)> RejectTaskAsync(int requestId, RejectTaskRequestDto request, int managerId);
+            _rabbitMQProducer = rabbitMQProducer; 
         }
 
         public async Task<(bool IsSuccess, string Message, object? Data)> GetIssueCategoriesAsync()
