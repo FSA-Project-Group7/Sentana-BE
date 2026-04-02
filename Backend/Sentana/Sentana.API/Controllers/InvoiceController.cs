@@ -241,5 +241,47 @@ namespace Sentana.API.Controllers
 
             return BadRequest(new { message = result.Message });
         }
+
+        // US81 - View Monthly Revenue (Manager)
+        [HttpGet("monthly-revenue")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetMonthlyRevenue([FromQuery] int? year)
+        {
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+                return Unauthorized(ApiResponse<string>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+
+            try
+            {
+                var result = await _invoiceService.GetMonthlyRevenueAsync(managerId, year);
+                if (result == null || !result.Any())
+                    return NotFound(ApiResponse<string>.Fail(404, "Không có dữ liệu doanh thu trong năm này."));
+                return Ok(ApiResponse<List<MonthlyRevenueDto>>.Success(result, "Lấy thống kê doanh thu hàng tháng thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<string>.Fail(500, $"Lỗi hệ thống: {ex.Message}"));
+            }
+        }
+
+        // US14 - View Payment Statistics (Manager)
+        [HttpGet("payment-statistics")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetPaymentStatistics([FromQuery] int? month, [FromQuery] int? year)
+        {
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+                return Unauthorized(ApiResponse<string>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+
+            try
+            {
+                var result = await _invoiceService.GetPaymentStatisticsAsync(managerId, month, year);
+                return Ok(ApiResponse<PaymentStatisticsDto>.Success(result, "Lấy thống kê thanh toán thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<string>.Fail(500, $"Lỗi hệ thống: {ex.Message}"));
+            }
+        }
     }
 }

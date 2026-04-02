@@ -908,5 +908,163 @@ public class ResidentService : IResidentService
             Roommates = roommates
         };
     }
+
+    // US08 - View Roommates (Resident)
+    public async Task<List<RoommateDto>> GetMyRoommatesAsync(int accountId)
+    {
+        // Tìm căn hộ hiện tại của cư dân
+        var myAssignment = await _context.ApartmentResidents
+            .FirstOrDefaultAsync(ar =>
+                ar.AccountId == accountId &&
+                ar.Status == GeneralStatus.Active &&
+                ar.IsDeleted == false);
+
+        if (myAssignment == null || !myAssignment.ApartmentId.HasValue)
+            return new List<RoommateDto>();
+
+        int apartmentId = myAssignment.ApartmentId.Value;
+
+        return await _context.ApartmentResidents
+            .Where(ar =>
+                ar.ApartmentId == apartmentId &&
+                ar.AccountId != accountId &&
+                ar.Status == GeneralStatus.Active &&
+                ar.IsDeleted == false)
+            .Include(ar => ar.Account)
+                .ThenInclude(a => a.Info)
+            .Include(ar => ar.Relationship)
+            .Select(ar => new RoommateDto
+            {
+                AccountId = ar.Account!.AccountId,
+                FullName = ar.Account.Info != null ? ar.Account.Info.FullName : null,
+                PhoneNumber = ar.Account.Info != null ? ar.Account.Info.PhoneNumber : null,
+                Email = ar.Account.Email,
+                Relationship = ar.Relationship != null ? ar.Relationship.RelationshipName : null
+            })
+            .ToListAsync();
+    }
+
+    // US09 - View Electricity Index (Resident)
+    public async Task<List<ElectricityIndexDto>> GetMyElectricityIndexAsync(int accountId, int? month, int? year)
+    {
+        // Lấy căn hộ mà cư dân đang ở
+        var myApartmentIds = await _context.ApartmentResidents
+            .Where(ar =>
+                ar.AccountId == accountId &&
+                ar.Status == GeneralStatus.Active &&
+                ar.IsDeleted == false)
+            .Select(ar => ar.ApartmentId)
+            .ToListAsync();
+
+        if (!myApartmentIds.Any())
+            return new List<ElectricityIndexDto>();
+
+        var query = _context.ElectricMeters
+            .Include(e => e.Apartment)
+            .Where(e =>
+                myApartmentIds.Contains(e.ApartmentId) &&
+                e.IsDeleted == false);
+
+        if (month.HasValue)
+            query = query.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Month == month.Value);
+        if (year.HasValue)
+            query = query.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Year == year.Value);
+
+        var meters = await query
+            .OrderByDescending(e => e.RegistrationDate)
+            .ToListAsync();
+
+        return meters.Select(e => new ElectricityIndexDto
+        {
+            ElectricMeterId = e.ElectricMeterId,
+            ApartmentId = e.ApartmentId,
+            ApartmentCode = e.Apartment?.ApartmentCode,
+            RegistrationDate = e.RegistrationDate,
+            OldIndex = e.OldIndex,
+            NewIndex = e.NewIndex,
+            Consumption = (e.NewIndex ?? 0) - (e.OldIndex ?? 0),
+            Price = e.Price ?? 3500m,
+            TotalAmount = ((e.NewIndex ?? 0) - (e.OldIndex ?? 0)) * (e.Price ?? 3500m),
+            Status = e.Status.HasValue ? e.Status.Value.ToString() : null
+        }).ToList();
+    }
+
+    // US10 - View Water Index (Resident)
+    public async Task<List<WaterIndexDto>> GetMyWaterIndexAsync(int accountId, int? month, int? year)
+    {
+        var myApartmentIds = await _context.ApartmentResidents
+            .Where(ar =>
+                ar.AccountId == accountId &&
+                ar.Status == GeneralStatus.Active &&
+                ar.IsDeleted == false)
+            .Select(ar => ar.ApartmentId)
+            .ToListAsync();
+
+        if (!myApartmentIds.Any())
+            return new List<WaterIndexDto>();
+
+        var query = _context.WaterMeters
+            .Include(w => w.Apartment)
+            .Where(w =>
+                myApartmentIds.Contains(w.ApartmentId) &&
+                w.IsDeleted == false);
+
+        if (month.HasValue)
+            query = query.Where(w => w.RegistrationDate.HasValue && w.RegistrationDate.Value.Month == month.Value);
+        if (year.HasValue)
+            query = query.Where(w => w.RegistrationDate.HasValue && w.RegistrationDate.Value.Year == year.Value);
+
+        var meters = await query
+            .OrderByDescending(w => w.RegistrationDate)
+            .ToListAsync();
+
+        return meters.Select(w => new WaterIndexDto
+        {
+            WaterMeterId = w.WaterMeterId,
+            ApartmentId = w.ApartmentId,
+            ApartmentCode = w.Apartment?.ApartmentCode,
+            RegistrationDate = w.RegistrationDate,
+            OldIndex = w.OldIndex,
+            NewIndex = w.NewIndex,
+            Consumption = (w.NewIndex ?? 0) - (w.OldIndex ?? 0),
+            Price = w.Price ?? 25000m,
+            TotalAmount = ((w.NewIndex ?? 0) - (w.OldIndex ?? 0)) * (w.Price ?? 25000m),
+            Status = w.Status.HasValue ? w.Status.Value.ToString() : null
+        }).ToList();
+    }
+
+    // US11 - View Service Fees (Resident)
+    public async Task<List<ServiceFeeDto>> GetMyServiceFeesAsync(int accountId)
+    {
+        var myApartmentIds = await _context.ApartmentResidents
+            .Where(ar =>
+                ar.AccountId == accountId &&
+                ar.Status == GeneralStatus.Active &&
+                ar.IsDeleted == false)
+            .Select(ar => ar.ApartmentId)
+            .ToListAsync();
+
+        if (!myApartmentIds.Any())
+            return new List<ServiceFeeDto>();
+
+        return await _context.ApartmentServices
+            .Include(s => s.Service)
+            .Where(s =>
+                myApartmentIds.Contains(s.ApartmentId) &&
+                s.IsDeleted == false &&
+                s.Status == GeneralStatus.Active)
+            .Select(s => new ServiceFeeDto
+            {
+                Id = s.Id,
+                ServiceId = s.ServiceId,
+                ServiceName = s.Service != null ? s.Service.ServiceName : null,
+                Description = s.Service != null ? s.Service.Description : null,
+                ActualPrice = s.ActualPrice,
+                StartDay = s.StartDay,
+                EndDay = s.EndDay,
+                Status = s.Status.HasValue ? s.Status.Value.ToString() : null
+            })
+            .ToListAsync();
+    }
    
 }
