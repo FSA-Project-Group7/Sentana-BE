@@ -6,5 +6,7 @@ namespace Sentana.API.DTOs.Maintenance
     {
         [Required(ErrorMessage = "Ghi chú giải quyết (Resolution note) là bắt buộc.")]
         public string ResolutionNote { get; set; } = null!;
+
+        public IFormFile? Photo { get; set; }
     }
 }

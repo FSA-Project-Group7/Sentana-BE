@@ -5,13 +5,13 @@
 namespace Sentana.API.Migrations
 {
     /// <inheritdoc />
-    public partial class AddImageUrlToMantenanceRequest : Migration
+    public partial class AddFixedImageToMR : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<string>(
-                name: "ImageUrl",
+                name: "FixedImageUrl",
                 table: "MaintenanceRequest",
                 type: "nvarchar(max)",
                 nullable: true);
@@ -21,7 +21,7 @@ namespace Sentana.API.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(
-                name: "ImageUrl",
+                name: "FixedImageUrl",
                 table: "MaintenanceRequest");
         }
     }

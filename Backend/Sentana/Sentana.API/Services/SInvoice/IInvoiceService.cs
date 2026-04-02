@@ -21,7 +21,14 @@ namespace Sentana.API.Services.SInvoice
         Task<(bool IsSuccess, string Message)> SendInvoiceNotificationAsync(int invoiceId);
         
         Task<List<OutstandingDebtItemDto>> GetOutstandingDebtsAsync();
+        Task<(bool IsSuccess, string Message)> ChangeInvoiceStatusAsync(int invoiceId, ChangeInvoiceStatusDto request, int currentUserId);
 
         Task<byte[]> ExportDebtReportAsync();
+
+        // US81 - View Monthly Revenue (Manager)
+        Task<List<MonthlyRevenueDto>> GetMonthlyRevenueAsync(int managerId, int? year);
+
+        // US14 - View Payment Statistics (Manager)
+        Task<PaymentStatisticsDto> GetPaymentStatisticsAsync(int managerId, int? month, int? year);
     }
 }

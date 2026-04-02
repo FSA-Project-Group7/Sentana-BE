@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Sentana.API.DTOs.Building;
+using Sentana.API.DTOs.Resident;
 using Sentana.API.Models;
 
 namespace Sentana.API.Services.SBuilding
@@ -15,6 +16,11 @@ namespace Sentana.API.Services.SBuilding
 		Task<bool> RestoreBuildingAsync(int id);
 		Task<bool> HardDeleteBuildingAsync(int id);
         Task<IEnumerable<BuildingResponseDto>> GetBuildingListAsync(int? managerId = null);
+
+        // US79 - View Occupancy Dashboard (Manager)
+        Task<OccupancyDashboardDto> GetOccupancyDashboardAsync(int managerId);
+
+        // US80 - View Total Residents KPI (Manager)
+        Task<ResidentKpiDto> GetResidentKpiAsync(int managerId);
     }
 }
-

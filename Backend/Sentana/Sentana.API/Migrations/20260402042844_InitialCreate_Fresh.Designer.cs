@@ -12,8 +12,8 @@ using Sentana.API.Models;
 namespace Sentana.API.Migrations
 {
     [DbContext(typeof(SentanaContext))]
-    [Migration("20260331144103_AddNoteToInvoice")]
-    partial class AddNoteToInvoice
+    [Migration("20260402042844_InitialCreate_Fresh")]
+    partial class InitialCreate_Fresh
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -396,6 +396,9 @@ namespace Sentana.API.Migrations
                     b.Property<byte?>("Status")
                         .HasColumnType("tinyint");
 
+                    b.Property<string>("TerminationReason")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -653,6 +656,9 @@ namespace Sentana.API.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
+
+                    b.Property<string>("ManagerNote")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Note")
                         .HasColumnType("nvarchar(max)");

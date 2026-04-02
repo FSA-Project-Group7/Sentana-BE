@@ -21,5 +21,8 @@ namespace Sentana.API.Services
         Task<ApiResponse<object>> SoftDeleteContractAsync(int contractId);
         Task<ApiResponse<object>> RestoreContractAsync(int contractId);
         Task<ApiResponse<object>> HardDeleteContractAsync(int contractId);
+
+        // US21 - View Deposit Settlement
+        Task<DepositSettlementDto?> GetDepositSettlementAsync(int contractId, int? requestingAccountId = null);
     }
 }

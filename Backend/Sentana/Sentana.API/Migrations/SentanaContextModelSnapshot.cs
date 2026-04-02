@@ -393,6 +393,9 @@ namespace Sentana.API.Migrations
                     b.Property<byte?>("Status")
                         .HasColumnType("tinyint");
 
+                    b.Property<string>("TerminationReason")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -651,6 +654,9 @@ namespace Sentana.API.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<string>("ManagerNote")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Note")
                         .HasColumnType("nvarchar(max)");
 
@@ -762,6 +768,9 @@ namespace Sentana.API.Migrations
 
                     b.Property<DateTime?>("FixDay")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("FixedImageUrl")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("ImageUrl")
                         .HasColumnType("nvarchar(max)");

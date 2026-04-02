@@ -53,6 +53,7 @@ public partial class Invoice
     public bool? IsDeleted { get; set; }
 
     public string? Note { get; set; }
+    public string? ManagerNote { get; set; } // Dành cho Quản lý ghi chú khi đổi trạng thái/thu tiền
 
     public virtual Apartment? Apartment { get; set; }
 

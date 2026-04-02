@@ -8,5 +8,7 @@ namespace Sentana.API.Services.SStorage
         Task<string> UploadContractAsync(IFormFile file, int contractId, decimal version);
 
         Task<string> UploadFileAsync(IFormFile file, string folderName);
+
+        Task<string> UploadImageAsync(IFormFile file, string folderName);
     }
 }
