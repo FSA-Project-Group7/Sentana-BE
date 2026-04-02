@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using Sentana.API.DTOs.Contracts;
@@ -120,6 +120,28 @@ namespace Sentana.API.Controllers
         {
             var result = await _contractService.HardDeleteContractAsync(id);
             return StatusCode(result.StatusCode, result);
+        }
+
+        // US21 - View Deposit Settlement (Manager: any contract, Resident: own only)
+        [HttpGet("{id}/deposit-settlement")]
+        [Authorize(Roles = "Manager,Resident")]
+        public async Task<IActionResult> GetDepositSettlement(int id)
+        {
+            var accountIdClaim = User.FindFirst("AccountId")?.Value;
+            if (string.IsNullOrEmpty(accountIdClaim) || !int.TryParse(accountIdClaim, out int currentUserId))
+                return Unauthorized("Token không hợp lệ");
+
+            bool isManager = User.IsInRole("Manager");
+
+            // Resident chỉ xem được hợp đồng của mình
+            int? requestingAccountId = isManager ? null : currentUserId;
+
+            var result = await _contractService.GetDepositSettlementAsync(id, requestingAccountId);
+
+            if (result == null)
+                return NotFound(new { message = "Không tìm thấy hợp đồng hoặc bạn không có quyền xem." });
+
+            return Ok(result);
         }
     }
 }

@@ -21,5 +21,11 @@ namespace Sentana.API.Services.SMaintenance
         Task<PagedResult<MaintenanceResponseDto>> GetRequestsForManagerAsync(int managerId, int pageIndex = 1, int pageSize = 10);
 
         Task<bool> AssignTechnicianAsync(int requestId, int managerId, AssignMaintenanceRequestDto dto);
+
+        // US18 - View Maintenance History (Resident)
+        Task<List<MaintenanceHistoryDto>> GetMyMaintenanceHistoryAsync(int residentId);
+
+        // US19 - Track Maintenance Status (Resident)
+        Task<MaintenanceStatusDto?> GetMaintenanceStatusAsync(int requestId, int residentId);
     }
 }

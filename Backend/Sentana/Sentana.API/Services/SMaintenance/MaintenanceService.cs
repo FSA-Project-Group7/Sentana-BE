@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Sentana.API.Constants;
 using Sentana.API.DTOs.Common;
@@ -389,6 +389,70 @@ namespace Sentana.API.Services.SMaintenance
                     AssignedTechnicianName = m.AssignedToNavigation != null && m.AssignedToNavigation.Info != null ? m.AssignedToNavigation.Info.FullName : null,
                     ImageUrl = m.ImageUrl,
                     ResolutionNote = m.ResolutionNote
+                })
+                .FirstOrDefaultAsync();
+        }
+
+        // US18 - View Maintenance History (Resident)
+        public async Task<List<MaintenanceHistoryDto>> GetMyMaintenanceHistoryAsync(int residentId)
+        {
+            return await _context.MaintenanceRequests
+                .Include(m => m.Category)
+                .Include(m => m.Apartment)
+                .Include(m => m.AssignedToNavigation)
+                    .ThenInclude(tech => tech.Info)
+                .Where(m => m.AccountId == residentId && m.IsDeleted == false)
+                .OrderByDescending(m => m.CreateDay)
+                .Select(m => new MaintenanceHistoryDto
+                {
+                    RequestId = m.RequestId,
+                    ApartmentId = m.ApartmentId,
+                    ApartmentCode = m.Apartment != null ? m.Apartment.ApartmentCode : null,
+                    CategoryId = m.CategoryId,
+                    CategoryName = m.Category != null ? m.Category.CategoryName : "Khác",
+                    Title = m.Title,
+                    Description = m.Description,
+                    ResolutionNote = m.ResolutionNote,
+                    Priority = m.Priority,
+                    PriorityName = m.Priority.HasValue ? ((MaintenancePriority)m.Priority.Value).ToString() : null,
+                    CreateDay = m.CreateDay,
+                    FixDay = m.FixDay,
+                    AssignedToName = m.AssignedToNavigation != null && m.AssignedToNavigation.Info != null
+                        ? m.AssignedToNavigation.Info.FullName
+                        : null,
+                    Status = m.Status.HasValue ? m.Status.Value.ToString() : null,
+                    ImageUrl = m.ImageUrl
+                })
+                .ToListAsync();
+        }
+
+        // US19 - Track Maintenance Status (Resident)
+        public async Task<MaintenanceStatusDto?> GetMaintenanceStatusAsync(int requestId, int residentId)
+        {
+            return await _context.MaintenanceRequests
+                .Include(m => m.Category)
+                .Include(m => m.Apartment)
+                .Include(m => m.AssignedToNavigation)
+                    .ThenInclude(tech => tech.Info)
+                .Where(m => m.RequestId == requestId
+                         && m.AccountId == residentId    // Chỉ được xem request của chính mình
+                         && m.IsDeleted == false)
+                .Select(m => new MaintenanceStatusDto
+                {
+                    RequestId = m.RequestId,
+                    Title = m.Title,
+                    Description = m.Description,
+                    CategoryName = m.Category != null ? m.Category.CategoryName : "Khác",
+                    ApartmentCode = m.Apartment != null ? m.Apartment.ApartmentCode : null,
+                    PriorityName = m.Priority.HasValue ? ((MaintenancePriority)m.Priority.Value).ToString() : null,
+                    Status = m.Status.HasValue ? m.Status.Value.ToString() : null,
+                    AssignedTechnicianName = m.AssignedToNavigation != null && m.AssignedToNavigation.Info != null
+                        ? m.AssignedToNavigation.Info.FullName
+                        : null,
+                    CreateDay = m.CreateDay,
+                    FixDay = m.FixDay,
+                    ResolutionNote = m.ResolutionNote,
+                    ImageUrl = m.ImageUrl
                 })
                 .FirstOrDefaultAsync();
         }
