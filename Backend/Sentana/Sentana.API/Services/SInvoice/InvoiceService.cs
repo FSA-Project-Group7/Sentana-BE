@@ -815,11 +815,11 @@ namespace Sentana.API.Services.SInvoice
             if (invoice.Status == request.Status)
                 return (false, "Hóa đơn đã đang ở trạng thái này, không cần thay đổi.");
 
-            if (invoice.Status == InvoiceStatus.PendingVerification)
-                return (false, "Hóa đơn đang có giao dịch chuyển khoản chờ duyệt. Vui lòng xử lý tại màn hình Xét duyệt giao dịch.");
+            if (invoice.Status == InvoiceStatus.Paid)
+                return (false, "Hóa đơn này đã được thanh toán hoàn tất, không thể thay đổi trạng thái.");
 
-            if (invoice.Status == InvoiceStatus.Draft && request.Status == InvoiceStatus.Paid)
-                return (false, "Không thể thanh toán hóa đơn đang ở trạng thái Nháp.");
+            if (request.Status == InvoiceStatus.Unpaid && string.IsNullOrWhiteSpace(request.Note))
+                return (false, "Bắt buộc phải nhập Lý do (Ghi chú) khi chuyển hóa đơn về trạng thái Chưa thanh toán.");
 
             invoice.Status = request.Status;
 
@@ -836,7 +836,7 @@ namespace Sentana.API.Services.SInvoice
                 invoice.DayPay = null;
             }
 
-            // ghi chú 
+            // Ghi chú nội bộ 
             string? cleanNote = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
 
             if (!string.IsNullOrEmpty(cleanNote))

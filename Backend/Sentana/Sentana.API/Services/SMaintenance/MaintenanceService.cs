@@ -340,6 +340,12 @@ namespace Sentana.API.Services.SMaintenance
             var request = await _context.MaintenanceRequests
                 .FirstOrDefaultAsync(m => m.RequestId == requestId && m.IsDeleted == false);
             if (request == null) return false;
+            if (request.Status == MaintenanceRequestStatus.Closed ||
+                request.Status == MaintenanceRequestStatus.Canceled ||
+                request.Status == MaintenanceRequestStatus.Fixed)
+            {
+                throw new Exception("Không thể phân công thợ cho yêu cầu đã hoàn tất, đã đóng hoặc bị hủy.");
+            }
 
             var techAccount = await _context.Accounts
                 .FirstOrDefaultAsync(a => a.AccountId == dto.TechnicianId && a.RoleId == 3 && a.IsDeleted == false);
