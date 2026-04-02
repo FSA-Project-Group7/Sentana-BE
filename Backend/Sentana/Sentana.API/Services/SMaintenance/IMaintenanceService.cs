@@ -21,5 +21,7 @@ namespace Sentana.API.Services.SMaintenance
         Task<PagedResult<MaintenanceResponseDto>> GetRequestsForManagerAsync(int managerId, int pageIndex = 1, int pageSize = 10);
 
         Task<bool> AssignTechnicianAsync(int requestId, int managerId, AssignMaintenanceRequestDto dto);
+        Task<(bool IsSuccess, string Message)> CloseTaskAsync(int requestId, int managerId);
+        Task<(bool IsSuccess, string Message)> RejectTaskAsync(int requestId, RejectTaskRequestDto request, int managerId);
     }
 }

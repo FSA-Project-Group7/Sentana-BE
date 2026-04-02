@@ -6,6 +6,7 @@
         public const string MAINTENANCE_ASSIGNEDTASK = "ReceiveAssignedTask";        // Gửi cho Technician
         public const string MAINTENANCE_TASKPROCESSING = "TaskProcessing";           // Gửi cho Manager & Resident
         public const string MAINTENANCE_TASKFIXED = "ReceiveFixedTask";              // Gửi cho Manager & Resident
-        public const string MMAINTENANCE_TASKCLOSED = "TaskClosed"; // Gửi cho Resident
+        public const string MAINTENANCE_TASKCLOSED = "TaskClosed"; // Gửi cho Resident
+        public const string MAINTENANCE_TASKREJECTED = "TaskRejectedByManager";
     }
 }

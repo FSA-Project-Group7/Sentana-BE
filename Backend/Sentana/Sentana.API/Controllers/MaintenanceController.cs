@@ -88,7 +88,7 @@ namespace Sentana.API.Controllers
 
         [HttpPut("{id}/fix")]
         [Authorize(Roles = "Technician")]
-        public async Task<IActionResult> FixTask(int id, [FromBody] FixTaskRequestDto request)
+        public async Task<IActionResult> FixTask(int id, [FromForm] FixTaskRequestDto request)
         {
             var userId = GetCurrentUserId();
             var result = await _maintenanceService.FixTaskAsync(id, request, userId);
@@ -143,6 +143,32 @@ namespace Sentana.API.Controllers
             {
                 return StatusCode(500, ApiResponse<string>.Fail(500, ex.Message));
             }
+        }
+
+        [HttpPut("{id}/close")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> CloseTask(int id)
+        {
+            var managerId = GetCurrentUserId();
+            var result = await _maintenanceService.CloseTaskAsync(id, managerId);
+
+            if (!result.IsSuccess)
+                return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+
+            return Ok(ApiResponse<string>.Success(null, result.Message));
+        }
+
+        [HttpPut("{id}/reject")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> RejectTask(int id, [FromBody] RejectTaskRequestDto request)
+        {
+            var managerId = GetCurrentUserId();
+            var result = await _maintenanceService.RejectTaskAsync(id, request, managerId);
+
+            if (!result.IsSuccess)
+                return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+
+            return Ok(ApiResponse<string>.Success(null, result.Message));
         }
     }
 }
