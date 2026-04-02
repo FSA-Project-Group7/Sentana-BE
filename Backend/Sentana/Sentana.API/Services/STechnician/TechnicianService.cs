@@ -354,5 +354,19 @@ namespace Sentana.API.Services.STechnician
                 });
             return await query.ToListAsync();
         }
-    }
+
+		public async Task<TechnicianResponseDto> GetTechnicianProfileById(int accountId)
+		{
+			// Sử dụng lại hàm nội bộ đã có sẵn của nhóm bạn
+			var technician = await GetTechnicianById(accountId);
+
+			if (technician == null || technician.IsDeleted == true)
+			{
+				throw new Exception("Kỹ thuật viên không tồn tại hoặc đã bị khóa/xóa khỏi hệ thống.");
+			}
+
+			// Gọi hàm Map có sẵn để trả về đúng TechnicianResponseDto
+			return MapToResponseDto(technician);
+		}
+	}
 }
