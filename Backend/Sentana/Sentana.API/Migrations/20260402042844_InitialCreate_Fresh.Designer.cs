@@ -12,8 +12,8 @@ using Sentana.API.Models;
 namespace Sentana.API.Migrations
 {
     [DbContext(typeof(SentanaContext))]
-    [Migration("20260318080826_AddNotificationTable")]
-    partial class AddNotificationTable
+    [Migration("20260402042844_InitialCreate_Fresh")]
+    partial class InitialCreate_Fresh
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -58,6 +58,9 @@ namespace Sentana.API.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
+
+                    b.Property<bool>("IsFirstLogin")
+                        .HasColumnType("bit");
 
                     b.Property<string>("Password")
                         .HasMaxLength(255)
@@ -308,6 +311,9 @@ namespace Sentana.API.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<int?>("ManagerId")
+                        .HasColumnType("int");
+
                     b.Property<byte?>("Status")
                         .HasColumnType("tinyint");
 
@@ -319,6 +325,8 @@ namespace Sentana.API.Migrations
 
                     b.HasKey("BuildingId")
                         .HasName("PK__Building__5463CDC426E62496");
+
+                    b.HasIndex("ManagerId");
 
                     b.ToTable("Building", (string)null);
                 });
@@ -387,6 +395,9 @@ namespace Sentana.API.Migrations
 
                     b.Property<byte?>("Status")
                         .HasColumnType("tinyint");
+
+                    b.Property<string>("TerminationReason")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -542,7 +553,7 @@ namespace Sentana.API.Migrations
                         .HasColumnType("nvarchar(255)");
 
                     b.Property<DateTime?>("BirthDay")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("date");
 
                     b.Property<string>("City")
                         .HasMaxLength(100)
@@ -646,6 +657,12 @@ namespace Sentana.API.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
+                    b.Property<string>("ManagerNote")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<decimal?>("Pay")
                         .HasColumnType("decimal(18, 2)");
 
@@ -676,13 +693,15 @@ namespace Sentana.API.Migrations
                     b.HasKey("InvoiceId")
                         .HasName("PK__Invoice__D796AAB55697E9EC");
 
-                    b.HasIndex("ApartmentId");
-
                     b.HasIndex("ContractId");
 
                     b.HasIndex("ElectricMeterId");
 
                     b.HasIndex("WaterMeterId");
+
+                    b.HasIndex("ApartmentId", "BillingMonth", "BillingYear")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
 
                     b.ToTable("Invoice", (string)null);
                 });
@@ -753,6 +772,9 @@ namespace Sentana.API.Migrations
                     b.Property<DateTime?>("FixDay")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<bool?>("IsDeleted")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -760,6 +782,9 @@ namespace Sentana.API.Migrations
 
                     b.Property<byte?>("Priority")
                         .HasColumnType("tinyint");
+
+                    b.Property<string>("ResolutionNote")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<byte?>("Status")
                         .HasColumnType("tinyint");
@@ -905,6 +930,12 @@ namespace Sentana.API.Migrations
                     b.Property<string>("PaymentProofImage")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<byte?>("Status")
                         .HasColumnType("tinyint");
@@ -1125,6 +1156,15 @@ namespace Sentana.API.Migrations
                     b.Navigation("Apartment");
 
                     b.Navigation("Service");
+                });
+
+            modelBuilder.Entity("Sentana.API.Models.Building", b =>
+                {
+                    b.HasOne("Sentana.API.Models.Account", "Manager")
+                        .WithMany()
+                        .HasForeignKey("ManagerId");
+
+                    b.Navigation("Manager");
                 });
 
             modelBuilder.Entity("Sentana.API.Models.Contract", b =>
