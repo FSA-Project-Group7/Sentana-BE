@@ -119,7 +119,7 @@ namespace Sentana.API.Services.SMaintenance
                 if (managerId.HasValue && fullRequest != null)
                 {
                     await _hubContext.Clients.User(managerId.Value.ToString())
-                        .SendAsync("ReceiveNewMaintenanceRequest", fullRequest);
+                        .SendAsync(SignalREvents.MAINTENANCE_REQUEST, fullRequest);
                 }
 
                 await transaction.CommitAsync();
@@ -224,7 +224,7 @@ namespace Sentana.API.Services.SMaintenance
             var notifyIds = new List<string> { task.AccountId.ToString()! };
             if (managerId.HasValue) notifyIds.Add(managerId.Value.ToString());
 
-            await _hubContext.Clients.Users(notifyIds).SendAsync("TaskProcessing", payload);
+            await _hubContext.Clients.Users(notifyIds).SendAsync(SignalREvents.MAINTENANCE_TASKPROCESSING, payload);
 
             return (true, "Đã bắt đầu xử lý.");
         }

@@ -211,7 +211,35 @@ namespace Sentana.API.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, ApiResponse<string>.Fail(500, $"Lỗi xuất file Excel: {ex.Message}"));
+     
+            
             }
+        }
+
+        [HttpPut("{invoiceId}/status")]
+        [Authorize(Roles = "Manager")] 
+        public async Task<IActionResult> ChangeInvoiceStatus(int invoiceId, [FromBody] ChangeInvoiceStatusDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            // Lấy ID của Quản lý đang thực hiện thao tác từ Token
+            var userIdClaim = User.FindFirst("AccountId")?.Value;
+            if (!int.TryParse(userIdClaim, out int currentUserId))
+            {
+                return Unauthorized(new { message = "Xác thực danh tính thất bại. Vui lòng đăng nhập lại." });
+            }
+
+            var result = await _invoiceService.ChangeInvoiceStatusAsync(invoiceId, request, currentUserId);
+
+            if (result.IsSuccess)
+            {
+                return Ok(new { message = result.Message });
+            }
+
+            return BadRequest(new { message = result.Message });
         }
     }
 }
