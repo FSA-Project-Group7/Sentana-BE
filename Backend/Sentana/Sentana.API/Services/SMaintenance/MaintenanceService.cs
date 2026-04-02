@@ -6,6 +6,7 @@ using Sentana.API.DTOs.Maintenance;
 using Sentana.API.Enums;
 using Sentana.API.Hubs;
 using Sentana.API.Models;
+using Sentana.API.Services.SRabbitMQ;
 using Sentana.API.Services.SStorage;
 using System;
 using System.Collections.Generic;
@@ -20,15 +21,17 @@ namespace Sentana.API.Services.SMaintenance
         private readonly SentanaContext _context;
         private readonly IMinioService _minioService;
         private readonly IHubContext<NotificationHub> _hubContext;
+        private readonly IRabbitMQProducer _rabbitMQProducer;
 
         public MaintenanceService(
             SentanaContext context,
             IMinioService minioService,
-            IHubContext<NotificationHub> hubContext)
+            IHubContext<NotificationHub> hubContext, IRabbitMQProducer rabbitMQProducer)
         {
             _context = context;
             _minioService = minioService;
             _hubContext = hubContext;
+            _rabbitMQProducer = rabbitMQProducer; 
         }
 
         public async Task<(bool IsSuccess, string Message, object? Data)> GetIssueCategoriesAsync()
@@ -238,12 +241,18 @@ namespace Sentana.API.Services.SMaintenance
             if (task.AssignedTo != currentTechId) return (false, "Lỗi phân quyền: Bạn không thể thao tác trên công việc của người khác.");
             if (task.Status != MaintenanceRequestStatus.Processing) return (false, "Trạng thái không hợp lệ. Chỉ có thể báo cáo hoàn tất khi đang Đang xử lý.");
 
+            string? uploadedImageUrl = null;
+            if (request.Photo != null && request.Photo.Length > 0)
+            {
+                uploadedImageUrl = await _minioService.UploadImageAsync(request.Photo, "maintenance-fixed-images");
+            }
             task.Status = MaintenanceRequestStatus.Fixed;
             task.ResolutionNote = request.ResolutionNote;
             task.FixDay = DateTime.Now;
-
-            var techAccount = await _context.Accounts.FindAsync(currentTechId);
-            if (techAccount != null) techAccount.TechAvailability = (byte)TechAvailability.Free;
+            if (uploadedImageUrl != null)
+            {
+                task.FixedImageUrl = uploadedImageUrl;
+            }
 
             var notif = new Notification
             {
@@ -312,7 +321,8 @@ namespace Sentana.API.Services.SMaintenance
                     AssignedTechnicianName = m.AssignedToNavigation != null && m.AssignedToNavigation.Info != null ? m.AssignedToNavigation.Info.FullName : null,
                     ImageUrl = m.ImageUrl,
 
-                    ResolutionNote = m.ResolutionNote
+                    ResolutionNote = m.ResolutionNote,
+                    FixedImageUrl = m.FixedImageUrl
                 })
                 .ToListAsync();
 
@@ -388,7 +398,8 @@ namespace Sentana.API.Services.SMaintenance
                     AssignedTo = m.AssignedTo,
                     AssignedTechnicianName = m.AssignedToNavigation != null && m.AssignedToNavigation.Info != null ? m.AssignedToNavigation.Info.FullName : null,
                     ImageUrl = m.ImageUrl,
-                    ResolutionNote = m.ResolutionNote
+                    ResolutionNote = m.ResolutionNote,
+                    FixedImageUrl = m.FixedImageUrl
                 })
                 .FirstOrDefaultAsync();
         }
@@ -455,6 +466,88 @@ namespace Sentana.API.Services.SMaintenance
                     ImageUrl = m.ImageUrl
                 })
                 .FirstOrDefaultAsync();
+        }
+
+        public async Task<(bool IsSuccess, string Message)> CloseTaskAsync(int requestId, int managerId)
+        {
+            var task = await _context.MaintenanceRequests
+            .Include(m => m.Account).ThenInclude(a => a.Info)
+            .Include(m => m.AssignedToNavigation).ThenInclude(t => t.Info)
+            .FirstOrDefaultAsync(m => m.RequestId == requestId);
+            if (task == null) return (false, "Không tìm thấy công việc.");
+            if (task.Status != MaintenanceRequestStatus.Fixed)
+                return (false, "Chỉ có thể đóng phiếu khi thợ đã báo cáo hoàn tất (Fixed).");
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                task.Status = MaintenanceRequestStatus.Closed;
+                task.UpdatedAt = DateTime.Now;
+                task.UpdatedBy = managerId;
+                if (task.AssignedTo.HasValue)
+                {
+                    var techAccount = await _context.Accounts.FindAsync(task.AssignedTo.Value);
+                    if (techAccount != null) techAccount.TechAvailability = (byte)TechAvailability.Free;
+                }
+                await _context.SaveChangesAsync();
+                if (task.Account != null && !string.IsNullOrEmpty(task.Account.Email))
+                {
+                    var emailContent = $@"
+                    <h3>Báo cáo hoàn tất yêu cầu bảo trì</h3>
+                    <p>Chào bạn {task.Account.Info?.FullName},</p>
+                    <p>Yêu cầu bảo trì <strong>'{task.Title}'</strong> của bạn đã được Ban quản lý nghiệm thu thành công.</p>
+                    <ul>
+                        <li>Kỹ thuật viên phụ trách: {task.AssignedToNavigation?.Info?.FullName}</li>
+                        <li>Thời gian hoàn thành: {task.FixDay?.ToString("dd/MM/yyyy HH:mm")}</li>
+                        <li>Ghi chú của thợ: {task.ResolutionNote}</li>
+                    </ul>
+                    <p>Cảm ơn bạn đã đồng hành cùng Sentana!</p>";
+
+                    var emailDto = new Sentana.API.DTOs.Email.EmailMessageDto
+                    {
+                        To = task.Account.Email,
+                        Subject = $"[Sentana] Nghiệm thu hoàn tất: {task.Title}",
+                        Body = emailContent
+                    };
+                    await _rabbitMQProducer.SendEmailMessage(emailDto);
+                }
+                var payload = await GetSingleRequestPayloadAsync(task.RequestId);
+                await _hubContext.Clients.User(task.AccountId.ToString()!).SendAsync(SignalREvents.MAINTENANCE_TASKCLOSED, payload);
+                await transaction.CommitAsync();
+                return (true, "Nghiệm thu ĐẠT: Đã đóng phiếu, giải phóng thợ và gửi Email thông báo.");
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return (false, $"Lỗi hệ thống khi nghiệm thu: {ex.Message}");
+            }
+        }
+
+        public async Task<(bool IsSuccess, string Message)> RejectTaskAsync(int requestId, RejectTaskRequestDto request, int managerId)
+        {
+            var task = await _context.MaintenanceRequests.FindAsync(requestId);
+            if (task == null) return (false, "Không tìm thấy công việc.");
+            if (task.Status != MaintenanceRequestStatus.Fixed)
+                return (false, "Chỉ có thể từ chối nghiệm thu khi thợ đã báo cáo hoàn tất (Fixed).");
+            task.Status = MaintenanceRequestStatus.Processing;
+            task.UpdatedAt = DateTime.Now;
+            task.UpdatedBy = managerId;
+            task.ResolutionNote = $"[TỪ CHỐI NGHIỆM THU: {request.RejectReason}]\n--- Ghi chú cũ: {task.ResolutionNote}";
+            var notif = new Notification
+            {
+                AccountId = task.AssignedTo ?? 0,
+                Title = "Nghiệm thu không đạt",
+                Message = $"Công việc '{task.Title}' không đạt yêu cầu. Quản lý yêu cầu: {request.RejectReason}",
+                IsRead = false,
+                CreatedAt = DateTime.Now
+            };
+            _context.Notifications.Add(notif);
+            await _context.SaveChangesAsync();
+            var payload = await GetSingleRequestPayloadAsync(task.RequestId);
+            if (task.AssignedTo.HasValue)
+            {
+                await _hubContext.Clients.User(task.AssignedTo.Value.ToString()).SendAsync(SignalREvents.MAINTENANCE_TASKREJECTED, payload);
+            }
+            return (true, "Nghiệm thu KHÔNG ĐẠT: Đã trả lại trạng thái Đang xử lý và thông báo yêu cầu thợ làm lại.");
         }
     }
 }

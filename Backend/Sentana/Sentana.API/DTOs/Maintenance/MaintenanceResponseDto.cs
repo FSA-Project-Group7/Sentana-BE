@@ -28,7 +28,8 @@ namespace Sentana.API.DTOs.Maintenance
         public string AssignedTechnicianName { get; set; }
 
         // Kết quả xử lý
-        public string ImageUrl { get; set; } // Ảnh minh chứng sự cố
+        public string? ImageUrl { get; set; } // Ảnh minh chứng sự cố
         public string ResolutionNote { get; set; }
+        public string? FixedImageUrl { get; set; }
     }
 }
