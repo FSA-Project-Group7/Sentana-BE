@@ -27,5 +27,17 @@ namespace Sentana.API.Services.SResident
 
         Task<bool> HardDeleteResident(int residentId);
         Task<MyRoomResponseDto?> GetMyRoomAsync(int accountId);
+
+        // US08 - View Roommates
+        Task<List<RoommateDto>> GetMyRoommatesAsync(int accountId);
+
+        // US09 - View Electricity Index
+        Task<List<ElectricityIndexDto>> GetMyElectricityIndexAsync(int accountId, int? month, int? year);
+
+        // US10 - View Water Index
+        Task<List<WaterIndexDto>> GetMyWaterIndexAsync(int accountId, int? month, int? year);
+
+        // US11 - View Service Fees
+        Task<List<ServiceFeeDto>> GetMyServiceFeesAsync(int accountId);
     }
 }

@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Common;
 using Sentana.API.DTOs.Maintenance;
@@ -169,6 +169,52 @@ namespace Sentana.API.Controllers
                 return BadRequest(ApiResponse<string>.Fail(400, result.Message));
 
             return Ok(ApiResponse<string>.Success(null, result.Message));
+        }
+
+        // US18 - View Maintenance History (Resident)
+        [HttpGet("my-history")]
+        [Authorize(Roles = "Resident")]
+        public async Task<IActionResult> GetMyMaintenanceHistory()
+        {
+            var accountIdClaim = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(accountIdClaim) || !int.TryParse(accountIdClaim, out int residentId))
+                return Unauthorized(ApiResponse<string>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+
+            try
+            {
+                var history = await _maintenanceService.GetMyMaintenanceHistoryAsync(residentId);
+                if (history == null || !history.Any())
+                    return NotFound(ApiResponse<string>.Fail(404, "Bạn chưa có yêu cầu bảo trì nào."));
+
+                return Ok(ApiResponse<List<MaintenanceHistoryDto>>.Success(history, "Lấy lịch sử bảo trì thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<string>.Fail(500, ex.Message));
+            }
+        }
+
+        // US19 - Track Maintenance Status (Resident)
+        [HttpGet("requests/{requestId}/status")]
+        [Authorize(Roles = "Resident")]
+        public async Task<IActionResult> TrackMaintenanceStatus(int requestId)
+        {
+            var accountIdClaim = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(accountIdClaim) || !int.TryParse(accountIdClaim, out int residentId))
+                return Unauthorized(ApiResponse<string>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+
+            try
+            {
+                var status = await _maintenanceService.GetMaintenanceStatusAsync(requestId, residentId);
+                if (status == null)
+                    return NotFound(ApiResponse<string>.Fail(404, "Không tìm thấy yêu cầu bảo trì này hoặc bạn không có quyền xem."));
+
+                return Ok(ApiResponse<MaintenanceStatusDto>.Success(status, "Lấy trạng thái yêu cầu bảo trì thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<string>.Fail(500, ex.Message));
+            }
         }
     }
 }

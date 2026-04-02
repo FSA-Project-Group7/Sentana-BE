@@ -303,5 +303,91 @@ namespace Sentana.API.Controllers
             }
         }
 
+        // US08 - View Roommates (Resident)
+        [HttpGet("my-roommates")]
+        [Authorize(Roles = "Resident")]
+        public async Task<IActionResult> GetMyRoommates()
+        {
+            var accountIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(accountIdStr) || !int.TryParse(accountIdStr, out int accountId))
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+
+            try
+            {
+                var roommates = await _residentService.GetMyRoommatesAsync(accountId);
+                return Ok(ApiResponse<IEnumerable<RoommateDto>>.Success(roommates, "Lấy danh sách người cùng phòng thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(500, ex.Message));
+            }
+        }
+
+        // US09 - View Electricity Index (Resident)
+        [HttpGet("my-electricity-index")]
+        [Authorize(Roles = "Resident")]
+        public async Task<IActionResult> GetMyElectricityIndex([FromQuery] int? month, [FromQuery] int? year)
+        {
+            var accountIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(accountIdStr) || !int.TryParse(accountIdStr, out int accountId))
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+
+            try
+            {
+                var result = await _residentService.GetMyElectricityIndexAsync(accountId, month, year);
+                if (!result.Any())
+                    return NotFound(ApiResponse<object>.Fail(404, "Không tìm thấy dữ liệu chỉ số điện."));
+                return Ok(ApiResponse<IEnumerable<ElectricityIndexDto>>.Success(result, "Lấy chỉ số điện thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(500, ex.Message));
+            }
+        }
+
+        // US10 - View Water Index (Resident)
+        [HttpGet("my-water-index")]
+        [Authorize(Roles = "Resident")]
+        public async Task<IActionResult> GetMyWaterIndex([FromQuery] int? month, [FromQuery] int? year)
+        {
+            var accountIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(accountIdStr) || !int.TryParse(accountIdStr, out int accountId))
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+
+            try
+            {
+                var result = await _residentService.GetMyWaterIndexAsync(accountId, month, year);
+                if (!result.Any())
+                    return NotFound(ApiResponse<object>.Fail(404, "Không tìm thấy dữ liệu chỉ số nước."));
+                return Ok(ApiResponse<IEnumerable<WaterIndexDto>>.Success(result, "Lấy chỉ số nước thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(500, ex.Message));
+            }
+        }
+
+        // US11 - View Service Fees (Resident)
+        [HttpGet("my-service-fees")]
+        [Authorize(Roles = "Resident")]
+        public async Task<IActionResult> GetMyServiceFees()
+        {
+            var accountIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(accountIdStr) || !int.TryParse(accountIdStr, out int accountId))
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+
+            try
+            {
+                var result = await _residentService.GetMyServiceFeesAsync(accountId);
+                if (!result.Any())
+                    return NotFound(ApiResponse<object>.Fail(404, "Không tìm thấy phí dịch vụ nào."));
+                return Ok(ApiResponse<IEnumerable<ServiceFeeDto>>.Success(result, "Lấy danh sách phí dịch vụ thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(500, ex.Message));
+            }
+        }
+
     }
 }

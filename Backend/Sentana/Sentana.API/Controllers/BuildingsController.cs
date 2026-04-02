@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Building;
+using Sentana.API.DTOs.Resident;
 using Sentana.API.Enums;
 using Sentana.API.Helpers;
 using Sentana.API.Models;
@@ -169,5 +170,45 @@ namespace Sentana.API.Controllers
 			}
 			catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
 		}
+
+        // US79 - View Occupancy Dashboard (Manager)
+        [HttpGet("occupancy-dashboard")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetOccupancyDashboard()
+        {
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+
+            try
+            {
+                var result = await _buildingService.GetOccupancyDashboardAsync(managerId);
+                return Ok(ApiResponse<OccupancyDashboardDto>.Success(result, "Lấy thống kê tỉ lệ lấp đầy thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(500, $"Lỗi hệ thống: {ex.Message}"));
+            }
+        }
+
+        // US80 - View Total Residents KPI (Manager)
+        [HttpGet("residents-kpi")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetResidentsKpi()
+        {
+            var managerIdStr = User.FindFirstValue("AccountId");
+            if (string.IsNullOrEmpty(managerIdStr) || !int.TryParse(managerIdStr, out int managerId))
+                return Unauthorized(ApiResponse<object>.Fail(401, "Phiên đăng nhập không hợp lệ."));
+
+            try
+            {
+                var result = await _buildingService.GetResidentKpiAsync(managerId);
+                return Ok(ApiResponse<ResidentKpiDto>.Success(result, "Lấy KPI cư dân thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<object>.Fail(500, $"Lỗi hệ thống: {ex.Message}"));
+            }
+        }
 	}
 }

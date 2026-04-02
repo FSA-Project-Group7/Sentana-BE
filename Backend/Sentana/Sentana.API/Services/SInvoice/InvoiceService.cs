@@ -866,5 +866,95 @@ namespace Sentana.API.Services.SInvoice
                 return (false, "Hóa đơn này vừa được cập nhật bởi một người khác. Vui lòng tải lại trang để xem dữ liệu mới nhất.");
             }
         }
+
+        // US81 - View Monthly Revenue (Manager) — scoped to manager's buildings
+        public async Task<List<MonthlyRevenueDto>> GetMonthlyRevenueAsync(int managerId, int? year)
+        {
+            var targetYear = year ?? DateTime.Now.Year;
+
+            // Lấy danh sách ApartmentId thuộc manager
+            var managerApartmentIds = await _context.Buildings
+                .Where(b => b.ManagerId == managerId && b.IsDeleted == false)
+                .SelectMany(b => b.Apartments)
+                .Where(a => a.IsDeleted == false)
+                .Select(a => a.ApartmentId)
+                .ToListAsync();
+
+            var invoices = await _context.Invoices
+                .Where(i => i.IsDeleted == false
+                         && i.BillingYear == targetYear
+                         && managerApartmentIds.Contains(i.ApartmentId ?? 0))
+                .ToListAsync();
+
+            var grouped = invoices
+                .GroupBy(i => new { i.BillingMonth, i.BillingYear })
+                .OrderBy(g => g.Key.BillingYear)
+                .ThenBy(g => g.Key.BillingMonth)
+                .Select(g => new MonthlyRevenueDto
+                {
+                    Month = g.Key.BillingMonth ?? 0,
+                    Year = g.Key.BillingYear ?? targetYear,
+                    TotalBilled = g.Sum(i => i.TotalMoney ?? 0),
+                    TotalCollected = g.Sum(i => i.Pay ?? 0),
+                    TotalDebt = g.Sum(i => i.Debt ?? 0),
+                    TotalInvoices = g.Count(),
+                    PaidInvoices = g.Count(i => i.Status == InvoiceStatus.Paid),
+                    UnpaidInvoices = g.Count(i => i.Status == InvoiceStatus.Unpaid || i.Status == InvoiceStatus.PendingVerification)
+                })
+                .ToList();
+
+            return grouped;
+        }
+
+        // US14 - View Payment Statistics (Manager) — scoped to manager's buildings
+        public async Task<PaymentStatisticsDto> GetPaymentStatisticsAsync(int managerId, int? month, int? year)
+        {
+            // Lấy danh sách ApartmentId thuộc manager
+            var managerApartmentIds = await _context.Buildings
+                .Where(b => b.ManagerId == managerId && b.IsDeleted == false)
+                .SelectMany(b => b.Apartments)
+                .Where(a => a.IsDeleted == false)
+                .Select(a => a.ApartmentId)
+                .ToListAsync();
+
+            var query = _context.Invoices
+                .Include(i => i.Apartment)
+                .Where(i => i.IsDeleted == false
+                         && managerApartmentIds.Contains(i.ApartmentId ?? 0));
+
+            if (month.HasValue)
+                query = query.Where(i => i.BillingMonth == month.Value);
+            if (year.HasValue)
+                query = query.Where(i => i.BillingYear == year.Value);
+
+            var invoices = await query.ToListAsync();
+
+            var byApartment = invoices
+                .GroupBy(i => new { i.ApartmentId, ApartmentCode = i.Apartment?.ApartmentCode })
+                .Select(g => new ApartmentPaymentStatDto
+                {
+                    ApartmentId = g.Key.ApartmentId,
+                    ApartmentCode = g.Key.ApartmentCode,
+                    TotalInvoices = g.Count(),
+                    PaidInvoices = g.Count(i => i.Status == InvoiceStatus.Paid),
+                    TotalBilled = g.Sum(i => i.TotalMoney ?? 0),
+                    TotalPaid = g.Sum(i => i.Pay ?? 0),
+                    TotalDebt = g.Sum(i => i.Debt ?? 0)
+                })
+                .OrderBy(a => a.ApartmentCode)
+                .ToList();
+
+            return new PaymentStatisticsDto
+            {
+                TotalInvoices = invoices.Count,
+                PaidInvoices = invoices.Count(i => i.Status == InvoiceStatus.Paid),
+                UnpaidInvoices = invoices.Count(i => i.Status == InvoiceStatus.Unpaid),
+                PendingVerificationInvoices = invoices.Count(i => i.Status == InvoiceStatus.PendingVerification),
+                TotalBilled = invoices.Sum(i => i.TotalMoney ?? 0),
+                TotalRevenue = invoices.Sum(i => i.Pay ?? 0),
+                TotalDebt = invoices.Sum(i => i.Debt ?? 0),
+                ByApartment = byApartment
+            };
+        }
     }
 }

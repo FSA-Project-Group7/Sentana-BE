@@ -687,5 +687,43 @@ namespace Sentana.API.Services
                 return ApiResponse<object>.Fail(500, "Lỗi Server khi xóa vĩnh viễn: " + ex.Message);
             }
         }
+
+        // US21 - View Deposit Settlement
+        public async Task<DepositSettlementDto?> GetDepositSettlementAsync(int contractId, int? requestingAccountId = null)
+        {
+            var contract = await _context.Contracts
+                .Include(c => c.Account)
+                    .ThenInclude(a => a.Info)
+                .Include(c => c.Apartment)
+                .Where(c => c.ContractId == contractId && c.IsDeleted == false)
+                .FirstOrDefaultAsync();
+
+            if (contract == null) return null;
+
+            // Nếu có truyền accountId (Resident gọi), kiểm tra quyền truy cập
+            if (requestingAccountId.HasValue && contract.AccountId != requestingAccountId.Value)
+                return null; // Không có quyền xem hợp đồng người khác
+
+            return new DepositSettlementDto
+            {
+                ContractId = contract.ContractId,
+                ContractCode = contract.ContractCode,
+                ApartmentId = contract.ApartmentId,
+                ApartmentCode = contract.Apartment?.ApartmentCode,
+                ApartmentName = contract.Apartment?.ApartmentName,
+                ResidentAccountId = contract.AccountId,
+                ResidentName = contract.Account?.Info?.FullName,
+                ResidentEmail = contract.Account?.Email,
+                Deposit = contract.Deposit,
+                AdditionalCost = contract.AdditionalCost,
+                RefundAmount = contract.RefundAmount,
+                StartDay = contract.StartDay,
+                EndDay = contract.EndDay,
+                MonthlyRent = contract.MonthlyRent,
+                Status = contract.Status?.ToString(),
+                TerminationReason = contract.TerminationReason,
+                UpdatedAt = contract.UpdatedAt
+            };
+        }
     }
 }
