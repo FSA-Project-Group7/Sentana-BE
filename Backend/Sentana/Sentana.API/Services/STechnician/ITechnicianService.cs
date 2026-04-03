@@ -22,5 +22,6 @@ namespace Sentana.API.Services.STechnician
         Task<bool> HardDeleteTechnician(int technicianId);
 
         Task<IEnumerable<TechnicianAvailableDto>> GetAvailableTechnicians();
-    }
+		Task<TechnicianResponseDto> GetTechnicianProfileById(int accountId);
+	}
 }

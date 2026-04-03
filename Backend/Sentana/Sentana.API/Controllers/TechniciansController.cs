@@ -11,7 +11,6 @@ namespace Sentana.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = "Manager")]
     public class TechniciansController : ControllerBase
     {
         private readonly ITechnicianService _technicianService;
@@ -22,7 +21,8 @@ namespace Sentana.API.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAllTechnician()
+		[Authorize(Roles = "Manager")]
+		public async Task<IActionResult> GetAllTechnician()
         {
             try
             {
@@ -220,5 +220,25 @@ namespace Sentana.API.Controllers
                 return StatusCode(500, errorResponse);
             }
         }
-    }
+
+		[HttpGet("{accountId}")]
+		[Authorize(Roles = "Manager, Technician")] 
+		public async Task<IActionResult> GetTechnicianProfile(int accountId)
+		{
+			try
+			{
+				var profile = await _technicianService.GetTechnicianProfileById(accountId);
+
+				// Sử dụng ApiResponse để đồng bộ với các phương thức khác
+				var response = ApiResponse<TechnicianResponseDto>.Success(profile, "Lấy hồ sơ Kỹ thuật viên thành công.");
+				return Ok(response);
+			}
+			catch (Exception ex)
+			{
+				// Trả về lỗi 400 kèm thông báo từ Service (VD: Không tìm thấy)
+				var errorResponse = ApiResponse<TechnicianResponseDto>.Fail(400, ex.Message);
+				return BadRequest(errorResponse);
+			}
+		}
+	}
 }

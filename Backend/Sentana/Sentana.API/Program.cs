@@ -1,10 +1,13 @@
+using System.Text;
 using DotNetEnv;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Minio;
 using OfficeOpenXml;
+using Sentana.API.Helpers;
 using Sentana.API.Hubs;
 using Sentana.API.Models;
 using Sentana.API.Repositories;
@@ -21,7 +24,6 @@ using Sentana.API.Services.SRabbitMQ;
 using Sentana.API.Services.SService;
 using Sentana.API.Services.SStorage;
 using Sentana.API.Services.STechnician;
-using System.Text;
 
 
 namespace Sentana.API
@@ -54,7 +56,24 @@ namespace Sentana.API
                         ValidAudience = builder.Configuration["JwtSettings:Audience"],
                         IssuerSigningKey = new SymmetricSecurityKey(secretKeyBytes)
                     };
-                });
+
+					options.Events = new JwtBearerEvents
+					{
+						OnMessageReceived = context =>
+						{
+							var accessToken = context.Request.Query["access_token"];
+							var path = context.HttpContext.Request.Path;
+
+							// Nếu request gửi đến Hub SignalR và có chứa token trong query string
+							if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/notification"))
+							{
+								// Lấy token từ URL đưa cho BE xác thực
+								context.Token = accessToken;
+							}
+							return Task.CompletedTask;
+						}
+					};
+				});
             builder.Services.AddSingleton<IMinioClient>(sp =>
             {
                 return new MinioClient()
@@ -139,7 +158,9 @@ namespace Sentana.API
             });
             builder.Services.AddSignalR();
 
-            var app = builder.Build();
+			builder.Services.AddSingleton<IUserIdProvider, CustomUserIdProvider>();
+
+			var app = builder.Build();
 
             ExcelPackage.License.SetNonCommercialPersonal("Sentana");
 
