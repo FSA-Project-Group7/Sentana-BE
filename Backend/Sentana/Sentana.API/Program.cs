@@ -1,10 +1,13 @@
+using System.Text;
 using DotNetEnv;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Minio;
 using OfficeOpenXml;
+using Sentana.API.Helpers;
 using Sentana.API.Hubs;
 using Sentana.API.Models;
 using Sentana.API.Repositories;
@@ -21,7 +24,6 @@ using Sentana.API.Services.SRabbitMQ;
 using Sentana.API.Services.SService;
 using Sentana.API.Services.SStorage;
 using Sentana.API.Services.STechnician;
-using System.Text;
 
 
 namespace Sentana.API
@@ -156,7 +158,9 @@ namespace Sentana.API
             });
             builder.Services.AddSignalR();
 
-            var app = builder.Build();
+			builder.Services.AddSingleton<IUserIdProvider, CustomUserIdProvider>();
+
+			var app = builder.Build();
 
             ExcelPackage.License.SetNonCommercialPersonal("Sentana");
 
