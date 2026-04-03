@@ -371,16 +371,12 @@ namespace Sentana.API.Services.SMaintenance
             var payload = await GetSingleRequestPayloadAsync(request.RequestId);
             if (payload != null)
             {
-                await _hubContext.Clients.User(dto.TechnicianId.ToString())
-                    .SendAsync(SignalREvents.MAINTENANCE_ASSIGNEDTASK, payload);
-            }
-				var notifyIds = new List<string> {
-		        dto.TechnicianId.ToString(), // Gửi cho thợ
+                var notifyIds = new List<string> {
+                dto.TechnicianId.ToString(), // Gửi cho thợ
                 request.AccountId.ToString()  // Gửi cho Cư dân báo hỏng 
                 };
-				await _hubContext.Clients.Users(notifyIds).SendAsync(SignalREvents.MAINTENANCE_ASSIGNEDTASK, payload);
-			}
-
+                await _hubContext.Clients.Users(notifyIds).SendAsync(SignalREvents.MAINTENANCE_ASSIGNEDTASK, payload);
+            }
             return true;
         }
 
