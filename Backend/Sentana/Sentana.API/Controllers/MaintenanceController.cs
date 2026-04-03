@@ -216,5 +216,34 @@ namespace Sentana.API.Controllers
                 return StatusCode(500, ApiResponse<string>.Fail(500, ex.Message));
             }
         }
-    }
+
+		[HttpPut("{id}/resident-accept")]
+		[Authorize(Roles = "Resident")]
+		public async Task<IActionResult> ResidentAcceptTask(int id)
+		{
+			var residentId = GetCurrentUserId(); // Dùng luôn hàm helper cực xịn của bạn
+
+			var result = await _maintenanceService.ResidentAcceptTaskAsync(id, residentId);
+
+			if (!result.IsSuccess)
+				return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+
+			return Ok(ApiResponse<string>.Success(null, result.Message));
+		}
+
+		[HttpPut("{id}/resident-reject")]
+		[Authorize(Roles = "Resident")]
+		public async Task<IActionResult> ResidentRejectTask(int id, [FromBody] RejectTaskRequestDto request)
+		{
+			var residentId = GetCurrentUserId();
+
+			// Tận dụng luôn RejectTaskRequestDto (vì nó đã có sẵn thuộc tính RejectReason)
+			var result = await _maintenanceService.ResidentRejectTaskAsync(id, request.RejectReason, residentId);
+
+			if (!result.IsSuccess)
+				return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+
+			return Ok(ApiResponse<string>.Success(null, result.Message));
+		}
+	}
 }
