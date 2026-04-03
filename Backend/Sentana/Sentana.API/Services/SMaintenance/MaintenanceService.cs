@@ -347,11 +347,15 @@ namespace Sentana.API.Services.SMaintenance
                 throw new Exception("Không thể phân công thợ cho yêu cầu đã hoàn tất, đã đóng hoặc bị hủy.");
             }
 
-            var techAccount = await _context.Accounts
-                .FirstOrDefaultAsync(a => a.AccountId == dto.TechnicianId && a.RoleId == 3 && a.IsDeleted == false);
-            if (techAccount == null || techAccount.Status != GeneralStatus.Active)
+            if (request.AssignedTo.HasValue)
+            {
+                throw new Exception("Yêu cầu bảo trì này đã được phân công cho một kỹ thuật viên khác và không thể phân công lại.");
+            }
+            var newTechAccount = await _context.Accounts
+            .FirstOrDefaultAsync(a => a.AccountId == dto.TechnicianId && a.RoleId == 3 && a.IsDeleted == false);
+            if (newTechAccount == null || newTechAccount.Status != GeneralStatus.Active)
                 throw new Exception("Kỹ thuật viên không tồn tại hoặc tài khoản đã bị khóa.");
-            if (techAccount.TechAvailability == (byte)TechAvailability.Busy)
+            if (newTechAccount.TechAvailability == (byte)TechAvailability.Busy)
                 throw new Exception("Kỹ thuật viên này đang bận xử lý công việc khác.");
 
             request.AssignedTo = dto.TechnicianId;
@@ -360,19 +364,16 @@ namespace Sentana.API.Services.SMaintenance
             request.UpdatedAt = DateTime.Now;
             request.UpdatedBy = managerId;
 
-            techAccount.TechAvailability = (byte)TechAvailability.Busy;
-            techAccount.UpdatedAt = DateTime.Now;
-            techAccount.UpdatedBy = managerId;
-
+            newTechAccount.TechAvailability = (byte)TechAvailability.Busy;
+            newTechAccount.UpdatedAt = DateTime.Now;
+            newTechAccount.UpdatedBy = managerId;
             await _context.SaveChangesAsync();
-
             var payload = await GetSingleRequestPayloadAsync(request.RequestId);
             if (payload != null)
             {
                 await _hubContext.Clients.User(dto.TechnicianId.ToString())
                     .SendAsync(SignalREvents.MAINTENANCE_ASSIGNEDTASK, payload);
             }
-
             return true;
         }
 

@@ -141,7 +141,7 @@ namespace Sentana.API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<string>.Fail(500, ex.Message));
+                return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
             }
         }
 
