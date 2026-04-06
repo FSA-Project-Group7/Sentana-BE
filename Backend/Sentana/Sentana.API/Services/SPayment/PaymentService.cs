@@ -76,6 +76,10 @@ public class PaymentService : IPaymentService
             CreatedBy = userId
         };
 
+        // bổ sung status cho luồng invoice 
+        invoice.Status = InvoiceStatus.PendingVerification;
+        _context.Invoices.Update(invoice);
+
         await _paymentRepository.AddPaymentTransactionAsync(transaction);
         await _paymentRepository.SaveAsync();
 
@@ -158,6 +162,9 @@ public class PaymentService : IPaymentService
             CreatedAt = DateTime.Now,
             CreatedBy = userId
         };
+
+        invoice.Status = InvoiceStatus.PendingVerification;
+        _context.Invoices.Update(invoice);
 
         await _paymentRepository.AddPaymentTransactionAsync(transaction);
         await _paymentRepository.SaveAsync();
