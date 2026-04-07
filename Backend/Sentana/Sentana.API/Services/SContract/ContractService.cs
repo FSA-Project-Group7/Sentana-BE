@@ -753,5 +753,83 @@ namespace Sentana.API.Services
                 UpdatedAt = contract.UpdatedAt
             };
         }
+
+        // Settle Contract - Complete settlement process
+        public async Task<ApiResponse<object>> SettleContractAsync(int contractId, SettleContractDto request)
+        {
+            var contract = await _context.Contracts
+                .Include(c => c.Apartment)
+                .FirstOrDefaultAsync(c => c.ContractId == contractId && c.IsDeleted == false);
+
+            if (contract == null)
+                return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng");
+
+            if (contract.Status != GeneralStatus.Inactive)
+                return ApiResponse<object>.Fail(400, "Chỉ có thể quyết toán hợp đồng đã chấm dứt");
+
+            if (contract.SettlementStatus == SettlementStatus.Settled)
+                return ApiResponse<object>.Fail(400, "Hợp đồng đã được quyết toán rồi");
+
+            if (contract.SettlementStatus != SettlementStatus.PendingInspection && 
+                contract.SettlementStatus != SettlementStatus.PendingSettlement)
+                return ApiResponse<object>.Fail(400, "Trạng thái hợp đồng không hợp lệ để quyết toán");
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                // Cập nhật chi phí phát sinh nếu có
+                if (request.AdditionalCost > 0)
+                {
+                    contract.AdditionalCost = request.AdditionalCost;
+                }
+
+                // Tính toán lại refund amount
+                var invoices = await _context.Invoices
+                    .Where(x => x.ContractId == contractId)
+                    .ToListAsync();
+
+                var invoiceIds = invoices.Select(x => x.InvoiceId).ToList();
+
+                var payments = await _context.PaymentTransactions
+                    .Where(x => x.InvoiceId != null && invoiceIds.Contains(x.InvoiceId.Value))
+                    .ToListAsync();
+
+                decimal totalInvoice = invoices.Sum(x => x.TotalMoney ?? 0);
+                decimal totalPaid = payments.Sum(x => x.AmountPaid ?? 0);
+                decimal additionalCost = contract.AdditionalCost ?? 0;
+
+                contract.RefundAmount = totalPaid - totalInvoice - additionalCost;
+
+                // Đánh dấu đã hoàn tất quyết toán
+                contract.SettlementStatus = SettlementStatus.Settled;
+                contract.SettledAt = DateTime.Now;
+                contract.UpdatedAt = DateTime.Now;
+
+                // Lưu note nếu cần (có thể thêm field SettlementNote vào model Contract)
+                if (!string.IsNullOrEmpty(request.Note))
+                {
+                    contract.TerminationReason = contract.TerminationReason + 
+                        (string.IsNullOrEmpty(contract.TerminationReason) ? "" : " | ") + 
+                        $"Ghi chú quyết toán: {request.Note}";
+                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return ApiResponse<object>.Success(new
+                {
+                    ContractId = contract.ContractId,
+                    RefundAmount = contract.RefundAmount,
+                    SettlementStatus = contract.SettlementStatus.ToString(),
+                    SettledAt = contract.SettledAt
+                }, "Quyết toán hợp đồng thành công");
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return ApiResponse<object>.Fail(500, "Lỗi server khi quyết toán: " + ex.Message);
+            }
+        }
     }
 }
