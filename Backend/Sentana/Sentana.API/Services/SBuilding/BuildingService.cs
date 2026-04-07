@@ -308,16 +308,22 @@ namespace Sentana.API.Services.SBuilding
         // US79 - View Occupancy Dashboard (Manager)
         public async Task<OccupancyDashboardDto> GetOccupancyDashboardAsync(int managerId)
         {
+            if (managerId <= 0)
+                return new OccupancyDashboardDto();
+
             var buildings = await _context.Buildings
-                .Include(b => b.Apartments)
-                .Where(b => b.ManagerId == managerId && b.IsDeleted == false)
+                .Include(b => b.Apartments.Where(a => a.IsDeleted != true))
+                .Where(b => b.ManagerId == managerId && b.IsDeleted != true)
                 .ToListAsync();
+
+            if (!buildings.Any())
+                return new OccupancyDashboardDto();
 
             var result = new OccupancyDashboardDto();
 
             foreach (var building in buildings)
             {
-                var activeApts = building.Apartments.Where(a => a.IsDeleted == false).ToList();
+                var activeApts = building.Apartments.ToList(); // Đã filter IsDeleted!=true từ Include
                 int total = activeApts.Count;
                 int occupied = activeApts.Count(a => a.Status == ApartmentStatus.Occupied);
                 int vacant = activeApts.Count(a => a.Status == ApartmentStatus.Vacant);
@@ -351,34 +357,51 @@ namespace Sentana.API.Services.SBuilding
         // US80 - View Total Residents KPI (Manager)
         public async Task<ResidentKpiDto> GetResidentKpiAsync(int managerId)
         {
+            if (managerId <= 0) return new ResidentKpiDto();
+
             // Lấy tất cả buildings thuộc manager
             var buildingIds = await _context.Buildings
-                .Where(b => b.ManagerId == managerId && b.IsDeleted == false)
+                .Where(b => b.ManagerId == managerId && b.IsDeleted != true)
                 .Select(b => b.BuildingId)
                 .ToListAsync();
 
+            if (!buildingIds.Any()) return new ResidentKpiDto();
+
             // Lấy tất cả apartmentIds thuộc những buildings đó
             var apartmentIds = await _context.Apartments
-                .Where(a => buildingIds.Contains(a.BuildingId ?? 0) && a.IsDeleted == false)
+                .Where(a => buildingIds.Contains(a.BuildingId ?? 0) && a.IsDeleted != true)
                 .Select(a => a.ApartmentId)
                 .ToListAsync();
 
-            // Lấy tất cả cư dân (RoleId = 2) đã được assign vào các apartment của manager
-            var residents = await _context.ApartmentResidents
+            if (!apartmentIds.Any()) return new ResidentKpiDto();
+
+            // Cư dân đang thực sự ở trong phòng (Status==Active, có record ApartmentResident chưa xóa)
+            var residentsInRoom = await _context.ApartmentResidents
                 .Include(ar => ar.Account)
                 .Where(ar =>
                     apartmentIds.Contains(ar.ApartmentId ?? 0) &&
-                    ar.IsDeleted == false &&
+                    ar.IsDeleted != true &&
+                    ar.Status == GeneralStatus.Active &&   // chỉ lấy active
                     ar.Account != null &&
-                    ar.Account.RoleId == 2 &&   // Role = Resident
-                    ar.Account.IsDeleted == false)
-                .Select(ar => ar.Account!)
+                    ar.Account.RoleId == 2 &&
+                    ar.Account.IsDeleted != true)
+                .Select(ar => ar.AccountId)
                 .Distinct()
+                .CountAsync();
+
+            // Tất cả tài khoản Resident thuộc management scope
+            var totalResidentAccounts = await _context.Accounts
+                .Where(a => a.RoleId == 2 && a.IsDeleted != true &&
+                    _context.ApartmentResidents
+                        .Where(ar => apartmentIds.Contains(ar.ApartmentId ?? 0) && ar.IsDeleted != true)
+                        .Select(ar => ar.AccountId)
+                        .Distinct()
+                        .Contains(a.AccountId))
                 .ToListAsync();
 
             // Cư dân mới trong tháng hiện tại
             var now = DateTime.Now;
-            int newThisMonth = residents.Count(r =>
+            int newThisMonth = totalResidentAccounts.Count(r =>
                 r.CreatedAt.HasValue &&
                 r.CreatedAt.Value.Month == now.Month &&
                 r.CreatedAt.Value.Year == now.Year);
@@ -386,20 +409,20 @@ namespace Sentana.API.Services.SBuilding
             // Đếm cư dân theo tòa nhà
             var byBuilding = new List<BuildingResidentCountDto>();
             var buildings = await _context.Buildings
-                .Where(b => b.ManagerId == managerId && b.IsDeleted == false)
+                .Where(b => b.ManagerId == managerId && b.IsDeleted != true)
                 .ToListAsync();
 
             foreach (var building in buildings)
             {
                 var buildingAptIds = await _context.Apartments
-                    .Where(a => a.BuildingId == building.BuildingId && a.IsDeleted == false)
+                    .Where(a => a.BuildingId == building.BuildingId && a.IsDeleted != true)
                     .Select(a => a.ApartmentId)
                     .ToListAsync();
 
                 var count = await _context.ApartmentResidents
                     .Where(ar =>
                         buildingAptIds.Contains(ar.ApartmentId ?? 0) &&
-                        ar.IsDeleted == false &&
+                        ar.IsDeleted != true &&
                         ar.Status == GeneralStatus.Active)
                     .Select(ar => ar.AccountId)
                     .Distinct()
@@ -414,23 +437,13 @@ namespace Sentana.API.Services.SBuilding
                 });
             }
 
-            // Tổng cư dân (tài khoản có role Resident thuộc quản lý của manager)
-            var totalResidentAccounts = await _context.Accounts
-                .Where(a => a.RoleId == 2 && a.IsDeleted == false &&
-                    _context.ApartmentResidents
-                        .Where(ar => apartmentIds.Contains(ar.ApartmentId ?? 0) && ar.IsDeleted == false)
-                        .Select(ar => ar.AccountId)
-                        .Distinct()
-                        .Contains(a.AccountId))
-                .ToListAsync();
-
             return new ResidentKpiDto
             {
                 TotalResidents = totalResidentAccounts.Count,
                 ActiveResidents = totalResidentAccounts.Count(r => r.Status == GeneralStatus.Active),
                 InactiveResidents = totalResidentAccounts.Count(r => r.Status == GeneralStatus.Inactive),
-                ResidentsInRoom = residents.Count,
-                ResidentsNotInRoom = totalResidentAccounts.Count - residents.Count,
+                ResidentsInRoom = residentsInRoom,
+                ResidentsNotInRoom = Math.Max(0, totalResidentAccounts.Count - residentsInRoom),
                 NewResidentsThisMonth = newThisMonth,
                 ByBuilding = byBuilding
             };

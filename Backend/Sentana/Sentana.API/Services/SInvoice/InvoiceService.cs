@@ -870,18 +870,27 @@ namespace Sentana.API.Services.SInvoice
         // US81 - View Monthly Revenue (Manager) — scoped to manager's buildings
         public async Task<List<MonthlyRevenueDto>> GetMonthlyRevenueAsync(int managerId, int? year)
         {
+            if (managerId <= 0) return new List<MonthlyRevenueDto>();
+
             var targetYear = year ?? DateTime.Now.Year;
+
+            // Validate năm hợp lệ (không cho năm quá xa trong tương lai hoặc quá khứ)
+            if (targetYear < 2000 || targetYear > DateTime.Now.Year + 1)
+                return new List<MonthlyRevenueDto>();
 
             // Lấy danh sách ApartmentId thuộc manager
             var managerApartmentIds = await _context.Buildings
-                .Where(b => b.ManagerId == managerId && b.IsDeleted == false)
+                .Where(b => b.ManagerId == managerId && b.IsDeleted != true)
                 .SelectMany(b => b.Apartments)
-                .Where(a => a.IsDeleted == false)
+                .Where(a => a.IsDeleted != true)
                 .Select(a => a.ApartmentId)
                 .ToListAsync();
 
+            // Early return nếu manager không có apartment nào
+            if (!managerApartmentIds.Any()) return new List<MonthlyRevenueDto>();
+
             var invoices = await _context.Invoices
-                .Where(i => i.IsDeleted == false
+                .Where(i => i.IsDeleted != true
                          && i.BillingYear == targetYear
                          && managerApartmentIds.Contains(i.ApartmentId ?? 0))
                 .ToListAsync();

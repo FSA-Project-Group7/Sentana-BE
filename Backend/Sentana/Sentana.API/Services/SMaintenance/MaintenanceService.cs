@@ -417,12 +417,14 @@ namespace Sentana.API.Services.SMaintenance
         // US18 - View Maintenance History (Resident)
         public async Task<List<MaintenanceHistoryDto>> GetMyMaintenanceHistoryAsync(int residentId)
         {
+            if (residentId <= 0) return new List<MaintenanceHistoryDto>();
+
             return await _context.MaintenanceRequests
                 .Include(m => m.Category)
                 .Include(m => m.Apartment)
                 .Include(m => m.AssignedToNavigation)
                     .ThenInclude(tech => tech.Info)
-                .Where(m => m.AccountId == residentId && m.IsDeleted == false)
+                .Where(m => m.AccountId == residentId && m.IsDeleted != true)
                 .OrderByDescending(m => m.CreateDay)
                 .Select(m => new MaintenanceHistoryDto
                 {
@@ -450,6 +452,8 @@ namespace Sentana.API.Services.SMaintenance
         // US19 - Track Maintenance Status (Resident)
         public async Task<MaintenanceStatusDto?> GetMaintenanceStatusAsync(int requestId, int residentId)
         {
+            if (requestId <= 0 || residentId <= 0) return null;
+
             return await _context.MaintenanceRequests
                 .Include(m => m.Category)
                 .Include(m => m.Apartment)
@@ -457,7 +461,7 @@ namespace Sentana.API.Services.SMaintenance
                     .ThenInclude(tech => tech.Info)
                 .Where(m => m.RequestId == requestId
                          && m.AccountId == residentId    // Chỉ được xem request của chính mình
-                         && m.IsDeleted == false)
+                         && m.IsDeleted != true)
                 .Select(m => new MaintenanceStatusDto
                 {
                     RequestId = m.RequestId,
