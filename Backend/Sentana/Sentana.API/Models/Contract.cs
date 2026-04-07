@@ -49,6 +49,7 @@ public partial class Contract
     public int? CurrentVersionId { get; set; }
 
     public virtual ContractVersion? CurrentVersion { get; set; }
+    public SettlementStatus? SettlementStatus { get; set; } = Sentana.API.Enums.SettlementStatus.NotRequired; public DateTime? SettledAt { get; set; }
 
     public virtual ICollection<ContractVersion> ContractVersions { get; set; }
         = new List<ContractVersion>();
