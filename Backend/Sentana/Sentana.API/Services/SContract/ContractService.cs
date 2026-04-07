@@ -5,6 +5,7 @@ using Sentana.API.Helpers;
 using Sentana.API.Models;
 using Sentana.API.Repositories;
 using Sentana.API.Services.SStorage;
+using Sentana.API.Services.SEmail;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,15 +18,18 @@ namespace Sentana.API.Services
         private readonly IContractRepository _contractRepository;
         private readonly IMinioService _minioService;
         private readonly SentanaContext _context;
+        private readonly IEmailService _emailService;
 
         public ContractService(
             IContractRepository contractRepository,
             IMinioService minioService,
-            SentanaContext context)
+            SentanaContext context,
+            IEmailService emailService)
         {
             _contractRepository = contractRepository;
             _minioService = minioService;
             _context = context;
+            _emailService = emailService;
         }
 
         public async Task<ApiResponse<object>> CreateContractAsync(CreateContractDto request, int accountId)
@@ -341,6 +345,10 @@ namespace Sentana.API.Services
 
             if (contract == null) return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng");
             if (contract.Status != GeneralStatus.Active) return ApiResponse<object>.Fail(400, "Contract không active");
+            
+            // Validate additionalCost
+            if (request.AdditionalCost < 0) 
+                return ApiResponse<object>.Fail(400, "Phí phát sinh không được là số âm");
 
             using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -416,6 +424,9 @@ namespace Sentana.API.Services
 
                 string paymentStatus = isFullyPaid ? "Đã thanh toán đủ" : "Chưa thanh toán đủ";
 
+                // Gửi email thông báo cho resident
+                await SendTerminationEmailAsync(contract, totalInvoice, totalPaid, additionalCost, refund);
+
                 return ApiResponse<object>.Success(new
                 {
                     TotalInvoice = totalInvoice,
@@ -431,6 +442,116 @@ namespace Sentana.API.Services
             {
                 await transaction.RollbackAsync();
                 return ApiResponse<object>.Fail(500, ex.Message);
+            }
+        }
+
+        private async Task SendTerminationEmailAsync(Contract contract, decimal totalInvoice, decimal totalPaid, decimal additionalCost, decimal refund)
+        {
+            try
+            {
+                if (contract.Account?.Email == null) return;
+
+                var residentName = contract.Account.Info?.FullName ?? "Quý khách";
+                var apartmentName = contract.Apartment?.ApartmentName ?? contract.Apartment?.ApartmentCode ?? "N/A";
+
+                string refundStatus;
+                string refundColor;
+                if (refund > 0)
+                {
+                    refundStatus = $"<strong style='color: #28a745;'>BQL sẽ hoàn trả: {refund:N0} VNĐ</strong>";
+                    refundColor = "#28a745";
+                }
+                else if (refund < 0)
+                {
+                    refundStatus = $"<strong style='color: #dc3545;'>Quý khách còn nợ: {Math.Abs(refund):N0} VNĐ</strong>";
+                    refundColor = "#dc3545";
+                }
+                else
+                {
+                    refundStatus = "<strong style='color: #6c757d;'>Đã thanh toán đủ, không còn nợ</strong>";
+                    refundColor = "#6c757d";
+                }
+
+                string emailBody = $@"
+                    <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;'>
+                        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;'>
+                            <h2 style='color: white; margin: 0;'>THÔNG BÁO THANH LÝ HỢP ĐỒNG</h2>
+                        </div>
+                        
+                        <div style='background-color: white; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);'>
+                            <p style='font-size: 16px; color: #333;'>Kính gửi <strong>{residentName}</strong>,</p>
+                            
+                            <p style='color: #666; line-height: 1.6;'>
+                                Hợp đồng thuê căn hộ <strong>{apartmentName}</strong> (Mã: <strong>{contract.ContractCode}</strong>) 
+                                đã được thanh lý vào ngày <strong>{contract.EndDay?.ToString("dd/MM/yyyy")}</strong>.
+                            </p>
+
+                            <div style='background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;'>
+                                <h3 style='color: #667eea; margin-top: 0; border-bottom: 2px solid #667eea; padding-bottom: 10px;'>
+                                    📊 Bảng Đối Soát Tài Chính
+                                </h3>
+                                
+                                <table style='width: 100%; border-collapse: collapse;'>
+                                    <tr style='border-bottom: 1px solid #dee2e6;'>
+                                        <td style='padding: 12px 0; color: #666;'>Tổng hóa đơn:</td>
+                                        <td style='padding: 12px 0; text-align: right; font-weight: bold;'>{totalInvoice:N0} VNĐ</td>
+                                    </tr>
+                                    <tr style='border-bottom: 1px solid #dee2e6;'>
+                                        <td style='padding: 12px 0; color: #666;'>Đã thanh toán:</td>
+                                        <td style='padding: 12px 0; text-align: right; font-weight: bold; color: #28a745;'>{totalPaid:N0} VNĐ</td>
+                                    </tr>
+                                    <tr style='border-bottom: 1px solid #dee2e6;'>
+                                        <td style='padding: 12px 0; color: #666;'>Phí phát sinh/Phạt:</td>
+                                        <td style='padding: 12px 0; text-align: right; font-weight: bold; color: #dc3545;'>{additionalCost:N0} VNĐ</td>
+                                    </tr>
+                                    <tr style='background-color: #e9ecef;'>
+                                        <td style='padding: 15px 10px; font-weight: bold; font-size: 16px;'>KẾT QUẢ:</td>
+                                        <td style='padding: 15px 10px; text-align: right; font-size: 18px; color: {refundColor}; font-weight: bold;'>
+                                            {(refund >= 0 ? "+" : "")}{refund:N0} VNĐ
+                                        </td>
+                                    </tr>
+                                </table>
+
+                                <div style='margin-top: 20px; padding: 15px; background-color: white; border-left: 4px solid {refundColor}; border-radius: 4px;'>
+                                    {refundStatus}
+                                </div>
+
+                                {(string.IsNullOrEmpty(contract.TerminationReason) ? "" : $@"
+                                <div style='margin-top: 15px; padding: 15px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;'>
+                                    <strong>Lý do thanh lý:</strong><br/>
+                                    <span style='color: #856404;'>{contract.TerminationReason}</span>
+                                </div>
+                                ")}
+                            </div>
+
+                            <div style='background-color: #e7f3ff; padding: 15px; border-radius: 8px; margin: 20px 0;'>
+                                <p style='margin: 0; color: #004085;'>
+                                    <strong>📌 Lưu ý:</strong> Công thức tính = Đã thanh toán - Tổng hóa đơn - Phí phát sinh
+                                </p>
+                            </div>
+
+                            <p style='color: #666; line-height: 1.6;'>
+                                Nếu có bất kỳ thắc mắc nào, vui lòng liên hệ Ban Quản Lý để được hỗ trợ.
+                            </p>
+
+                            <div style='margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center; color: #999;'>
+                                <p style='margin: 5px 0;'>Trân trọng,</p>
+                                <p style='margin: 5px 0; font-weight: bold; color: #667eea;'>Ban Quản Lý Sentana</p>
+                            </div>
+                        </div>
+                    </div>
+                ";
+
+                await _emailService.SendEmailAsync(
+                    contract.Account.Email,
+                    $"[SENTANA] Thông báo thanh lý hợp đồng {contract.ContractCode}",
+                    emailBody
+                );
+            }
+            catch (Exception ex)
+            {
+                // Log error nhưng không throw để không ảnh hưởng đến terminate process
+                Console.WriteLine($"Error sending termination email: {ex.Message}");
             }
         }
 
@@ -786,6 +907,10 @@ namespace Sentana.API.Services
             if (contract.SettlementStatus != SettlementStatus.PendingInspection && 
                 contract.SettlementStatus != SettlementStatus.PendingSettlement)
                 return ApiResponse<object>.Fail(400, "Trạng thái hợp đồng không hợp lệ để quyết toán");
+
+            // Validate additionalCost
+            if (request.AdditionalCost < 0)
+                return ApiResponse<object>.Fail(400, "Phí phát sinh không được là số âm");
 
             using var transaction = await _context.Database.BeginTransactionAsync();
 
