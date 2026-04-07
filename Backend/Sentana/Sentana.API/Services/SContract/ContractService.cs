@@ -214,7 +214,6 @@ namespace Sentana.API.Services
                 contract.Deposit = request.Deposit ?? contract.Deposit;
                 contract.UpdatedAt = DateTime.Now;
 
-                // 1. Xử lý File PDF
                 if (request.File != null)
                 {
                     if (!request.File.ContentType.Contains("pdf"))
@@ -347,7 +346,6 @@ namespace Sentana.API.Services
 
             try
             {
-                // 1. Lấy dữ liệu tài chính (Hóa đơn & Thanh toán)
                 var invoices = await _context.Invoices
                     .Where(x => x.ContractId == contractId)
                     .ToListAsync();
@@ -358,49 +356,36 @@ namespace Sentana.API.Services
                     .Where(x => x.InvoiceId != null && invoiceIds.Contains(x.InvoiceId.Value))
                     .ToListAsync();
 
-                // 2. Tính toán các con số
                 decimal totalInvoice = invoices.Sum(x => x.TotalMoney ?? 0);
                 decimal totalPaid = payments.Sum(x => x.AmountPaid ?? 0);
                 decimal additionalCost = request.AdditionalCost;
 
-                // Công thức chuẩn: Refund = Đã trả - Nợ cũ - Phụ phí phát sinh
                 decimal refund = totalPaid - totalInvoice - additionalCost;
                 bool isFullyPaid = totalPaid >= (totalInvoice + additionalCost);
 
-                // ========================================================
-                // GIẢI QUYẾT VẤN ĐỀ 2: LƯU DỮ LIỆU TÀI CHÍNH VÀO DB
-                // ========================================================
                 contract.Status = GeneralStatus.Inactive;
                 contract.EndDay = request.TerminationDate;
                 contract.UpdatedAt = DateTime.Now;
 
-                // LƯU CÁC TRƯỜNG QUAN TRỌNG
                 contract.AdditionalCost = additionalCost;
                 contract.RefundAmount = refund;
                 contract.TerminationReason = request.TerminationReason;
 
-                // ========================================================
-                // GIẢI QUYẾT VẤN ĐỀ 1: PHÂN LUỒNG TRẠNG THÁI QUYẾT TOÁN
-                // ========================================================
                 if (additionalCost > 0)
                 {
-                    // Nếu có phạt/bồi thường -> Chờ khách nộp tiền
                     contract.SettlementStatus = SettlementStatus.PendingSettlement;
                 }
                 else
                 {
-                    // Nếu không có phạt -> Sạch sẽ, hoàn tất luôn
                     contract.SettlementStatus = SettlementStatus.Settled;
                     contract.SettledAt = DateTime.Now;
                 }
 
-                // 3. Xử lý trả phòng
                 if (contract.Apartment != null && contract.Apartment.Status == ApartmentStatus.Occupied)
                 {
                     contract.Apartment.Status = ApartmentStatus.Vacant;
                 }
 
-                // 4. Xử lý Cư dân và Dịch vụ (Theo cấu trúc cũ của bạn)
                 if (contract.ApartmentId.HasValue)
                 {
                     int apartmentId = contract.ApartmentId.Value;
@@ -426,8 +411,6 @@ namespace Sentana.API.Services
                         s.Status = GeneralStatus.Inactive;
                     }
                 }
-
-                // CHỐT LƯU VÀO DB
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
@@ -441,7 +424,7 @@ namespace Sentana.API.Services
                     RefundAmount = refund,
                     IsFullyPaid = isFullyPaid,
                     PaymentStatus = paymentStatus,
-                    SettlementStatus = contract.SettlementStatus.ToString() // Trả về cho FE biết luôn
+                    SettlementStatus = contract.SettlementStatus.ToString() 
                 }, "Chấm dứt hợp đồng thành công và đã lưu trữ sao kê tài chính.");
             }
             catch (Exception ex)
@@ -477,7 +460,6 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(null, "Extend thành công");
         }
 
-        // 👉 FIX 2: TÍNH TOÁN REFUND TRẢ VỀ CHO MANAGER (BUG 58)
         public async Task<ApiResponse<object>> GetContractDetailAsync(int contractId)
         {
             var contract = await _context.Contracts
@@ -562,7 +544,6 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(list, "OK");
         }
 
-        // 👉 FIX 3: TRẢ VỀ DANH SÁCH LỊCH SỬ CHO CƯ DÂN (BUG 59 VÀ 58)
         public async Task<ApiResponse<object>> GetMyContractAsync(int accountId)
         {
             var contracts = await _context.Contracts
@@ -574,6 +555,8 @@ namespace Sentana.API.Services
             if (!contracts.Any()) return ApiResponse<object>.Fail(404, "Bạn chưa có hợp đồng nào.");
 
             var resultList = new List<object>();
+
+            var relationships = await _context.Relationships.ToListAsync();
 
             foreach (var contract in contracts)
             {
@@ -591,8 +574,39 @@ namespace Sentana.API.Services
                     refundAmount = totalPaid - totalInvoice - additionalCost;
                 }
 
+                var servicesList = new List<object>();
+                var roommatesList = new List<object>();
+
+                if (contract.ApartmentId.HasValue)
+                {
+                    int aptId = contract.ApartmentId.Value;
+                    var aptServices = await _context.ApartmentServices
+                        .Include(s => s.Service)
+                        .Where(s => s.ApartmentId == aptId && s.IsDeleted == false)
+                        .ToListAsync();
+
+                    servicesList = aptServices.Select(s => new {
+                        ServiceName = s.Service?.ServiceName,
+                        UnitPrice = s.Service?.ServiceFee, 
+                        ActualPrice = s.ActualPrice,
+                        Unit = "tháng"                   
+                    }).Cast<object>().ToList();
+
+                    var aptResidents = await _context.ApartmentResidents
+                        .Include(r => r.Account).ThenInclude(a => a.Info)
+                        .Where(r => r.ApartmentId == aptId && r.AccountId != accountId && r.IsDeleted == false)
+                        .ToListAsync();
+
+                    roommatesList = aptResidents.Select(r => new {
+                        FullName = r.Account?.Info?.FullName ?? r.Account?.UserName,
+                        Phone = r.Account?.Info?.PhoneNumber,
+                        Relationship = relationships.FirstOrDefault(rel => rel.RelationshipId == r.RelationshipId)?.RelationshipName ?? "Khác"
+                    }).Cast<object>().ToList();
+                }
+
                 resultList.Add(new
                 {
+                    // Các trường để thg resident xem
                     ContractId = contract.ContractId,
                     ContractCode = contract.ContractCode,
                     ApartmentId = contract.ApartmentId,
@@ -605,17 +619,16 @@ namespace Sentana.API.Services
                     FileUrl = contract.File,
                     AdditionalCost = contract.AdditionalCost,
                     TerminationReason = contract.TerminationReason,
-                    RefundAmount = refundAmount
+                    RefundAmount = refundAmount,
+                    SettlementStatus = contract.SettlementStatus,
+                    SettledAt = contract.SettledAt,
+                    Services = servicesList,
+                    Roommates = roommatesList
                 });
             }
 
             return ApiResponse<object>.Success(resultList, "OK");
         }
-
-        // ==============================================================
-        // HÀM XỬ LÝ CHỨC NĂNG THÙNG RÁC (SOFT DELETE, HARD DELETE, RESTORE)
-        // ==============================================================
-
         public async Task<ApiResponse<object>> GetDeletedContractsAsync()
         {
             var deletedContracts = await _context.Contracts
