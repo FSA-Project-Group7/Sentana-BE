@@ -24,7 +24,7 @@ namespace Sentana.API.Workers
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("🚀 Contract Expiration Worker is starting.");
+            _logger.LogInformation(" Contract Expiration Worker is starting.");
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -34,11 +34,10 @@ namespace Sentana.API.Workers
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "❌ Lỗi xảy ra trong quá trình quét hợp đồng hết hạn.");
+                    _logger.LogError(ex, " Lỗi xảy ra trong quá trình quét hợp đồng hết hạn.");
                 }
 
-                // Cấu hình thời gian chạy: Ở đây tôi set chạy mỗi 12 tiếng. 
-                // Thực tế có thể set TimeSpan.FromHours(24) hoặc dùng thư viện Quartz/Hangfire để chạy đúng 00:00
+                // Cấu hình thời gian chạy mỗi 12 tiếng
                 await Task.Delay(TimeSpan.FromHours(12), stoppingToken);
             }
         }
@@ -48,7 +47,9 @@ namespace Sentana.API.Workers
             using var scope = _scopeFactory.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<SentanaContext>();
 
-            var today = DateOnly.FromDateTime(DateTime.Now);
+            var vnTimeZone = TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time");
+            var vnTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, vnTimeZone);
+            var today = DateOnly.FromDateTime(vnTime);
 
             // Tìm các hợp đồng đang Active nhưng đã quá hạn (EndDay < hôm nay)
             var expiredContracts = await context.Contracts
@@ -58,7 +59,7 @@ namespace Sentana.API.Workers
 
             if (!expiredContracts.Any())
             {
-                _logger.LogInformation($"✅ Không có hợp đồng nào hết hạn tính đến {today}.");
+                _logger.LogInformation($" Không có hợp đồng nào hết hạn tính đến {today}.");
                 return;
             }
 
@@ -69,8 +70,14 @@ namespace Sentana.API.Workers
                 foreach (var contract in expiredContracts)
                 {
                     // 1. Đổi trạng thái hợp đồng
-                    contract.Status = GeneralStatus.Inactive; // Hoặc bạn có thể thêm Enum Expired
-                    contract.UpdatedAt = DateTime.Now;
+                    contract.Status = GeneralStatus.Inactive;
+                    contract.UpdatedAt = vnTime;
+
+                    // FIX: ĐÁNH DẤU CHỜ ADMIN ĐI KIỂM TRA PHÒNG VÀO SÁNG HÔM SAU
+
+                    contract.SettlementStatus = SettlementStatus.PendingInspection;
+                    contract.TerminationReason = "Hệ thống tự động chấm dứt do đến hạn. Cần kiểm tra phòng.";
+                    contract.AdditionalCost = 0; // Tạm set = 0 cho đến khi Admin kiểm tra xong
 
                     if (contract.ApartmentId.HasValue)
                     {
@@ -106,7 +113,7 @@ namespace Sentana.API.Workers
 
                 await context.SaveChangesAsync();
                 await transaction.CommitAsync();
-                _logger.LogInformation($"🎉 Đã tự động dọn dẹp và kết thúc {count} hợp đồng hết hạn.");
+                _logger.LogInformation($"🎉 Đã tự động dọn dẹp và đưa {count} hợp đồng hết hạn vào danh sách chờ kiểm tra.");
             }
             catch (Exception)
             {

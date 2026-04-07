@@ -347,44 +347,7 @@ namespace Sentana.API.Services
 
             try
             {
-                contract.Status = GeneralStatus.Inactive;
-                contract.UpdatedAt = DateTime.Now;
-                contract.EndDay = request.TerminationDate;
-
-                if (contract.Apartment != null)
-                {
-                    if (contract.Apartment.Status == ApartmentStatus.Occupied)
-                    {
-                        contract.Apartment.Status = ApartmentStatus.Vacant;
-                    }
-                }
-
-                if (contract.ApartmentId == null)
-                    return ApiResponse<object>.Fail(400, "Apartment không hợp lệ");
-
-                int apartmentId = contract.ApartmentId.Value;
-
-                var residents = await _context.ApartmentResidents
-                    .Where(x => x.ApartmentId == apartmentId && x.IsDeleted == false)
-                    .ToListAsync();
-
-                foreach (var r in residents)
-                {
-                    r.IsDeleted = true;
-                    r.Status = GeneralStatus.Inactive;
-                }
-
-                var services = await _context.ApartmentServices
-                    .Where(x => x.ApartmentId == apartmentId && x.IsDeleted == false)
-                    .ToListAsync();
-
-                foreach (var s in services)
-                {
-                    s.EndDay = request.TerminationDate;
-                    s.IsDeleted = true;
-                    s.Status = GeneralStatus.Inactive;
-                }
-
+                // 1. Lấy dữ liệu tài chính (Hóa đơn & Thanh toán)
                 var invoices = await _context.Invoices
                     .Where(x => x.ContractId == contractId)
                     .ToListAsync();
@@ -395,16 +358,80 @@ namespace Sentana.API.Services
                     .Where(x => x.InvoiceId != null && invoiceIds.Contains(x.InvoiceId.Value))
                     .ToListAsync();
 
+                // 2. Tính toán các con số
                 decimal totalInvoice = invoices.Sum(x => x.TotalMoney ?? 0);
                 decimal totalPaid = payments.Sum(x => x.AmountPaid ?? 0);
                 decimal additionalCost = request.AdditionalCost;
+
+                // Công thức chuẩn: Refund = Đã trả - Nợ cũ - Phụ phí phát sinh
                 decimal refund = totalPaid - totalInvoice - additionalCost;
                 bool isFullyPaid = totalPaid >= (totalInvoice + additionalCost);
 
-                string paymentStatus = isFullyPaid ? "Đã thanh toán đủ" : "Chưa thanh toán đủ";
+                // ========================================================
+                // GIẢI QUYẾT VẤN ĐỀ 2: LƯU DỮ LIỆU TÀI CHÍNH VÀO DB
+                // ========================================================
+                contract.Status = GeneralStatus.Inactive;
+                contract.EndDay = request.TerminationDate;
+                contract.UpdatedAt = DateTime.Now;
 
+                // LƯU CÁC TRƯỜNG QUAN TRỌNG
+                contract.AdditionalCost = additionalCost;
+                contract.RefundAmount = refund;
+                contract.TerminationReason = request.TerminationReason;
+
+                // ========================================================
+                // GIẢI QUYẾT VẤN ĐỀ 1: PHÂN LUỒNG TRẠNG THÁI QUYẾT TOÁN
+                // ========================================================
+                if (additionalCost > 0)
+                {
+                    // Nếu có phạt/bồi thường -> Chờ khách nộp tiền
+                    contract.SettlementStatus = SettlementStatus.PendingSettlement;
+                }
+                else
+                {
+                    // Nếu không có phạt -> Sạch sẽ, hoàn tất luôn
+                    contract.SettlementStatus = SettlementStatus.Settled;
+                    contract.SettledAt = DateTime.Now;
+                }
+
+                // 3. Xử lý trả phòng
+                if (contract.Apartment != null && contract.Apartment.Status == ApartmentStatus.Occupied)
+                {
+                    contract.Apartment.Status = ApartmentStatus.Vacant;
+                }
+
+                // 4. Xử lý Cư dân và Dịch vụ (Theo cấu trúc cũ của bạn)
+                if (contract.ApartmentId.HasValue)
+                {
+                    int apartmentId = contract.ApartmentId.Value;
+
+                    var residents = await _context.ApartmentResidents
+                        .Where(x => x.ApartmentId == apartmentId && x.IsDeleted == false)
+                        .ToListAsync();
+
+                    foreach (var r in residents)
+                    {
+                        r.IsDeleted = true;
+                        r.Status = GeneralStatus.Inactive;
+                    }
+
+                    var services = await _context.ApartmentServices
+                        .Where(x => x.ApartmentId == apartmentId && x.IsDeleted == false)
+                        .ToListAsync();
+
+                    foreach (var s in services)
+                    {
+                        s.EndDay = request.TerminationDate;
+                        s.IsDeleted = true;
+                        s.Status = GeneralStatus.Inactive;
+                    }
+                }
+
+                // CHỐT LƯU VÀO DB
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                string paymentStatus = isFullyPaid ? "Đã thanh toán đủ" : "Chưa thanh toán đủ";
 
                 return ApiResponse<object>.Success(new
                 {
@@ -413,8 +440,9 @@ namespace Sentana.API.Services
                     AdditionalCost = additionalCost,
                     RefundAmount = refund,
                     IsFullyPaid = isFullyPaid,
-                    PaymentStatus = paymentStatus
-                }, "Terminate thành công");
+                    PaymentStatus = paymentStatus,
+                    SettlementStatus = contract.SettlementStatus.ToString() // Trả về cho FE biết luôn
+                }, "Chấm dứt hợp đồng thành công và đã lưu trữ sao kê tài chính.");
             }
             catch (Exception ex)
             {
