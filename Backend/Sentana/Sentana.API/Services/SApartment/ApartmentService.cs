@@ -1,8 +1,9 @@
-﻿using System.Security.Claims;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Apartment;
 using Sentana.API.Enums;
 using Sentana.API.Models;
+using System.Security.Claims;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 namespace Sentana.API.Services.SApartment
 {
@@ -15,12 +16,19 @@ namespace Sentana.API.Services.SApartment
             _context = context;
         }
 
-		public async Task<IEnumerable<ApartmentDto>> GetApartmentListAsync()
-		{
+		public async Task<IEnumerable<ApartmentDto>> GetApartmentListAsync(int managerId, int? buildingId = null)
+
+        {
 			var today = DateOnly.FromDateTime(DateTime.Now);
-			return await _context.Apartments
-				.Include(a => a.Contracts) 
-				.Where(a => a.IsDeleted == false)
+			var query =  _context.Apartments
+				.Include(a => a.Contracts)
+				.Include(a => a.Building)
+				.Where(a => a.IsDeleted == false && a.Building.ManagerId == managerId);
+                if (buildingId.HasValue && buildingId.Value > 0)
+				{
+					query = query.Where(a => a.BuildingId == buildingId.Value);
+				}
+				return await query
 				.Select(a => new ApartmentDto
 				{
 					ApartmentId = a.ApartmentId,
@@ -31,7 +39,6 @@ namespace Sentana.API.Services.SApartment
 					Status = (byte?)a.Status,
 					HasTenant = a.Contracts.Any(c => c.Status == GeneralStatus.Active && c.EndDay >= today)
 				})
-				.OrderByDescending(a => a.ApartmentId)
 				.ToListAsync();
 		}
 
