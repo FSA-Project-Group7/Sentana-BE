@@ -44,11 +44,13 @@ namespace Sentana.API.DTOs.Contracts
     {
         public int AccountId { get; set; }
         public int RelationshipId { get; set; }
+        public string? FullName { get; set; }
     }
 
     public class ServiceItemDto
     {
         public int ServiceId { get; set; }
         public decimal? ActualPrice { get; set; }
+        public string? ServiceName { get; set; }
     }
 }

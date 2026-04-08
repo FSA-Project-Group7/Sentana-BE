@@ -605,27 +605,52 @@ namespace Sentana.API.Services
             // Lấy danh sách người ở cùng
             if (contract.Apartment != null && contract.Apartment.ApartmentResidents != null)
             {
-                detailDto.AdditionalResidents = contract.Apartment.ApartmentResidents
+                var apartmentResidents = contract.Apartment.ApartmentResidents
                     .Where(r => r.IsDeleted == false && r.AccountId != contract.AccountId) // Bỏ qua chủ hộ
-                    .Select(r => new ResidentItemDto
-                    {
-                        AccountId = r.AccountId ?? 0,
-                        RelationshipId = r.RelationshipId ?? 0
-                    })
                     .ToList();
+
+                var residentItemDtos = new List<ResidentItemDto>();
+                
+                foreach (var apartmentResident in apartmentResidents)
+                {
+                    var account = await _context.Accounts
+                        .Include(a => a.Info)
+                        .FirstOrDefaultAsync(a => a.AccountId == apartmentResident.AccountId);
+                    
+                    residentItemDtos.Add(new ResidentItemDto
+                    {
+                        AccountId = apartmentResident.AccountId ?? 0,
+                        RelationshipId = apartmentResident.RelationshipId ?? 0,
+                        FullName = account?.Info?.FullName
+                    });
+                }
+
+                detailDto.AdditionalResidents = residentItemDtos;
             }
 
             // Lấy danh sách dịch vụ
             if (contract.Apartment != null && contract.Apartment.ApartmentServices != null)
             {
-                detailDto.SelectedServices = contract.Apartment.ApartmentServices
+                var apartmentServices = contract.Apartment.ApartmentServices
                     .Where(s => s.IsDeleted == false)
-                    .Select(s => new ServiceItemDto
-                    {
-                        ServiceId = s.ServiceId ?? 0,
-                        ActualPrice = s.ActualPrice
-                    })
                     .ToList();
+
+                var serviceItemDtos = new List<ServiceItemDto>();
+                
+                foreach (var apartmentService in apartmentServices)
+                {
+                    var service = await _context.Services
+                        .FirstOrDefaultAsync(s => s.ServiceId == apartmentService.ServiceId);
+                    
+                    serviceItemDtos.Add(new ServiceItemDto
+                    {
+                        ServiceId = apartmentService.ServiceId ?? 0,
+                        ActualPrice = apartmentService.ActualPrice,
+                        ServiceName = service?.ServiceName
+                    });
+                }
+
+                detailDto.SelectedServices = serviceItemDtos;
             }
 
             return ApiResponse<object>.Success(detailDto, "OK");
