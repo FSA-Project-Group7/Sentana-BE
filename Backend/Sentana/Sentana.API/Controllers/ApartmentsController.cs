@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sentana.API.DTOs.Apartment;
+using Sentana.API.Helpers;
 using Sentana.API.Services.SApartment;
 
 namespace Sentana.API.Controllers
@@ -17,12 +18,30 @@ namespace Sentana.API.Controllers
 			_apartmentService = apartmentService;
 		}
 
-		[HttpGet]
-		public async Task<IActionResult> GetApartmentList()
-		{
-			var result = await _apartmentService.GetApartmentListAsync();
-			return Ok(result);
-		}
+        [HttpGet]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetApartmentList([FromQuery] int? buildingId = null)
+        {
+            try
+            {
+                var accountIdClaim = User.FindFirst("AccountId")?.Value;
+                if (string.IsNullOrEmpty(accountIdClaim) || !int.TryParse(accountIdClaim, out int managerId))
+                {
+                    return Unauthorized(ApiResponse<IEnumerable<ApartmentDto>>.Fail(401, "Không xác định được danh tính người dùng hoặc phiên đăng nhập không hợp lệ."));
+                }
+                var result = await _apartmentService.GetApartmentListAsync(managerId, buildingId);
+                if (result == null || !result.Any())
+                {
+                    return Ok(ApiResponse<IEnumerable<ApartmentDto>>.Success(new List<ApartmentDto>(), "Không tìm thấy căn hộ nào phù hợp với dữ liệu yêu cầu."));
+                }
+                return Ok(ApiResponse<IEnumerable<ApartmentDto>>.Success(result, "Lấy danh sách căn hộ thành công."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<IEnumerable<ApartmentDto>>.Fail(400, $"Đã xảy ra lỗi hệ thống khi tải danh sách căn hộ: {ex.Message}"));
+            }
+        }
+
 
 		[HttpPost]
 		[Authorize(Roles = "Manager")] // Phân quyền
