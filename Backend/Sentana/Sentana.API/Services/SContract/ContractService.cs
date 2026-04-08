@@ -354,22 +354,10 @@ namespace Sentana.API.Services
 
             try
             {
-                var invoices = await _context.Invoices
-                    .Where(x => x.ContractId == contractId)
-                    .ToListAsync();
-
-                var invoiceIds = invoices.Select(x => x.InvoiceId).ToList();
-
-                var payments = await _context.PaymentTransactions
-                    .Where(x => x.InvoiceId != null && invoiceIds.Contains(x.InvoiceId.Value))
-                    .ToListAsync();
-
-                decimal totalInvoice = invoices.Sum(x => x.TotalMoney ?? 0);
-                decimal totalPaid = payments.Sum(x => x.AmountPaid ?? 0);
+                decimal deposit = contract.Deposit ?? 0;
                 decimal additionalCost = request.AdditionalCost;
 
-                decimal refund = totalPaid - totalInvoice - additionalCost;
-                bool isFullyPaid = totalPaid >= (totalInvoice + additionalCost);
+                decimal refund = deposit - additionalCost;
 
                 contract.Status = GeneralStatus.Inactive;
                 contract.EndDay = request.TerminationDate;
@@ -379,15 +367,8 @@ namespace Sentana.API.Services
                 contract.RefundAmount = refund;
                 contract.TerminationReason = request.TerminationReason;
 
-                if (additionalCost > 0)
-                {
-                    contract.SettlementStatus = SettlementStatus.PendingSettlement;
-                }
-                else
-                {
-                    contract.SettlementStatus = SettlementStatus.Settled;
-                    contract.SettledAt = DateTime.Now;
-                }
+                contract.SettlementStatus = SettlementStatus.Settled;
+                contract.SettledAt = DateTime.Now;
 
                 if (contract.Apartment != null && contract.Apartment.Status == ApartmentStatus.Occupied)
                 {
@@ -422,19 +403,14 @@ namespace Sentana.API.Services
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                string paymentStatus = isFullyPaid ? "Đã thanh toán đủ" : "Chưa thanh toán đủ";
-
                 // Gửi email thông báo cho resident
-                await SendTerminationEmailAsync(contract, totalInvoice, totalPaid, additionalCost, refund);
+                await SendTerminationEmailAsync(contract, deposit, additionalCost, refund);
 
                 return ApiResponse<object>.Success(new
                 {
-                    TotalInvoice = totalInvoice,
-                    TotalPaid = totalPaid,
+                    Deposit = deposit,
                     AdditionalCost = additionalCost,
                     RefundAmount = refund,
-                    IsFullyPaid = isFullyPaid,
-                    PaymentStatus = paymentStatus,
                     SettlementStatus = contract.SettlementStatus.ToString() 
                 }, "Chấm dứt hợp đồng thành công và đã lưu trữ sao kê tài chính.");
             }
@@ -445,7 +421,7 @@ namespace Sentana.API.Services
             }
         }
 
-        private async Task SendTerminationEmailAsync(Contract contract, decimal totalInvoice, decimal totalPaid, decimal additionalCost, decimal refund)
+        private async Task SendTerminationEmailAsync(Contract contract, decimal deposit, decimal additionalCost, decimal refund)
         {
             try
             {
@@ -493,12 +469,8 @@ namespace Sentana.API.Services
                                 
                                 <table style='width: 100%; border-collapse: collapse;'>
                                     <tr style='border-bottom: 1px solid #dee2e6;'>
-                                        <td style='padding: 12px 0; color: #666;'>Tổng hóa đơn:</td>
-                                        <td style='padding: 12px 0; text-align: right; font-weight: bold;'>{totalInvoice:N0} VNĐ</td>
-                                    </tr>
-                                    <tr style='border-bottom: 1px solid #dee2e6;'>
-                                        <td style='padding: 12px 0; color: #666;'>Đã thanh toán:</td>
-                                        <td style='padding: 12px 0; text-align: right; font-weight: bold; color: #28a745;'>{totalPaid:N0} VNĐ</td>
+                                        <td style='padding: 12px 0; color: #666;'>Tiền cọc:</td>
+                                        <td style='padding: 12px 0; text-align: right; font-weight: bold; color: #28a745;'>{deposit:N0} VNĐ</td>
                                     </tr>
                                     <tr style='border-bottom: 1px solid #dee2e6;'>
                                         <td style='padding: 12px 0; color: #666;'>Phí phát sinh/Phạt:</td>
@@ -526,7 +498,7 @@ namespace Sentana.API.Services
 
                             <div style='background-color: #e7f3ff; padding: 15px; border-radius: 8px; margin: 20px 0;'>
                                 <p style='margin: 0; color: #004085;'>
-                                    <strong>📌 Lưu ý:</strong> Công thức tính = Đã thanh toán - Tổng hóa đơn - Phí phát sinh
+                                    <strong>📌 Lưu ý:</strong> Công thức tính = Tiền cọc - Phí phát sinh
                                 </p>
                             </div>
 
@@ -923,21 +895,10 @@ namespace Sentana.API.Services
                 }
 
                 // Tính toán lại refund amount
-                var invoices = await _context.Invoices
-                    .Where(x => x.ContractId == contractId)
-                    .ToListAsync();
-
-                var invoiceIds = invoices.Select(x => x.InvoiceId).ToList();
-
-                var payments = await _context.PaymentTransactions
-                    .Where(x => x.InvoiceId != null && invoiceIds.Contains(x.InvoiceId.Value))
-                    .ToListAsync();
-
-                decimal totalInvoice = invoices.Sum(x => x.TotalMoney ?? 0);
-                decimal totalPaid = payments.Sum(x => x.AmountPaid ?? 0);
+                decimal deposit = contract.Deposit ?? 0;
                 decimal additionalCost = contract.AdditionalCost ?? 0;
 
-                contract.RefundAmount = totalPaid - totalInvoice - additionalCost;
+                contract.RefundAmount = deposit - additionalCost;
 
                 // Đánh dấu đã hoàn tất quyết toán
                 contract.SettlementStatus = SettlementStatus.Settled;
