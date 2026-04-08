@@ -5,6 +5,7 @@ using Sentana.API.Helpers;
 using Sentana.API.Models;
 using Sentana.API.Repositories;
 using Sentana.API.Services.SStorage;
+using Sentana.API.Services.SEmail;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,15 +18,18 @@ namespace Sentana.API.Services
         private readonly IContractRepository _contractRepository;
         private readonly IMinioService _minioService;
         private readonly SentanaContext _context;
+        private readonly IEmailService _emailService;
 
         public ContractService(
             IContractRepository contractRepository,
             IMinioService minioService,
-            SentanaContext context)
+            SentanaContext context,
+            IEmailService emailService)
         {
             _contractRepository = contractRepository;
             _minioService = minioService;
             _context = context;
+            _emailService = emailService;
         }
 
         public async Task<ApiResponse<object>> CreateContractAsync(CreateContractDto request, int accountId)
@@ -214,7 +218,6 @@ namespace Sentana.API.Services
                 contract.Deposit = request.Deposit ?? contract.Deposit;
                 contract.UpdatedAt = DateTime.Now;
 
-                // 1. Xử lý File PDF
                 if (request.File != null)
                 {
                     if (!request.File.ContentType.Contains("pdf"))
@@ -342,12 +345,15 @@ namespace Sentana.API.Services
 
             if (contract == null) return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng");
             if (contract.Status != GeneralStatus.Active) return ApiResponse<object>.Fail(400, "Contract không active");
+            
+            // Validate additionalCost
+            if (request.AdditionalCost < 0) 
+                return ApiResponse<object>.Fail(400, "Phí phát sinh không được là số âm");
 
             using var transaction = await _context.Database.BeginTransactionAsync();
 
             try
             {
-                // 1. Lấy dữ liệu tài chính (Hóa đơn & Thanh toán)
                 var invoices = await _context.Invoices
                     .Where(x => x.ContractId == contractId)
                     .ToListAsync();
@@ -358,49 +364,36 @@ namespace Sentana.API.Services
                     .Where(x => x.InvoiceId != null && invoiceIds.Contains(x.InvoiceId.Value))
                     .ToListAsync();
 
-                // 2. Tính toán các con số
                 decimal totalInvoice = invoices.Sum(x => x.TotalMoney ?? 0);
                 decimal totalPaid = payments.Sum(x => x.AmountPaid ?? 0);
                 decimal additionalCost = request.AdditionalCost;
 
-                // Công thức chuẩn: Refund = Đã trả - Nợ cũ - Phụ phí phát sinh
                 decimal refund = totalPaid - totalInvoice - additionalCost;
                 bool isFullyPaid = totalPaid >= (totalInvoice + additionalCost);
 
-                // ========================================================
-                // GIẢI QUYẾT VẤN ĐỀ 2: LƯU DỮ LIỆU TÀI CHÍNH VÀO DB
-                // ========================================================
                 contract.Status = GeneralStatus.Inactive;
                 contract.EndDay = request.TerminationDate;
                 contract.UpdatedAt = DateTime.Now;
 
-                // LƯU CÁC TRƯỜNG QUAN TRỌNG
                 contract.AdditionalCost = additionalCost;
                 contract.RefundAmount = refund;
                 contract.TerminationReason = request.TerminationReason;
 
-                // ========================================================
-                // GIẢI QUYẾT VẤN ĐỀ 1: PHÂN LUỒNG TRẠNG THÁI QUYẾT TOÁN
-                // ========================================================
                 if (additionalCost > 0)
                 {
-                    // Nếu có phạt/bồi thường -> Chờ khách nộp tiền
                     contract.SettlementStatus = SettlementStatus.PendingSettlement;
                 }
                 else
                 {
-                    // Nếu không có phạt -> Sạch sẽ, hoàn tất luôn
                     contract.SettlementStatus = SettlementStatus.Settled;
                     contract.SettledAt = DateTime.Now;
                 }
 
-                // 3. Xử lý trả phòng
                 if (contract.Apartment != null && contract.Apartment.Status == ApartmentStatus.Occupied)
                 {
                     contract.Apartment.Status = ApartmentStatus.Vacant;
                 }
 
-                // 4. Xử lý Cư dân và Dịch vụ (Theo cấu trúc cũ của bạn)
                 if (contract.ApartmentId.HasValue)
                 {
                     int apartmentId = contract.ApartmentId.Value;
@@ -426,12 +419,13 @@ namespace Sentana.API.Services
                         s.Status = GeneralStatus.Inactive;
                     }
                 }
-
-                // CHỐT LƯU VÀO DB
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
                 string paymentStatus = isFullyPaid ? "Đã thanh toán đủ" : "Chưa thanh toán đủ";
+
+                // Gửi email thông báo cho resident
+                await SendTerminationEmailAsync(contract, totalInvoice, totalPaid, additionalCost, refund);
 
                 return ApiResponse<object>.Success(new
                 {
@@ -441,13 +435,123 @@ namespace Sentana.API.Services
                     RefundAmount = refund,
                     IsFullyPaid = isFullyPaid,
                     PaymentStatus = paymentStatus,
-                    SettlementStatus = contract.SettlementStatus.ToString() // Trả về cho FE biết luôn
+                    SettlementStatus = contract.SettlementStatus.ToString() 
                 }, "Chấm dứt hợp đồng thành công và đã lưu trữ sao kê tài chính.");
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 return ApiResponse<object>.Fail(500, ex.Message);
+            }
+        }
+
+        private async Task SendTerminationEmailAsync(Contract contract, decimal totalInvoice, decimal totalPaid, decimal additionalCost, decimal refund)
+        {
+            try
+            {
+                if (contract.Account?.Email == null) return;
+
+                var residentName = contract.Account.Info?.FullName ?? "Quý khách";
+                var apartmentName = contract.Apartment?.ApartmentName ?? contract.Apartment?.ApartmentCode ?? "N/A";
+
+                string refundStatus;
+                string refundColor;
+                if (refund > 0)
+                {
+                    refundStatus = $"<strong style='color: #28a745;'>BQL sẽ hoàn trả: {refund:N0} VNĐ</strong>";
+                    refundColor = "#28a745";
+                }
+                else if (refund < 0)
+                {
+                    refundStatus = $"<strong style='color: #dc3545;'>Quý khách còn nợ: {Math.Abs(refund):N0} VNĐ</strong>";
+                    refundColor = "#dc3545";
+                }
+                else
+                {
+                    refundStatus = "<strong style='color: #6c757d;'>Đã thanh toán đủ, không còn nợ</strong>";
+                    refundColor = "#6c757d";
+                }
+
+                string emailBody = $@"
+                    <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;'>
+                        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;'>
+                            <h2 style='color: white; margin: 0;'>THÔNG BÁO THANH LÝ HỢP ĐỒNG</h2>
+                        </div>
+                        
+                        <div style='background-color: white; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);'>
+                            <p style='font-size: 16px; color: #333;'>Kính gửi <strong>{residentName}</strong>,</p>
+                            
+                            <p style='color: #666; line-height: 1.6;'>
+                                Hợp đồng thuê căn hộ <strong>{apartmentName}</strong> (Mã: <strong>{contract.ContractCode}</strong>) 
+                                đã được thanh lý vào ngày <strong>{contract.EndDay?.ToString("dd/MM/yyyy")}</strong>.
+                            </p>
+
+                            <div style='background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;'>
+                                <h3 style='color: #667eea; margin-top: 0; border-bottom: 2px solid #667eea; padding-bottom: 10px;'>
+                                    📊 Bảng Đối Soát Tài Chính
+                                </h3>
+                                
+                                <table style='width: 100%; border-collapse: collapse;'>
+                                    <tr style='border-bottom: 1px solid #dee2e6;'>
+                                        <td style='padding: 12px 0; color: #666;'>Tổng hóa đơn:</td>
+                                        <td style='padding: 12px 0; text-align: right; font-weight: bold;'>{totalInvoice:N0} VNĐ</td>
+                                    </tr>
+                                    <tr style='border-bottom: 1px solid #dee2e6;'>
+                                        <td style='padding: 12px 0; color: #666;'>Đã thanh toán:</td>
+                                        <td style='padding: 12px 0; text-align: right; font-weight: bold; color: #28a745;'>{totalPaid:N0} VNĐ</td>
+                                    </tr>
+                                    <tr style='border-bottom: 1px solid #dee2e6;'>
+                                        <td style='padding: 12px 0; color: #666;'>Phí phát sinh/Phạt:</td>
+                                        <td style='padding: 12px 0; text-align: right; font-weight: bold; color: #dc3545;'>{additionalCost:N0} VNĐ</td>
+                                    </tr>
+                                    <tr style='background-color: #e9ecef;'>
+                                        <td style='padding: 15px 10px; font-weight: bold; font-size: 16px;'>KẾT QUẢ:</td>
+                                        <td style='padding: 15px 10px; text-align: right; font-size: 18px; color: {refundColor}; font-weight: bold;'>
+                                            {(refund >= 0 ? "+" : "")}{refund:N0} VNĐ
+                                        </td>
+                                    </tr>
+                                </table>
+
+                                <div style='margin-top: 20px; padding: 15px; background-color: white; border-left: 4px solid {refundColor}; border-radius: 4px;'>
+                                    {refundStatus}
+                                </div>
+
+                                {(string.IsNullOrEmpty(contract.TerminationReason) ? "" : $@"
+                                <div style='margin-top: 15px; padding: 15px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;'>
+                                    <strong>Lý do thanh lý:</strong><br/>
+                                    <span style='color: #856404;'>{contract.TerminationReason}</span>
+                                </div>
+                                ")}
+                            </div>
+
+                            <div style='background-color: #e7f3ff; padding: 15px; border-radius: 8px; margin: 20px 0;'>
+                                <p style='margin: 0; color: #004085;'>
+                                    <strong>📌 Lưu ý:</strong> Công thức tính = Đã thanh toán - Tổng hóa đơn - Phí phát sinh
+                                </p>
+                            </div>
+
+                            <p style='color: #666; line-height: 1.6;'>
+                                Nếu có bất kỳ thắc mắc nào, vui lòng liên hệ Ban Quản Lý để được hỗ trợ.
+                            </p>
+
+                            <div style='margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center; color: #999;'>
+                                <p style='margin: 5px 0;'>Trân trọng,</p>
+                                <p style='margin: 5px 0; font-weight: bold; color: #667eea;'>Ban Quản Lý Sentana</p>
+                            </div>
+                        </div>
+                    </div>
+                ";
+
+                await _emailService.SendEmailAsync(
+                    contract.Account.Email,
+                    $"[SENTANA] Thông báo thanh lý hợp đồng {contract.ContractCode}",
+                    emailBody
+                );
+            }
+            catch (Exception ex)
+            {
+                // Log error nhưng không throw để không ảnh hưởng đến terminate process
+                Console.WriteLine($"Error sending termination email: {ex.Message}");
             }
         }
 
@@ -477,7 +581,6 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(null, "Extend thành công");
         }
 
-        // 👉 FIX 2: TÍNH TOÁN REFUND TRẢ VỀ CHO MANAGER (BUG 58)
         public async Task<ApiResponse<object>> GetContractDetailAsync(int contractId)
         {
             var contract = await _context.Contracts
@@ -562,7 +665,6 @@ namespace Sentana.API.Services
             return ApiResponse<object>.Success(list, "OK");
         }
 
-        // 👉 FIX 3: TRẢ VỀ DANH SÁCH LỊCH SỬ CHO CƯ DÂN (BUG 59 VÀ 58)
         public async Task<ApiResponse<object>> GetMyContractAsync(int accountId)
         {
             var contracts = await _context.Contracts
@@ -574,6 +676,8 @@ namespace Sentana.API.Services
             if (!contracts.Any()) return ApiResponse<object>.Fail(404, "Bạn chưa có hợp đồng nào.");
 
             var resultList = new List<object>();
+
+            var relationships = await _context.Relationships.ToListAsync();
 
             foreach (var contract in contracts)
             {
@@ -591,8 +695,39 @@ namespace Sentana.API.Services
                     refundAmount = totalPaid - totalInvoice - additionalCost;
                 }
 
+                var servicesList = new List<object>();
+                var roommatesList = new List<object>();
+
+                if (contract.ApartmentId.HasValue)
+                {
+                    int aptId = contract.ApartmentId.Value;
+                    var aptServices = await _context.ApartmentServices
+                        .Include(s => s.Service)
+                        .Where(s => s.ApartmentId == aptId && s.IsDeleted == false)
+                        .ToListAsync();
+
+                    servicesList = aptServices.Select(s => new {
+                        ServiceName = s.Service?.ServiceName,
+                        UnitPrice = s.Service?.ServiceFee, 
+                        ActualPrice = s.ActualPrice,
+                        Unit = "tháng"                   
+                    }).Cast<object>().ToList();
+
+                    var aptResidents = await _context.ApartmentResidents
+                        .Include(r => r.Account).ThenInclude(a => a.Info)
+                        .Where(r => r.ApartmentId == aptId && r.AccountId != accountId && r.IsDeleted == false)
+                        .ToListAsync();
+
+                    roommatesList = aptResidents.Select(r => new {
+                        FullName = r.Account?.Info?.FullName ?? r.Account?.UserName,
+                        Phone = r.Account?.Info?.PhoneNumber,
+                        Relationship = relationships.FirstOrDefault(rel => rel.RelationshipId == r.RelationshipId)?.RelationshipName ?? "Khác"
+                    }).Cast<object>().ToList();
+                }
+
                 resultList.Add(new
                 {
+                    // Các trường để thg resident xem
                     ContractId = contract.ContractId,
                     ContractCode = contract.ContractCode,
                     ApartmentId = contract.ApartmentId,
@@ -605,17 +740,16 @@ namespace Sentana.API.Services
                     FileUrl = contract.File,
                     AdditionalCost = contract.AdditionalCost,
                     TerminationReason = contract.TerminationReason,
-                    RefundAmount = refundAmount
+                    RefundAmount = refundAmount,
+                    SettlementStatus = contract.SettlementStatus,
+                    SettledAt = contract.SettledAt,
+                    Services = servicesList,
+                    Roommates = roommatesList
                 });
             }
 
             return ApiResponse<object>.Success(resultList, "OK");
         }
-
-        // ==============================================================
-        // HÀM XỬ LÝ CHỨC NĂNG THÙNG RÁC (SOFT DELETE, HARD DELETE, RESTORE)
-        // ==============================================================
-
         public async Task<ApiResponse<object>> GetDeletedContractsAsync()
         {
             var deletedContracts = await _context.Contracts
@@ -752,6 +886,88 @@ namespace Sentana.API.Services
                 TerminationReason = contract.TerminationReason,
                 UpdatedAt = contract.UpdatedAt
             };
+        }
+
+        // Settle Contract - Complete settlement process
+        public async Task<ApiResponse<object>> SettleContractAsync(int contractId, SettleContractDto request)
+        {
+            var contract = await _context.Contracts
+                .Include(c => c.Apartment)
+                .FirstOrDefaultAsync(c => c.ContractId == contractId && c.IsDeleted == false);
+
+            if (contract == null)
+                return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng");
+
+            if (contract.Status != GeneralStatus.Inactive)
+                return ApiResponse<object>.Fail(400, "Chỉ có thể quyết toán hợp đồng đã chấm dứt");
+
+            if (contract.SettlementStatus == SettlementStatus.Settled)
+                return ApiResponse<object>.Fail(400, "Hợp đồng đã được quyết toán rồi");
+
+            if (contract.SettlementStatus != SettlementStatus.PendingInspection && 
+                contract.SettlementStatus != SettlementStatus.PendingSettlement)
+                return ApiResponse<object>.Fail(400, "Trạng thái hợp đồng không hợp lệ để quyết toán");
+
+            // Validate additionalCost
+            if (request.AdditionalCost < 0)
+                return ApiResponse<object>.Fail(400, "Phí phát sinh không được là số âm");
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                // Cập nhật chi phí phát sinh nếu có
+                if (request.AdditionalCost > 0)
+                {
+                    contract.AdditionalCost = request.AdditionalCost;
+                }
+
+                // Tính toán lại refund amount
+                var invoices = await _context.Invoices
+                    .Where(x => x.ContractId == contractId)
+                    .ToListAsync();
+
+                var invoiceIds = invoices.Select(x => x.InvoiceId).ToList();
+
+                var payments = await _context.PaymentTransactions
+                    .Where(x => x.InvoiceId != null && invoiceIds.Contains(x.InvoiceId.Value))
+                    .ToListAsync();
+
+                decimal totalInvoice = invoices.Sum(x => x.TotalMoney ?? 0);
+                decimal totalPaid = payments.Sum(x => x.AmountPaid ?? 0);
+                decimal additionalCost = contract.AdditionalCost ?? 0;
+
+                contract.RefundAmount = totalPaid - totalInvoice - additionalCost;
+
+                // Đánh dấu đã hoàn tất quyết toán
+                contract.SettlementStatus = SettlementStatus.Settled;
+                contract.SettledAt = DateTime.Now;
+                contract.UpdatedAt = DateTime.Now;
+
+                // Lưu note nếu cần (có thể thêm field SettlementNote vào model Contract)
+                if (!string.IsNullOrEmpty(request.Note))
+                {
+                    contract.TerminationReason = contract.TerminationReason + 
+                        (string.IsNullOrEmpty(contract.TerminationReason) ? "" : " | ") + 
+                        $"Ghi chú quyết toán: {request.Note}";
+                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return ApiResponse<object>.Success(new
+                {
+                    ContractId = contract.ContractId,
+                    RefundAmount = contract.RefundAmount,
+                    SettlementStatus = contract.SettlementStatus.ToString(),
+                    SettledAt = contract.SettledAt
+                }, "Quyết toán hợp đồng thành công");
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return ApiResponse<object>.Fail(500, "Lỗi server khi quyết toán: " + ex.Message);
+            }
         }
     }
 }

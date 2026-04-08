@@ -24,5 +24,8 @@ namespace Sentana.API.Services
 
         // US21 - View Deposit Settlement
         Task<DepositSettlementDto?> GetDepositSettlementAsync(int contractId, int? requestingAccountId = null);
+
+        // Settle Contract - Complete settlement process
+        Task<ApiResponse<object>> SettleContractAsync(int contractId, SettleContractDto request);
     }
 }

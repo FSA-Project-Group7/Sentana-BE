@@ -122,6 +122,8 @@ namespace Sentana.API
            /* my bot ContractManagement
              Đăng ký Background Worker tự động check hợp đồng hết hạn*/
             builder.Services.AddHostedService<Sentana.API.Workers.ContractExpirationWorker>();
+            // Đăng ký Background Service gửi email thông báo hợp đồng sắp hết hạn
+            builder.Services.AddHostedService<Sentana.API.BackgroundServices.ContractExpiryNotificationService>();
             builder.Services.AddControllers()
 				.AddJsonOptions(options =>
 				{

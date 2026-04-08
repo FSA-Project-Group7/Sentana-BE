@@ -143,5 +143,14 @@ namespace Sentana.API.Controllers
 
             return Ok(result);
         }
+
+        // Settle Contract - Complete settlement process
+        [HttpPut("{id}/settle")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> SettleContract(int id, [FromBody] SettleContractDto request)
+        {
+            var result = await _contractService.SettleContractAsync(id, request);
+            return StatusCode(result.StatusCode, result);
+        }
     }
 }
