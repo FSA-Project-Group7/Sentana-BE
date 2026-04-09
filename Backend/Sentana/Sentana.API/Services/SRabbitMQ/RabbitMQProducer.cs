@@ -1,19 +1,32 @@
-﻿using RabbitMQ.Client;
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
+using RabbitMQ.Client;
 
 namespace Sentana.API.Services.SRabbitMQ
 {
     public class RabbitMQProducer : IRabbitMQProducer
     {
-        public async Task SendEmailMessage<T>(T message)
+        private const string EmailQueueName = "email_queue";
+        private const string NotificationQueueName = "notification_queue";
+
+        private readonly IRabbitMQConnection _connection;
+
+        public RabbitMQProducer(IRabbitMQConnection connection)
         {
-            var factory = new ConnectionFactory { HostName = "localhost" };
-            using var connection = await factory.CreateConnectionAsync();
-            using var channel = await connection.CreateChannelAsync();
+            _connection = connection;
+        }
+
+        public Task SendEmailMessage<T>(T message) => PublishAsync(EmailQueueName, message);
+
+        public Task SendNotificationMessage<T>(T message) => PublishAsync(NotificationQueueName, message);
+
+        private async Task PublishAsync<T>(string queueName, T message)
+        {
+            var connection = await _connection.GetConnectionAsync();
+            await using var channel = await connection.CreateChannelAsync();
 
             await channel.QueueDeclareAsync(
-                queue: "email_queue",
+                queue: queueName,
                 durable: true,
                 exclusive: false,
                 autoDelete: false,
@@ -28,7 +41,7 @@ namespace Sentana.API.Services.SRabbitMQ
 
             await channel.BasicPublishAsync(
                 exchange: "",
-                routingKey: "email_queue",
+                routingKey: queueName,
                 mandatory: false,
                 basicProperties: properties,
                 body: body);

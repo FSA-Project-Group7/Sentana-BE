@@ -2,6 +2,7 @@
 {
     public interface IRabbitMQProducer
     {
-        Task SendEmailMessage<T>(T message);    
+        Task SendEmailMessage<T>(T message);
+        Task SendNotificationMessage<T>(T message);
     }
 }

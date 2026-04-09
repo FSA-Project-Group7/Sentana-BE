@@ -89,7 +89,9 @@ namespace Sentana.API
             builder.Services.AddScoped<IMinioService, MinioService>();
 
             // Add services to the container.
-            builder.Services.AddScoped<IRabbitMQProducer, RabbitMQProducer>();
+            builder.Services.Configure<RabbitMQOptions>(builder.Configuration.GetSection("RabbitMQ"));
+            builder.Services.AddSingleton<IRabbitMQConnection, RabbitMQConnection>();
+            builder.Services.AddSingleton<IRabbitMQProducer, RabbitMQProducer>();
             builder.Services.AddScoped<IAuthService, AuthService>();
             builder.Services.AddScoped<IServiceService, ServiceService>();
             builder.Services.AddScoped<IContractService, ContractService>();
@@ -116,8 +118,10 @@ namespace Sentana.API
             builder.Services.AddScoped<IInvoiceService, InvoiceService>();
             builder.Services.AddScoped<IUtilityService, UtilityService>();
             builder.Services.AddScoped<INotificationService, NotificationService>();
+            builder.Services.AddScoped<INotificationPublisher, NotificationPublisher>();
             builder.Services.AddHostedService<Sentana.API.BackgroundServices.NotificationCleanupService>();
             builder.Services.AddHostedService<Sentana.API.BackgroundServices.EmailConsumerService>();
+            builder.Services.AddHostedService<Sentana.API.BackgroundServices.NotificationConsumerService>();
             builder.Services.AddScoped<IMaintenanceService, MaintenanceService>();
            /* my bot ContractManagement
              Đăng ký Background Worker tự động check hợp đồng hết hạn*/
@@ -132,6 +136,7 @@ namespace Sentana.API
 			builder.Services.AddMemoryCache();
             // đăng ý gửi thư
             builder.Services.AddScoped<IEmailService, EmailService>();
+            builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
             // Swagger
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen(c =>

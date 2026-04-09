@@ -8,6 +8,7 @@ using Sentana.API.Enums;
 using Sentana.API.Helpers;
 using Sentana.API.Models;
 using Sentana.API.Services.SEmail;
+using Sentana.API.Services.SNotification;
 using System;
 using System.Drawing;
 using System.Linq;
@@ -21,11 +22,13 @@ namespace Sentana.API.Services.SInvoice
     {
         private readonly SentanaContext _context;
         private readonly IEmailService _emailService;
+        private readonly INotificationPublisher _notificationPublisher;
 
-        public InvoiceService(SentanaContext context, IEmailService emailService)
+        public InvoiceService(SentanaContext context, IEmailService emailService, INotificationPublisher notificationPublisher)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _emailService = emailService;
+            _notificationPublisher = notificationPublisher;
         }
 
         // View monthly invoice 
@@ -217,6 +220,7 @@ namespace Sentana.API.Services.SInvoice
             int missingUtilityCount = 0;
 
             var emailTasks = new List<Task>();
+            var pendingNotifications = new List<(int AccountId, string Title, string Message)>();
 
             foreach (var apt in activeApartments)
             {
@@ -330,17 +334,12 @@ namespace Sentana.API.Services.SInvoice
 
                 if (contract.AccountId.HasValue)
                 {
-                    var notification = new Notification
-                    {
-                        AccountId = contract.AccountId.Value,
-                        Title = "Thông báo phát hành hóa đơn",
-                        Message = gap > 1
+                    pendingNotifications.Add((
+                        contract.AccountId.Value,
+                        "Thông báo phát hành hóa đơn",
+                        gap > 1
                             ? $"Hóa đơn kỳ {targetMonth}/{targetYear} (bao gồm gộp {gap} kỳ) đã được phát hành cho căn hộ {apt.ApartmentCode}."
-                            : $"Hóa đơn kỳ {targetMonth}/{targetYear} đã được phát hành cho căn hộ {apt.ApartmentCode}.",
-                        IsRead = false,
-                        CreatedAt = DateTime.Now
-                    };
-                    _context.Notifications.Add(notification);
+                            : $"Hóa đơn kỳ {targetMonth}/{targetYear} đã được phát hành cho căn hộ {apt.ApartmentCode}."));
 
                     if (contract.Account != null && !string.IsNullOrEmpty(contract.Account.Email))
                     {
@@ -378,6 +377,13 @@ namespace Sentana.API.Services.SInvoice
                 try
                 {
                     await _context.SaveChangesAsync();
+
+                    if (pendingNotifications.Any())
+                    {
+                        var publishTasks = pendingNotifications
+                            .Select(n => _notificationPublisher.QueueNotificationAsync(n.AccountId, n.Title, n.Message));
+                        await Task.WhenAll(publishTasks);
+                    }
 
                     if (emailTasks.Any())
                     {
@@ -577,19 +583,7 @@ namespace Sentana.API.Services.SInvoice
 
                 _context.Invoices.Update(transaction.Invoice);
 
-                // Tạo thông báo
-                if (transaction.Invoice.Contract?.AccountId != null)
-                {
-                    var notification = new Notification
-                    {
-                        AccountId = transaction.Invoice.Contract.AccountId.Value,
-                        Title = "Thanh toán thành công",
-                        Message = $"Giao dịch thanh toán {transaction.AmountPaid:N0} VNĐ cho hóa đơn tháng {transaction.Invoice.BillingMonth}/{transaction.Invoice.BillingYear} đã được xác nhận.",
-                        IsRead = false,
-                        CreatedAt = DateTime.Now
-                    };
-                    _context.Notifications.Add(notification);
-                }
+                // Notification được queue sau khi SaveChanges thành công
             }
 
             // Xử lý đồng thời
@@ -621,6 +615,14 @@ namespace Sentana.API.Services.SInvoice
                 _ = _emailService.SendEmailAsync(account.Email, subject, body);
             }
 
+            if (isSaved && transaction.Invoice?.Contract?.AccountId != null)
+            {
+                await _notificationPublisher.QueueNotificationAsync(
+                    transaction.Invoice.Contract.AccountId.Value,
+                    "Thanh toán thành công",
+                    $"Giao dịch thanh toán {transaction.AmountPaid:N0} VNĐ cho hóa đơn tháng {transaction.Invoice.BillingMonth}/{transaction.Invoice.BillingYear} đã được xác nhận.");
+            }
+
             return isSaved ? (true, "Đã duyệt thanh toán thành công. Hóa đơn chuyển sang Đã thanh toán.")
                            : (false, "Lỗi hệ thống khi lưu dữ liệu.");
         }
@@ -649,19 +651,7 @@ namespace Sentana.API.Services.SInvoice
                 // Cập nhật Invoice trả về trạng thái Unpaid
                 transaction.Invoice.Status = InvoiceStatus.Unpaid;
 
-                // Tạo notification
-                if (transaction.Invoice.Contract?.AccountId != null)
-                {
-                    var notification = new Notification
-                    {
-                        AccountId = transaction.Invoice.Contract.AccountId.Value,
-                        Title = "Giao dịch bị từ chối",
-                        Message = $"Giao dịch thanh toán hóa đơn tháng {transaction.Invoice.BillingMonth}/{transaction.Invoice.BillingYear} bị từ chối. Lý do: {request.Reason}.",
-                        IsRead = false,
-                        CreatedAt = DateTime.Now
-                    };
-                    _context.Notifications.Add(notification);
-                }
+                // Notification được queue sau khi SaveChanges thành công
             }
 
             bool isSaved = await _context.SaveChangesAsync() > 0;
@@ -683,6 +673,14 @@ namespace Sentana.API.Services.SInvoice
 
                 // Chạy ngầm (Fire-and-forget) 
                 _ = _emailService.SendEmailAsync(account.Email, subject, body);
+            }
+
+            if (isSaved && transaction.Invoice?.Contract?.AccountId != null)
+            {
+                await _notificationPublisher.QueueNotificationAsync(
+                    transaction.Invoice.Contract.AccountId.Value,
+                    "Giao dịch bị từ chối",
+                    $"Giao dịch thanh toán hóa đơn tháng {transaction.Invoice.BillingMonth}/{transaction.Invoice.BillingYear} bị từ chối. Lý do: {request.Reason}.");
             }
 
             return isSaved ? (true, "Đã từ chối thanh toán thành công.")
