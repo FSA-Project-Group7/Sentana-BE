@@ -1,10 +1,12 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Common;
 using Sentana.API.DTOs.Invoice;
 using Sentana.API.DTOs.Payment;
 using Sentana.API.Helpers;
+using Sentana.API.Models;
 using Sentana.API.Services.SInvoice;
 
 namespace Sentana.API.Controllers
@@ -14,10 +16,12 @@ namespace Sentana.API.Controllers
     public class InvoiceController : BaseController 
     {
         private readonly IInvoiceService _invoiceService;
+        private readonly SentanaContext _context;
 
-        public InvoiceController(IInvoiceService invoiceService)
+        public InvoiceController(IInvoiceService invoiceService, SentanaContext context)
         {
             _invoiceService = invoiceService;
+            _context = context;
         }
 
         // us12
@@ -213,6 +217,39 @@ namespace Sentana.API.Controllers
                 return StatusCode(500, ApiResponse<string>.Fail(500, $"Lỗi xuất file Excel: {ex.Message}"));
      
             
+            }
+        }
+
+        // Get all unpaid invoices for a contract (for termination calculation)
+        [HttpGet("contract/{contractId}/unpaid")]
+        [Authorize(Roles = "Manager")]
+        public async Task<IActionResult> GetUnpaidInvoicesByContract(int contractId)
+        {
+            try
+            {
+                var invoices = await _context.Invoices
+                    .Where(i => i.ContractId == contractId && i.IsDeleted == false)
+                    .Select(i => new
+                    {
+                        i.InvoiceId,
+                        i.ContractId,
+                        i.ApartmentId,
+                        i.BillingMonth,
+                        i.BillingYear,
+                        i.TotalMoney,
+                        PaidAmount = i.Pay ?? 0,
+                        UnpaidAmount = (i.TotalMoney ?? 0) - (i.Pay ?? 0),
+                        i.Status
+                    })
+                    .OrderBy(i => i.BillingYear)
+                    .ThenBy(i => i.BillingMonth)
+                    .ToListAsync();
+
+                return Ok(ApiResponse<object>.Success(invoices, "Lấy danh sách hóa đơn chưa thanh toán thành công."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<string>.Fail(500, $"Lỗi hệ thống: {ex.Message}"));
             }
         }
 
