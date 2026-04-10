@@ -1,27 +1,40 @@
-﻿using Microsoft.EntityFrameworkCore.Metadata;
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Sentana.API.DTOs.Email;
 using Sentana.API.Services.SEmail;
+using Sentana.API.Services.SRabbitMQ;
+using Microsoft.Extensions.Options;
 
 namespace Sentana.API.BackgroundServices
 {
     public class EmailConsumerService : BackgroundService
     {
         private readonly IServiceProvider _serviceProvider;
+        private readonly RabbitMQOptions _rabbitOptions;
         private IConnection? _connection;
         private IChannel? _channel;
 
-        public EmailConsumerService(IServiceProvider serviceProvider)
+        public EmailConsumerService(IServiceProvider serviceProvider, IOptions<RabbitMQOptions> rabbitOptions)
         {
             _serviceProvider = serviceProvider;
+            _rabbitOptions = rabbitOptions.Value;
         }
         public override async Task StartAsync(CancellationToken cancellationToken)
         {
-            var factory = new ConnectionFactory { HostName = "localhost" };
-            _connection = await factory.CreateConnectionAsync();
+            var factory = new ConnectionFactory
+            {
+                HostName = _rabbitOptions.HostName,
+                Port = _rabbitOptions.Port,
+                VirtualHost = _rabbitOptions.VirtualHost,
+                AutomaticRecoveryEnabled = true,
+                TopologyRecoveryEnabled = true
+            };
+            if (!string.IsNullOrWhiteSpace(_rabbitOptions.UserName)) factory.UserName = _rabbitOptions.UserName;
+            if (!string.IsNullOrWhiteSpace(_rabbitOptions.Password)) factory.Password = _rabbitOptions.Password;
+
+            _connection = await factory.CreateConnectionAsync(cancellationToken);
             _channel = await _connection.CreateChannelAsync();
 
             await _channel.QueueDeclareAsync(
@@ -30,6 +43,9 @@ namespace Sentana.API.BackgroundServices
                 exclusive: false,
                 autoDelete: false,
                 arguments: null);
+
+            // Giới hạn số message đang xử lý đồng thời (backpressure)
+            await _channel.BasicQosAsync(prefetchSize: 0, prefetchCount: 20, global: false);
 
             await base.StartAsync(cancellationToken);
         }
@@ -47,11 +63,11 @@ namespace Sentana.API.BackgroundServices
                 if (emailData != null)
                 {
                     using var scope = _serviceProvider.CreateScope();
-                    var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+                    var emailSender = scope.ServiceProvider.GetRequiredService<IEmailSender>();
 
                     try
                     {
-                        await emailService.SendEmailAsync(emailData.To, emailData.Subject, emailData.Body);
+                        await emailSender.SendAsync(emailData.To, emailData.Subject, emailData.Body, stoppingToken);
                         await _channel.BasicAckAsync(ea.DeliveryTag, false);
                     }
                     catch (Exception)

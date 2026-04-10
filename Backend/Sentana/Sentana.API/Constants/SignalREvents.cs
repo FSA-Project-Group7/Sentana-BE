@@ -2,6 +2,7 @@
 {
     public class SignalREvents
     {
+        public const string NOTIFICATION_RECEIVED = "NotificationReceived";
         public const string MAINTENANCE_REQUEST = "ReceiveNewMaintenanceRequest"; // Gửi cho Manager
         public const string MAINTENANCE_ASSIGNEDTASK = "ReceiveAssignedTask";        // Gửi cho Technician
         public const string MAINTENANCE_TASKPROCESSING = "TaskProcessing";           // Gửi cho Manager & Resident

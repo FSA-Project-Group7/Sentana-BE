@@ -6,6 +6,7 @@ using Sentana.API.DTOs.Maintenance;
 using Sentana.API.Enums;
 using Sentana.API.Hubs;
 using Sentana.API.Models;
+using Sentana.API.Services.SNotification;
 using Sentana.API.Services.SRabbitMQ;
 using Sentana.API.Services.SStorage;
 using System;
@@ -22,16 +23,20 @@ namespace Sentana.API.Services.SMaintenance
         private readonly IMinioService _minioService;
         private readonly IHubContext<NotificationHub> _hubContext;
         private readonly IRabbitMQProducer _rabbitMQProducer;
+        private readonly INotificationPublisher _notificationPublisher;
 
         public MaintenanceService(
             SentanaContext context,
             IMinioService minioService,
-            IHubContext<NotificationHub> hubContext, IRabbitMQProducer rabbitMQProducer)
+            IHubContext<NotificationHub> hubContext,
+            IRabbitMQProducer rabbitMQProducer,
+            INotificationPublisher notificationPublisher)
         {
             _context = context;
             _minioService = minioService;
             _hubContext = hubContext;
             _rabbitMQProducer = rabbitMQProducer; 
+            _notificationPublisher = notificationPublisher;
         }
 
         public async Task<(bool IsSuccess, string Message, object? Data)> GetIssueCategoriesAsync()
@@ -254,17 +259,15 @@ namespace Sentana.API.Services.SMaintenance
                 task.FixedImageUrl = uploadedImageUrl;
             }
 
-            var notif = new Notification
-            {
-                AccountId = task.AccountId ?? 0,
-                Title = "Bảo trì hoàn tất",
-                Message = $"Sự cố '{task.Title}' đã được kỹ thuật viên xử lý xong.",
-                IsRead = false,
-                CreatedAt = DateTime.Now
-            };
-            _context.Notifications.Add(notif);
-
             await _context.SaveChangesAsync();
+
+            if (task.AccountId.HasValue && task.AccountId.Value > 0)
+            {
+                await _notificationPublisher.QueueNotificationAsync(
+                    task.AccountId.Value,
+                    "Bảo trì hoàn tất",
+                    $"Sự cố '{task.Title}' đã được kỹ thuật viên xử lý xong.");
+            }
 
             var payload = await GetSingleRequestPayloadAsync(task.RequestId);
             var managerId = task.Apartment?.Building?.ManagerId;
@@ -546,16 +549,15 @@ namespace Sentana.API.Services.SMaintenance
             task.UpdatedAt = DateTime.Now;
             task.UpdatedBy = managerId;
             task.ResolutionNote = $"[TỪ CHỐI NGHIỆM THU: {request.RejectReason}]\n--- Ghi chú cũ: {task.ResolutionNote}";
-            var notif = new Notification
-            {
-                AccountId = task.AssignedTo ?? 0,
-                Title = "Nghiệm thu không đạt",
-                Message = $"Công việc '{task.Title}' không đạt yêu cầu. Quản lý yêu cầu: {request.RejectReason}",
-                IsRead = false,
-                CreatedAt = DateTime.Now
-            };
-            _context.Notifications.Add(notif);
             await _context.SaveChangesAsync();
+
+            if (task.AssignedTo.HasValue && task.AssignedTo.Value > 0)
+            {
+                await _notificationPublisher.QueueNotificationAsync(
+                    task.AssignedTo.Value,
+                    "Nghiệm thu không đạt",
+                    $"Công việc '{task.Title}' không đạt yêu cầu. Quản lý yêu cầu: {request.RejectReason}");
+            }
             var payload = await GetSingleRequestPayloadAsync(task.RequestId);
             if (task.AssignedTo.HasValue)
             {
@@ -636,21 +638,16 @@ namespace Sentana.API.Services.SMaintenance
 			// 2. Ghi chú lý do từ chối
 			task.ResolutionNote = $"[CƯ DÂN YÊU CẦU LÀM LẠI: {reason}]\n--- Báo cáo cũ: {task.ResolutionNote}";
 
-			// 3. Tạo Notification trong DB cho Thợ
+			await _context.SaveChangesAsync();
+
+			// 3. Queue Notification cho Thợ (RabbitMQ → bulk insert + SignalR)
 			if (task.AssignedTo.HasValue)
 			{
-				var notif = new Notification
-				{
-					AccountId = task.AssignedTo.Value,
-					Title = "Cư dân yêu cầu làm lại",
-					Message = $"Sự cố '{task.Title}' chưa đạt yêu cầu. Lời nhắn: {reason}",
-					IsRead = false,
-					CreatedAt = DateTime.Now
-				};
-				_context.Notifications.Add(notif);
+				await _notificationPublisher.QueueNotificationAsync(
+					task.AssignedTo.Value,
+					"Cư dân yêu cầu làm lại",
+					$"Sự cố '{task.Title}' chưa đạt yêu cầu. Lời nhắn: {reason}");
 			}
-
-			await _context.SaveChangesAsync();
 
 			// 4. Bắn SignalR cho Quản lý và Thợ
 			var payload = await GetSingleRequestPayloadAsync(task.RequestId);
