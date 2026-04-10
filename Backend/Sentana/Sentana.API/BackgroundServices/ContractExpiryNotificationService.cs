@@ -155,10 +155,10 @@ namespace Sentana.API.BackgroundServices
 
                         <div style='text-align: center; margin: 30px 0;'>
                             <p style='color: #666; margin-bottom: 15px;'>Liên hệ ngay với chúng tôi:</p>
-                            <a href='tel:0123456789' style='display: inline-block; background-color: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; margin: 5px;'>
+                            <a href='tel:0343758273' style='display: inline-block; background-color: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; margin: 5px;'>
                                 📞 Gọi điện
                             </a>
-                            <a href='mailto:support@sentana.com' style='display: inline-block; background-color: #28a745; color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; margin: 5px;'>
+                            <a href='mailto:thamthuongtromnho14@gmail.com' style='display: inline-block; background-color: #28a745; color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; margin: 5px;'>
                                 ✉️ Gửi email
                             </a>
                         </div>
