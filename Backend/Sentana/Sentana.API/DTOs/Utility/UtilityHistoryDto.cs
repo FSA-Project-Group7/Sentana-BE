@@ -1,4 +1,6 @@
-﻿namespace Sentana.API.DTOs.Utility
+﻿using System;
+
+namespace Sentana.API.DTOs.Utility
 {
     public class UtilityHistoryDto
     {
@@ -11,11 +13,15 @@
         // thông số điện
         public decimal ElectricityOldIndex { get; set; }
         public decimal ElectricityNewIndex { get; set; }
-        public decimal ElectricityConsumption => ElectricityNewIndex - ElectricityOldIndex; // Tự động tính
+        public decimal ElectricityConsumption => ElectricityNewIndex - ElectricityOldIndex;
 
         // thông số nước
         public decimal WaterOldIndex { get; set; }
         public decimal WaterNewIndex { get; set; }
-        public decimal WaterConsumption => WaterNewIndex - WaterOldIndex; // Tự động tính
+        public decimal WaterConsumption => WaterNewIndex - WaterOldIndex;
+
+        public bool IsInvoiceGenerated { get; set; }
+
+        public DateTime ContractStartDate { get; set; }
     }
 }

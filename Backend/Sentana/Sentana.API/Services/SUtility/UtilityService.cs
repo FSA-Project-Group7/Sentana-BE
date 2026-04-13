@@ -6,6 +6,10 @@ using System.Security.Claims;
 using Sentana.API.Helpers;
 using OfficeOpenXml;
 using System.Linq;
+using System.Collections.Generic;
+using System;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 
 namespace Sentana.API.Services
 {
@@ -213,77 +217,97 @@ namespace Sentana.API.Services
             var role = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? string.Empty;
             var isManager = string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase);
 
-            var targetApartmentIds = new List<int>();
+            var targetContracts = new List<Contract>();
 
             if (isManager)
             {
                 if (!targetApartmentId.HasValue) return (false, "Dữ liệu đầu vào không hợp lệ. Yêu cầu cung cấp định danh căn hộ.", null);
-                targetApartmentIds.Add(targetApartmentId.Value);
+                var contract = await _context.Contracts
+                    .Include(c => c.Apartment)
+                    .Where(c => c.ApartmentId == targetApartmentId.Value && c.Status == GeneralStatus.Active && c.IsDeleted == false)
+                    .OrderByDescending(c => c.CreatedAt)
+                    .FirstOrDefaultAsync();
+                if (contract != null) targetContracts.Add(contract);
             }
             else
             {
-                var aptIds = await _context.Contracts
+                targetContracts = await _context.Contracts
+                    .Include(c => c.Apartment)
                     .Where(c => c.AccountId == callerAccountId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
-                    .Select(c => c.ApartmentId)
-                    .Where(id => id.HasValue)
-                    .Select(id => id!.Value)
                     .ToListAsync();
-
-                if (!aptIds.Any())
-                    return (false, "Hệ thống không tìm thấy hợp đồng hiệu lực.", null);
-
-                targetApartmentIds.AddRange(aptIds);
             }
 
-            // Lấy dữ liệu Điện 
-            var elecQuery = _context.ElectricMeters
-                .Include(e => e.Apartment)
-                .Where(e => e.ApartmentId.HasValue && targetApartmentIds.Contains(e.ApartmentId.Value) && e.IsDeleted == false);
+            if (!targetContracts.Any())
+                return (false, "Hệ thống không tìm thấy hợp đồng hiệu lực.", null);
 
-            if (month.HasValue) elecQuery = elecQuery.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Month == month.Value);
-            if (year.HasValue) elecQuery = elecQuery.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Year == year.Value);
-            var elecList = await elecQuery.ToListAsync();
+            var targetApartmentIds = targetContracts.Select(c => c.ApartmentId.Value).ToList();
 
-            // Lấy dữ liệu Nước
-            var waterQuery = _context.WaterMeters
-                .Include(w => w.Apartment)
-                .Where(w => w.ApartmentId.HasValue && targetApartmentIds.Contains(w.ApartmentId.Value) && w.IsDeleted == false);
+            var elecList = await _context.ElectricMeters
+                .Where(e => e.ApartmentId.HasValue && targetApartmentIds.Contains(e.ApartmentId.Value) && e.IsDeleted == false)
+                .ToListAsync();
 
-            if (month.HasValue) waterQuery = waterQuery.Where(w => w.RegistrationDate.HasValue && w.RegistrationDate.Value.Month == month.Value);
-            if (year.HasValue) waterQuery = waterQuery.Where(w => w.RegistrationDate.HasValue && w.RegistrationDate.Value.Year == year.Value);
-            var waterList = await waterQuery.ToListAsync();
+            var waterList = await _context.WaterMeters
+                .Where(w => w.ApartmentId.HasValue && targetApartmentIds.Contains(w.ApartmentId.Value) && w.IsDeleted == false)
+                .ToListAsync();
+
+            var invoices = await _context.Invoices
+                .Where(i => i.ApartmentId.HasValue && targetApartmentIds.Contains(i.ApartmentId.Value) && i.IsDeleted == false)
+                .Select(i => new { i.ApartmentId, i.BillingMonth, i.BillingYear })
+                .ToListAsync();
 
             var history = new List<UtilityHistoryDto>();
 
-            // Gộp theo Căn Hộ + Tháng + Năm
             var datesAndApts = elecList.Select(e => new { AptId = e.ApartmentId, AptCode = e.Apartment?.ApartmentCode, Month = e.RegistrationDate!.Value.Month, Year = e.RegistrationDate!.Value.Year })
                 .Union(waterList.Select(w => new { AptId = w.ApartmentId, AptCode = w.Apartment?.ApartmentCode, Month = w.RegistrationDate!.Value.Month, Year = w.RegistrationDate!.Value.Year }))
                 .Distinct()
-                .OrderBy(d => d.AptCode)
-                .ThenByDescending(d => d.Year).ThenByDescending(d => d.Month);
+                .ToList();
 
-            foreach (var item in datesAndApts)
+            foreach (var contract in targetContracts)
             {
-                var elec = elecList.FirstOrDefault(e => e.ApartmentId == item.AptId && e.RegistrationDate!.Value.Month == item.Month && e.RegistrationDate!.Value.Year == item.Year);
-                var water = waterList.FirstOrDefault(w => w.ApartmentId == item.AptId && w.RegistrationDate!.Value.Month == item.Month && w.RegistrationDate!.Value.Year == item.Year);
+                var aptData = datesAndApts.Where(d => d.AptId == contract.ApartmentId).ToList();
+                DateTime startDate = contract.StartDay?.ToDateTime(TimeOnly.MinValue) ?? DateTime.MinValue;
 
-                history.Add(new UtilityHistoryDto
+                // ĐÃ SỬA: LUÔN LUÔN đảm bảo tháng đầu tiên của Hợp đồng có mặt trong danh sách (dù DB có dữ liệu hay không)
+                if (contract.StartDay.HasValue)
                 {
-                    ApartmentId = item.AptId ?? 0,
-                    ApartmentCode = item.AptCode ?? "N/A", // Map dữ liệu phòng vào đây
-                    Month = item.Month,
-                    Year = item.Year,
-                    ElectricityOldIndex = elec?.OldIndex ?? 0,
-                    ElectricityNewIndex = elec?.NewIndex ?? 0,
-                    WaterOldIndex = water?.OldIndex ?? 0,
-                    WaterNewIndex = water?.NewIndex ?? 0
-                });
+                    if (!aptData.Any(d => d.Month == startDate.Month && d.Year == startDate.Year))
+                    {
+                        aptData.Add(new { AptId = contract.ApartmentId, AptCode = contract.Apartment?.ApartmentCode, Month = startDate.Month, Year = startDate.Year });
+                    }
+                }
+
+                foreach (var d in aptData)
+                {
+                    if (month.HasValue && month.Value != d.Month) continue;
+                    if (year.HasValue && year.Value != d.Year) continue;
+
+                    var elec = elecList.FirstOrDefault(e => e.ApartmentId == d.AptId && e.RegistrationDate!.Value.Month == d.Month && e.RegistrationDate!.Value.Year == d.Year);
+                    var water = waterList.FirstOrDefault(w => w.ApartmentId == d.AptId && w.RegistrationDate!.Value.Month == d.Month && w.RegistrationDate!.Value.Year == d.Year);
+                    bool hasInvoice = invoices.Any(i => i.ApartmentId == d.AptId && i.BillingMonth == d.Month && i.BillingYear == d.Year);
+
+                    history.Add(new UtilityHistoryDto
+                    {
+                        ApartmentId = d.AptId ?? 0,
+                        ApartmentCode = d.AptCode ?? "N/A",
+                        Month = d.Month,
+                        Year = d.Year,
+                        ElectricityOldIndex = elec?.OldIndex ?? 0,
+                        ElectricityNewIndex = elec?.NewIndex ?? 0,
+                        WaterOldIndex = water?.OldIndex ?? 0,
+                        WaterNewIndex = water?.NewIndex ?? 0,
+                        IsInvoiceGenerated = hasInvoice,
+                        ContractStartDate = startDate
+                    });
+                }
             }
+
+            history = history.OrderBy(h => h.ApartmentCode).ThenByDescending(h => h.Year).ThenByDescending(h => h.Month).ToList();
 
             return (true, "Truy xuất dữ liệu hoàn tất.", history);
         }
 
-        public async Task<(bool IsSuccess, string Message)> ImportUtilityExcelAsync(IFormFile file, string utilityType, int currentUserId)
+        // ĐÃ NÂNG CẤP: IMPORT ĐỒNG THỜI ĐIỆN VÀ NƯỚC, ĐỌC TỪ 4 CỘT
+        public async Task<(bool IsSuccess, string Message)> ImportUtilityExcelAsync(IFormFile file, int currentUserId)
         {
             if (file == null || file.Length == 0) return (false, "Tập tin đính kèm không hợp lệ.");
 
@@ -297,32 +321,45 @@ namespace Sentana.API.Services
 
             int rowCount = worksheet.Dimension.Rows;
             int successCount = 0;
+            var errors = new List<string>();
 
+            // Cột 1: Mã Phòng, Cột 2: Điện mới, Cột 3: Nước mới, Cột 4: Ngày ghi nhận
             for (int row = 2; row <= rowCount; row++)
             {
-                if (int.TryParse(worksheet.Cells[row, 1].Text, out int aptId) &&
-                    decimal.TryParse(worksheet.Cells[row, 2].Text, out decimal newIndex) &&
-                    DateTime.TryParse(worksheet.Cells[row, 3].Text, out DateTime regDate))
+                bool hasAptId = int.TryParse(worksheet.Cells[row, 1].Text, out int aptId);
+                bool hasElec = decimal.TryParse(worksheet.Cells[row, 2].Text, out decimal elecIndex);
+                bool hasWater = decimal.TryParse(worksheet.Cells[row, 3].Text, out decimal waterIndex);
+                bool hasDate = DateTime.TryParse(worksheet.Cells[row, 4].Text, out DateTime regDate);
+
+                if (hasAptId && hasDate && (hasElec || hasWater))
                 {
-                    if (utilityType.ToLower() == "electric")
+                    if (hasElec)
                     {
-                        var dto = new InputElectricIndexDto { ApartmentId = aptId, NewIndex = newIndex, RegistrationDate = regDate, IsMerge = false };
-                        var res = await InputElectricityIndexAsync(dto, currentUserId);
-                        if (res.IsSuccess) successCount++;
+                        var dtoE = new InputElectricIndexDto { ApartmentId = aptId, NewIndex = elecIndex, RegistrationDate = regDate, IsMerge = false };
+                        var resE = await InputElectricityIndexAsync(dtoE, currentUserId);
+                        if (resE.IsSuccess) successCount++;
+                        else errors.Add($"Dòng {row} (Điện): {resE.Message}");
                     }
-                    else if (utilityType.ToLower() == "water")
+
+                    if (hasWater)
                     {
-                        var dto = new InputWaterIndexDto { ApartmentId = aptId, NewIndex = newIndex, RegistrationDate = regDate, IsMerge = false };
-                        var res = await InputWaterIndexAsync(dto, currentUserId);
-                        if (res.IsSuccess) successCount++;
+                        var dtoW = new InputWaterIndexDto { ApartmentId = aptId, NewIndex = waterIndex, RegistrationDate = regDate, IsMerge = false };
+                        var resW = await InputWaterIndexAsync(dtoW, currentUserId);
+                        if (resW.IsSuccess) successCount++;
+                        else errors.Add($"Dòng {row} (Nước): {resW.Message}");
                     }
+                }
+                else
+                {
+                    errors.Add($"Dòng {row}: Dữ liệu sai định dạng (Thiếu ID phòng, Ngày ghi nhận hoặc không có chỉ số nào).");
                 }
             }
 
             if (successCount == 0)
-                return (false, "Xử lý hàng loạt thất bại. Dữ liệu sai định dạng hoặc vi phạm tính tuần tự.");
+                return (false, $"Nhập dữ liệu thất bại hoàn toàn. Lỗi: {string.Join(" | ", errors.Take(2))}...");
 
-            return (true, $"Tiến trình hoàn tất. Xác nhận nạp {successCount} bản ghi.");
+            string warning = errors.Any() ? $" (Có {errors.Count} thao tác bị bỏ qua do lỗi. Vui lòng kiểm tra lại dữ liệu)" : "";
+            return (true, $"Đã nạp thành công {successCount} bản ghi.{warning}");
         }
     }
 }
