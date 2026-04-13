@@ -2,6 +2,9 @@
 {
     public class UtilityHistoryDto
     {
+        public int ApartmentId { get; set; }
+        public string ApartmentCode { get; set; } = string.Empty;
+
         public int Month { get; set; }
         public int Year { get; set; }
 

@@ -5,6 +5,7 @@ using Sentana.API.Models;
 using System.Security.Claims;
 using Sentana.API.Helpers;
 using OfficeOpenXml;
+using System.Linq;
 
 namespace Sentana.API.Services
 {
@@ -212,52 +213,66 @@ namespace Sentana.API.Services
             var role = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? string.Empty;
             var isManager = string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase);
 
-            int resolvedApartmentId = 0;
+            var targetApartmentIds = new List<int>();
 
             if (isManager)
             {
                 if (!targetApartmentId.HasValue) return (false, "Dữ liệu đầu vào không hợp lệ. Yêu cầu cung cấp định danh căn hộ.", null);
-                resolvedApartmentId = targetApartmentId.Value;
+                targetApartmentIds.Add(targetApartmentId.Value);
             }
             else
             {
-                var contract = await _context.Contracts
+                var aptIds = await _context.Contracts
                     .Where(c => c.AccountId == callerAccountId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
-                    .OrderByDescending(c => c.CreatedAt)
-                    .FirstOrDefaultAsync();
+                    .Select(c => c.ApartmentId)
+                    .Where(id => id.HasValue)
+                    .Select(id => id!.Value)
+                    .ToListAsync();
 
-                if (contract == null || !contract.ApartmentId.HasValue)
+                if (!aptIds.Any())
                     return (false, "Hệ thống không tìm thấy hợp đồng hiệu lực.", null);
 
-                resolvedApartmentId = contract.ApartmentId.Value;
+                targetApartmentIds.AddRange(aptIds);
             }
 
-            var elecQuery = _context.ElectricMeters.Where(e => e.ApartmentId == resolvedApartmentId && e.IsDeleted == false);
+            // Lấy dữ liệu Điện 
+            var elecQuery = _context.ElectricMeters
+                .Include(e => e.Apartment)
+                .Where(e => e.ApartmentId.HasValue && targetApartmentIds.Contains(e.ApartmentId.Value) && e.IsDeleted == false);
+
             if (month.HasValue) elecQuery = elecQuery.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Month == month.Value);
             if (year.HasValue) elecQuery = elecQuery.Where(e => e.RegistrationDate.HasValue && e.RegistrationDate.Value.Year == year.Value);
             var elecList = await elecQuery.ToListAsync();
 
-            var waterQuery = _context.WaterMeters.Where(w => w.ApartmentId == resolvedApartmentId && w.IsDeleted == false);
+            // Lấy dữ liệu Nước
+            var waterQuery = _context.WaterMeters
+                .Include(w => w.Apartment)
+                .Where(w => w.ApartmentId.HasValue && targetApartmentIds.Contains(w.ApartmentId.Value) && w.IsDeleted == false);
+
             if (month.HasValue) waterQuery = waterQuery.Where(w => w.RegistrationDate.HasValue && w.RegistrationDate.Value.Month == month.Value);
             if (year.HasValue) waterQuery = waterQuery.Where(w => w.RegistrationDate.HasValue && w.RegistrationDate.Value.Year == year.Value);
             var waterList = await waterQuery.ToListAsync();
 
             var history = new List<UtilityHistoryDto>();
 
-            var dates = elecList.Select(e => new { e.RegistrationDate!.Value.Month, e.RegistrationDate!.Value.Year })
-                .Union(waterList.Select(w => new { w.RegistrationDate!.Value.Month, w.RegistrationDate!.Value.Year }))
+            // Gộp theo Căn Hộ + Tháng + Năm
+            var datesAndApts = elecList.Select(e => new { AptId = e.ApartmentId, AptCode = e.Apartment?.ApartmentCode, Month = e.RegistrationDate!.Value.Month, Year = e.RegistrationDate!.Value.Year })
+                .Union(waterList.Select(w => new { AptId = w.ApartmentId, AptCode = w.Apartment?.ApartmentCode, Month = w.RegistrationDate!.Value.Month, Year = w.RegistrationDate!.Value.Year }))
                 .Distinct()
-                .OrderByDescending(d => d.Year).ThenByDescending(d => d.Month);
+                .OrderBy(d => d.AptCode)
+                .ThenByDescending(d => d.Year).ThenByDescending(d => d.Month);
 
-            foreach (var date in dates)
+            foreach (var item in datesAndApts)
             {
-                var elec = elecList.FirstOrDefault(e => e.RegistrationDate!.Value.Month == date.Month && e.RegistrationDate!.Value.Year == date.Year);
-                var water = waterList.FirstOrDefault(w => w.RegistrationDate!.Value.Month == date.Month && w.RegistrationDate!.Value.Year == date.Year);
+                var elec = elecList.FirstOrDefault(e => e.ApartmentId == item.AptId && e.RegistrationDate!.Value.Month == item.Month && e.RegistrationDate!.Value.Year == item.Year);
+                var water = waterList.FirstOrDefault(w => w.ApartmentId == item.AptId && w.RegistrationDate!.Value.Month == item.Month && w.RegistrationDate!.Value.Year == item.Year);
 
                 history.Add(new UtilityHistoryDto
                 {
-                    Month = date.Month,
-                    Year = date.Year,
+                    ApartmentId = item.AptId ?? 0,
+                    ApartmentCode = item.AptCode ?? "N/A", // Map dữ liệu phòng vào đây
+                    Month = item.Month,
+                    Year = item.Year,
                     ElectricityOldIndex = elec?.OldIndex ?? 0,
                     ElectricityNewIndex = elec?.NewIndex ?? 0,
                     WaterOldIndex = water?.OldIndex ?? 0,
