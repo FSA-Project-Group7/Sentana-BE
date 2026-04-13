@@ -689,9 +689,19 @@ namespace Sentana.API.Services
 
         public async Task<ApiResponse<object>> GetMyContractAsync(int accountId)
         {
+            // Lấy danh sách ApartmentId mà user này đang ở (bao gồm cả chủ hộ và thành viên)
+            var myApartmentIds = await _context.ApartmentResidents
+                .Where(ar => ar.AccountId == accountId && ar.IsDeleted == false)
+                .Select(ar => ar.ApartmentId)
+                .Distinct()
+                .ToListAsync();
+
+            // Lấy tất cả hợp đồng của các căn hộ mà user đang ở
             var contracts = await _context.Contracts
                 .Include(c => c.Apartment)
-                .Where(c => c.AccountId == accountId && c.IsDeleted == false)
+                .Where(c => c.IsDeleted == false && 
+                           (c.AccountId == accountId || // Hợp đồng của chính user
+                            (c.ApartmentId.HasValue && myApartmentIds.Contains(c.ApartmentId.Value)))) // Hoặc hợp đồng của căn hộ user đang ở
                 .OrderByDescending(c => c.CreatedAt)
                 .ToListAsync();
 
@@ -885,8 +895,24 @@ namespace Sentana.API.Services
             if (contract == null) return null;
 
             // Nếu có truyền accountId (Resident gọi), kiểm tra quyền truy cập
-            if (requestingAccountId.HasValue && contract.AccountId != requestingAccountId.Value)
-                return null; // Không có quyền xem hợp đồng người khác
+            if (requestingAccountId.HasValue)
+            {
+                // Kiểm tra xem user có phải chủ hợp đồng HOẶC thành viên trong căn hộ không
+                bool isContractOwner = contract.AccountId == requestingAccountId.Value;
+                
+                bool isApartmentMember = false;
+                if (contract.ApartmentId.HasValue)
+                {
+                    isApartmentMember = await _context.ApartmentResidents
+                        .AnyAsync(ar => ar.ApartmentId == contract.ApartmentId.Value 
+                                     && ar.AccountId == requestingAccountId.Value 
+                                     && ar.IsDeleted == false);
+                }
+
+                // Nếu không phải chủ hợp đồng và cũng không phải thành viên căn hộ
+                if (!isContractOwner && !isApartmentMember)
+                    return null; // Không có quyền xem
+            }
 
             return new DepositSettlementDto
             {
