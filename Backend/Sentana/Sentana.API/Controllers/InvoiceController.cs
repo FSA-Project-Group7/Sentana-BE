@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Sentana.API.DTOs.Common;
 using Sentana.API.DTOs.Invoice;
 using Sentana.API.DTOs.Payment;
+using Sentana.API.Enums;
 using Sentana.API.Helpers;
 using Sentana.API.Models;
 using Sentana.API.Services.SInvoice;
@@ -228,7 +229,9 @@ namespace Sentana.API.Controllers
             try
             {
                 var invoices = await _context.Invoices
-                    .Where(i => i.ContractId == contractId && i.IsDeleted == false)
+                    .Where(i => i.ContractId == contractId 
+                        && i.IsDeleted == false
+                        && (i.Status == InvoiceStatus.Unpaid || i.Status == InvoiceStatus.PendingVerification))
                     .Select(i => new
                     {
                         i.InvoiceId,
