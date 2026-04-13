@@ -568,6 +568,11 @@ namespace Sentana.API.Services.SInvoice
             if (transaction.Status != PaymentTransactionStatus.Pending)
                 return (false, "Giao dịch này đã được xử lý trước đó.");
 
+            if (transaction.AmountPaid == null || transaction.AmountPaid == 0)
+            {
+                transaction.AmountPaid = transaction.Invoice?.Debt ?? 0;
+            }
+
             // Cập nhật bảng PaymentTransaction
             transaction.Status = PaymentTransactionStatus.Approved;
             transaction.UpdatedBy = currentUserId;
@@ -578,12 +583,12 @@ namespace Sentana.API.Services.SInvoice
                 // Cập nhật bảng Invoice
                 transaction.Invoice.Status = InvoiceStatus.Paid;
                 transaction.Invoice.DayPay = DateOnly.FromDateTime(DateTime.Now);
-                transaction.Invoice.Pay = transaction.AmountPaid;
+
+                // Cập nhật số tiền đã thanh toán (Cộng dồn nếu trước đó thanh toán thiếu)
+                transaction.Invoice.Pay = (transaction.Invoice.Pay ?? 0) + transaction.AmountPaid;
                 transaction.Invoice.Debt = 0;
 
                 _context.Invoices.Update(transaction.Invoice);
-
-                // Notification được queue sau khi SaveChanges thành công
             }
 
             // Xử lý đồng thời
@@ -597,6 +602,7 @@ namespace Sentana.API.Services.SInvoice
                 return (false, "Giao dịch này vừa được duyệt hoặc từ chối bởi một người khác. Vui lòng tải lại trang để xem trạng thái mới nhất.");
             }
 
+            // Xử lý Gửi Email (Sẽ lấy đúng số tiền đã nạp ở trên)
             if (isSaved && transaction.Invoice?.Contract?.Account?.Email != null)
             {
                 var account = transaction.Invoice.Contract.Account;
@@ -615,6 +621,7 @@ namespace Sentana.API.Services.SInvoice
                 _ = _emailService.SendEmailAsync(account.Email, subject, body);
             }
 
+            // Xử lý Gửi Thông Báo (Sẽ lấy đúng số tiền đã nạp ở trên)
             if (isSaved && transaction.Invoice?.Contract?.AccountId != null)
             {
                 await _notificationPublisher.QueueNotificationAsync(
