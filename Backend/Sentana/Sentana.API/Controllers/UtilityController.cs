@@ -74,18 +74,26 @@ namespace Sentana.API.Controllers
             return Ok(ApiResponse<List<UtilityHistoryDto>>.Success(result.Data, "Lấy lịch sử thành công."));
         }
 
-        //Import chỉ số Điện/Nước bằng file Excel
-        [HttpPost("import")]
+        [HttpPost("import-excel")]
         [Authorize(Roles = "Manager")]
-        public async Task<IActionResult> ImportExcel(IFormFile file, [FromQuery] string type)
+        public async Task<IActionResult> ImportUtilityExcel(IFormFile file)
         {
-            if (type != "electric" && type != "water")
-                return BadRequest(ApiResponse<string>.Fail(400, "Loại tiện ích (type) phải là 'electric' hoặc 'water'."));
+            try
+            {
+                var accountIdClaim = User.FindFirst("AccountId")?.Value;
+                if (!int.TryParse(accountIdClaim, out var currentUserId))
+                    return Unauthorized(new { success = false, message = "Xác thực danh tính thất bại." });
 
-            var result = await _utilityService.ImportUtilityExcelAsync(file, type, 1);
-            if (!result.IsSuccess) return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+                // Chỉ truyền file và userId
+                var result = await _utilityService.ImportUtilityExcelAsync(file, currentUserId);
 
-            return Ok(ApiResponse<string>.Success(null, result.Message));
+                if (!result.IsSuccess) return BadRequest(new { success = false, message = result.Message });
+                return Ok(new { success = true, message = result.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
         }
     }
 }
