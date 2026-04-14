@@ -31,6 +31,24 @@ namespace Sentana.API.Services.SInvoice
             _notificationPublisher = notificationPublisher;
         }
 
+        private static decimal GetEffectiveCollectedAmount(Invoice invoice)
+        {
+            if (invoice.Pay.HasValue && invoice.Pay.Value > 0)
+                return invoice.Pay.Value;
+
+            var totalMoney = invoice.TotalMoney ?? 0m;
+            var debt = invoice.Debt ?? 0m;
+            var derivedPaid = totalMoney - debt;
+
+            if (derivedPaid > 0)
+                return derivedPaid;
+
+            if (invoice.Status == InvoiceStatus.Paid)
+                return totalMoney;
+
+            return 0m;
+        }
+
         // View monthly invoice 
         public async Task<List<InvoiceResponseDto>> GetCurrentInvoicesAsync(ClaimsPrincipal user, int? month = null, int? year = null, int? apartmentId = null, int? accountId = null)
         {
@@ -909,7 +927,7 @@ namespace Sentana.API.Services.SInvoice
                     Month = g.Key.BillingMonth ?? 0,
                     Year = g.Key.BillingYear ?? targetYear,
                     TotalBilled = g.Sum(i => i.TotalMoney ?? 0),
-                    TotalCollected = g.Sum(i => i.Pay ?? 0),
+                    TotalCollected = g.Sum(i => GetEffectiveCollectedAmount(i)),
                     TotalDebt = g.Sum(i => i.Debt ?? 0),
                     TotalInvoices = g.Count(),
                     PaidInvoices = g.Count(i => i.Status == InvoiceStatus.Paid),
@@ -917,7 +935,24 @@ namespace Sentana.API.Services.SInvoice
                 })
                 .ToList();
 
-            return grouped;
+            var groupedByMonth = grouped.ToDictionary(x => x.Month);
+            var fullYear = Enumerable.Range(1, 12)
+                .Select(month => groupedByMonth.TryGetValue(month, out var value)
+                    ? value
+                    : new MonthlyRevenueDto
+                    {
+                        Month = month,
+                        Year = targetYear,
+                        TotalBilled = 0,
+                        TotalCollected = 0,
+                        TotalDebt = 0,
+                        TotalInvoices = 0,
+                        PaidInvoices = 0,
+                        UnpaidInvoices = 0
+                    })
+                .ToList();
+
+            return fullYear;
         }
 
         // US14 - View Payment Statistics (Manager) — scoped to manager's buildings
@@ -952,7 +987,7 @@ namespace Sentana.API.Services.SInvoice
                     TotalInvoices = g.Count(),
                     PaidInvoices = g.Count(i => i.Status == InvoiceStatus.Paid),
                     TotalBilled = g.Sum(i => i.TotalMoney ?? 0),
-                    TotalPaid = g.Sum(i => i.Pay ?? 0),
+                    TotalPaid = g.Sum(i => GetEffectiveCollectedAmount(i)),
                     TotalDebt = g.Sum(i => i.Debt ?? 0)
                 })
                 .OrderBy(a => a.ApartmentCode)
@@ -965,7 +1000,7 @@ namespace Sentana.API.Services.SInvoice
                 UnpaidInvoices = invoices.Count(i => i.Status == InvoiceStatus.Unpaid),
                 PendingVerificationInvoices = invoices.Count(i => i.Status == InvoiceStatus.PendingVerification),
                 TotalBilled = invoices.Sum(i => i.TotalMoney ?? 0),
-                TotalRevenue = invoices.Sum(i => i.Pay ?? 0),
+                TotalRevenue = invoices.Sum(i => GetEffectiveCollectedAmount(i)),
                 TotalDebt = invoices.Sum(i => i.Debt ?? 0),
                 ByApartment = byApartment
             };
