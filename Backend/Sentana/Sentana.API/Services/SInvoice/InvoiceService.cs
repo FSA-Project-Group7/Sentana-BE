@@ -57,11 +57,30 @@ namespace Sentana.API.Services.SInvoice
             }
             else
             {
-                var aptIds = await _context.Contracts
-                    .Where(c => c.AccountId == callerAccountId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
-                    .Select(c => c.ApartmentId)
-                    .Where(id => id.HasValue).Select(id => id!.Value).ToListAsync();
-                targetApartmentIds.AddRange(aptIds);
+                // Resident được xem hóa đơn theo căn hộ mà mình đang được gán (bao gồm chủ hộ và người ở cùng)
+                var residentApartmentIds = await _context.ApartmentResidents
+                    .Where(ar => ar.AccountId == callerAccountId
+                              && ar.Status == GeneralStatus.Active
+                              && ar.IsDeleted == false
+                              && ar.ApartmentId.HasValue)
+                    .Select(ar => ar.ApartmentId!.Value)
+                    .Distinct()
+                    .ToListAsync();
+
+                targetApartmentIds.AddRange(residentApartmentIds);
+
+                // Backward-compat: nếu dữ liệu cũ chỉ có Contract mà chưa gán ApartmentResident
+                if (!targetApartmentIds.Any())
+                {
+                    var contractApartmentIds = await _context.Contracts
+                        .Where(c => c.AccountId == callerAccountId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
+                        .Select(c => c.ApartmentId)
+                        .Where(id => id.HasValue).Select(id => id!.Value)
+                        .Distinct()
+                        .ToListAsync();
+
+                    targetApartmentIds.AddRange(contractApartmentIds);
+                }
             }
 
             if (!targetApartmentIds.Any()) return new List<InvoiceResponseDto>();
