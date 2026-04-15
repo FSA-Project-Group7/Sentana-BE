@@ -346,6 +346,10 @@ namespace Sentana.API.Services
             if (contract == null) return ApiResponse<object>.Fail(404, "Không tìm thấy hợp đồng");
             if (contract.Status != GeneralStatus.Active) return ApiResponse<object>.Fail(400, "Contract không active");
             
+            // Validate ApartmentId
+            if (!contract.ApartmentId.HasValue)
+                return ApiResponse<object>.Fail(400, "Hợp đồng không có thông tin căn hộ. Không thể chấm dứt.");
+            
             // Validate additionalCost
             if (request.AdditionalCost < 0) 
                 return ApiResponse<object>.Fail(400, "Phí phát sinh không được là số âm");
@@ -481,7 +485,21 @@ namespace Sentana.API.Services
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return ApiResponse<object>.Fail(500, ex.Message);
+                // Log chi tiết lỗi để debug
+                Console.WriteLine($"[ERROR] TerminateContractAsync failed: {ex.Message}");
+                Console.WriteLine($"[ERROR] Stack trace: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"[ERROR] Inner exception: {ex.InnerException.Message}");
+                    if (ex.InnerException.InnerException != null)
+                    {
+                        Console.WriteLine($"[ERROR] Inner inner exception: {ex.InnerException.InnerException.Message}");
+                    }
+                }
+                
+                // Trả về message chi tiết hơn
+                string errorMessage = ex.InnerException?.Message ?? ex.Message;
+                return ApiResponse<object>.Fail(500, $"Lỗi thanh lý hợp đồng: {errorMessage}");
             }
         }
 
@@ -489,10 +507,21 @@ namespace Sentana.API.Services
         {
             try
             {
-                if (contract.Account?.Email == null) return;
+                // Reload contract với tất cả navigation properties để tránh lỗi lazy loading
+                var fullContract = await _context.Contracts
+                    .Include(c => c.Account)
+                        .ThenInclude(a => a.Info)
+                    .Include(c => c.Apartment)
+                    .FirstOrDefaultAsync(c => c.ContractId == contract.ContractId);
 
-                var residentName = contract.Account.Info?.FullName ?? "Quý khách";
-                var apartmentName = contract.Apartment?.ApartmentName ?? contract.Apartment?.ApartmentCode ?? "N/A";
+                if (fullContract?.Account?.Email == null)
+                {
+                    Console.WriteLine($"[WARNING] Cannot send termination email: Account or Email is null for ContractId={contract.ContractId}");
+                    return;
+                }
+
+                var residentName = fullContract.Account.Info?.FullName ?? "Quý khách";
+                var apartmentName = fullContract.Apartment?.ApartmentName ?? fullContract.Apartment?.ApartmentCode ?? "N/A";
 
                 string refundStatus;
                 string refundColor;
@@ -534,8 +563,8 @@ namespace Sentana.API.Services
                             <p style='font-size: 16px; color: #333;'>Kính gửi <strong>{residentName}</strong>,</p>
                             
                             <p style='color: #666; line-height: 1.6;'>
-                                Hợp đồng thuê căn hộ <strong>{apartmentName}</strong> (Mã: <strong>{contract.ContractCode}</strong>) 
-                                đã được thanh lý vào ngày <strong>{contract.EndDay?.ToString("dd/MM/yyyy")}</strong>.
+                                Hợp đồng thuê căn hộ <strong>{apartmentName}</strong> (Mã: <strong>{fullContract.ContractCode}</strong>) 
+                                đã được thanh lý vào ngày <strong>{fullContract.EndDay?.ToString("dd/MM/yyyy")}</strong>.
                             </p>
 
                             <div style='background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;'>
@@ -572,10 +601,10 @@ namespace Sentana.API.Services
 
                                 {additionalPaymentNotice}
 
-                                {(string.IsNullOrEmpty(contract.TerminationReason) ? "" : $@"
+                                {(string.IsNullOrEmpty(fullContract.TerminationReason) ? "" : $@"
                                 <div style='margin-top: 15px; padding: 15px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;'>
                                     <strong>Lý do thanh lý:</strong><br/>
-                                    <span style='color: #856404;'>{contract.TerminationReason}</span>
+                                    <span style='color: #856404;'>{fullContract.TerminationReason}</span>
                                 </div>
                                 ")}
                             </div>
@@ -599,15 +628,22 @@ namespace Sentana.API.Services
                 ";
 
                 await _emailService.SendEmailAsync(
-                    contract.Account.Email,
-                    $"[SENTANA] Thông báo thanh lý hợp đồng {contract.ContractCode}",
+                    fullContract.Account.Email,
+                    $"[SENTANA] Thông báo thanh lý hợp đồng {fullContract.ContractCode}",
                     emailBody
                 );
+                
+                Console.WriteLine($"[SUCCESS] Termination email sent to {fullContract.Account.Email} for ContractId={fullContract.ContractId}");
             }
             catch (Exception ex)
             {
                 // Log error nhưng không throw để không ảnh hưởng đến terminate process
-                Console.WriteLine($"Error sending termination email: {ex.Message}");
+                Console.WriteLine($"[ERROR] Error sending termination email: {ex.Message}");
+                Console.WriteLine($"[ERROR] Stack trace: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"[ERROR] Inner exception: {ex.InnerException.Message}");
+                }
             }
         }
 
