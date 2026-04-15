@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Sentana.API.DTOs.Common;
 using Sentana.API.DTOs.Invoice;
 using Sentana.API.DTOs.Payment;
+using Sentana.API.Helpers;
 
 namespace Sentana.API.Services.SInvoice
 {
@@ -19,6 +20,8 @@ namespace Sentana.API.Services.SInvoice
         Task<(bool IsSuccess, string Message)> RejectPaymentAsync(int transactionId, RejectPaymentDto request, int currentUserId);
         // gửi thông báo invoice 
         Task<(bool IsSuccess, string Message)> SendInvoiceNotificationAsync(int invoiceId);
+        // gửi email nhắc nợ
+        Task<ApiResponse<object>> SendPaymentReminderAsync(int invoiceId);
         
         Task<List<OutstandingDebtItemDto>> GetOutstandingDebtsAsync();
         Task<(bool IsSuccess, string Message)> ChangeInvoiceStatusAsync(int invoiceId, ChangeInvoiceStatusDto request, int currentUserId);

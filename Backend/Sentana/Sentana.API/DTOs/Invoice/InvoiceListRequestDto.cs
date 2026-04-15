@@ -14,6 +14,9 @@ namespace Sentana.API.DTOs.Invoice
         // lọc theo trạng thái Unpaid, Pending, Paid
         public InvoiceStatus? Status { get; set; }
 
+        // lọc theo danh mục: 1 = Hóa đơn trả thêm, 2 = Hóa đơn tiền tháng
+        public InvoiceCategory? Category { get; set; }
+
         [Required]
         [Range(1, int.MaxValue, ErrorMessage = "Trang hiện tại (PageNumber) phải lớn hơn 0.")]
         public int PageNumber { get; set; } = 1;

@@ -20,6 +20,8 @@ namespace Sentana.API.Repositories
 
             return await _context.Contracts
                 .Include(c => c.Apartment)
+                .Include(c => c.Account)
+                    .ThenInclude(a => a.Info)
                 .FirstOrDefaultAsync(c =>
                     c.ContractId == contractId &&
                     c.IsDeleted == false);

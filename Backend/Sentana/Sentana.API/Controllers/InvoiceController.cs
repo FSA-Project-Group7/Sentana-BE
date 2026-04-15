@@ -177,6 +177,14 @@ namespace Sentana.API.Controllers
         return Ok(ApiResponse<string>.Success(null, result.Message));
     }
 
+    [HttpPost("{invoiceId}/send-reminder")]
+    [Authorize(Roles = "Manager")]
+    public async Task<IActionResult> SendPaymentReminder(int invoiceId)
+    {
+        var result = await _invoiceService.SendPaymentReminderAsync(invoiceId);
+        return StatusCode(result.StatusCode, result);
+    }
+
         // US82 - View Outstanding Debt
         [HttpGet("outstanding-debts")]
         [Authorize(Roles = "Manager")]

@@ -374,19 +374,58 @@ namespace Sentana.API.Services
                 // Tính hóa đơn chưa trả
                 decimal unpaidInvoice = totalInvoice - totalPaid;
 
-                // Công thức: Refund = Deposit - Hóa đơn chưa trả - AdditionalCost
-                decimal refund = deposit - unpaidInvoice - additionalCost;
+                // Tổng số tiền cần trả = Hóa đơn chưa trả + Chi phí phát sinh
+                decimal totalOwed = unpaidInvoice + additionalCost;
+
+                // Công thức: Refund = Deposit - Tổng nợ
+                decimal refund = deposit - totalOwed;
+
+                // TH1: Tiền cọc đủ trả (refund >= 0)
+                // TH2: Tiền cọc không đủ (refund < 0) → Tạo hóa đơn trả thêm
+                bool needAdditionalInvoice = refund < 0;
+                decimal additionalDebt = needAdditionalInvoice ? Math.Abs(refund) : 0;
 
                 contract.Status = GeneralStatus.Inactive;
                 contract.EndDay = request.TerminationDate;
                 contract.UpdatedAt = DateTime.Now;
 
                 contract.AdditionalCost = additionalCost;
-                contract.RefundAmount = refund;
+                contract.RefundAmount = needAdditionalInvoice ? 0 : refund; // Nếu còn nợ thì RefundAmount = 0
                 contract.TerminationReason = request.TerminationReason;
 
                 contract.SettlementStatus = SettlementStatus.Settled;
                 contract.SettledAt = DateTime.Now;
+
+                // Nếu cư dân còn nợ, tạo hóa đơn trả thêm
+                if (needAdditionalInvoice)
+                {
+                    var additionalInvoice = new Invoice
+                    {
+                        ContractId = contractId,
+                        ApartmentId = contract.ApartmentId,
+                        BillingMonth = request.TerminationDate.Month,
+                        BillingYear = request.TerminationDate.Year,
+                        TotalMoney = additionalDebt,
+                        Pay = 0,
+                        Debt = additionalDebt,
+                        ServiceFee = null,
+                        WaterNumber = null,
+                        ElectricNumber = null,
+                        ElectricMeterId = null,
+                        WaterMeterId = null,
+                        Status = InvoiceStatus.Unpaid,
+                        Category = InvoiceCategory.AdditionalPayment, // Hóa đơn trả thêm
+                        DayCreat = DateOnly.FromDateTime(DateTime.Now),
+                        CreatedAt = DateTime.Now,
+                        IsDeleted = false,
+                        Note = $"Hóa đơn thanh lý hợp đồng {contract.ContractCode}. " +
+                               $"Tiền cọc: {deposit:N0}đ không đủ trả " +
+                               $"(Nợ tháng: {unpaidInvoice:N0}đ + Phí phát sinh: {additionalCost:N0}đ = {totalOwed:N0}đ). " +
+                               $"Cư dân cần trả thêm: {additionalDebt:N0}đ"
+                    };
+
+                    await _context.Invoices.AddAsync(additionalInvoice);
+                }
 
                 if (contract.Apartment != null && contract.Apartment.Status == ApartmentStatus.Occupied)
                 {
@@ -422,7 +461,7 @@ namespace Sentana.API.Services
                 await transaction.CommitAsync();
 
                 // Gửi email thông báo cho resident
-                await SendTerminationEmailAsync(contract, deposit, unpaidInvoice, additionalCost, refund);
+                await SendTerminationEmailAsync(contract, deposit, unpaidInvoice, additionalCost, refund, needAdditionalInvoice, additionalDebt);
 
                 return ApiResponse<object>.Success(new
                 {
@@ -431,9 +470,13 @@ namespace Sentana.API.Services
                     TotalPaid = totalPaid,
                     UnpaidInvoice = unpaidInvoice,
                     AdditionalCost = additionalCost,
-                    RefundAmount = refund,
+                    RefundAmount = contract.RefundAmount,
+                    NeedAdditionalPayment = needAdditionalInvoice,
+                    AdditionalDebt = additionalDebt,
                     SettlementStatus = contract.SettlementStatus.ToString() 
-                }, "Chấm dứt hợp đồng thành công và đã lưu trữ sao kê tài chính.");
+                }, needAdditionalInvoice 
+                    ? $"Chấm dứt hợp đồng thành công. Cư dân cần trả thêm {additionalDebt:N0}đ. Đã tạo hóa đơn trả thêm."
+                    : "Chấm dứt hợp đồng thành công và đã lưu trữ sao kê tài chính.");
             }
             catch (Exception ex)
             {
@@ -442,7 +485,7 @@ namespace Sentana.API.Services
             }
         }
 
-                private async Task SendTerminationEmailAsync(Contract contract, decimal deposit, decimal unpaidInvoice, decimal additionalCost, decimal refund)
+                private async Task SendTerminationEmailAsync(Contract contract, decimal deposit, decimal unpaidInvoice, decimal additionalCost, decimal refund, bool needAdditionalPayment, decimal additionalDebt)
         {
             try
             {
@@ -453,15 +496,27 @@ namespace Sentana.API.Services
 
                 string refundStatus;
                 string refundColor;
-                if (refund > 0)
+                string additionalPaymentNotice = "";
+
+                if (needAdditionalPayment)
+                {
+                    refundStatus = $"<strong style='color: #dc3545;'>⚠️ Bên thuê cần trả thêm cho BQL: {additionalDebt:N0} VNĐ</strong>";
+                    refundColor = "#dc3545";
+                    additionalPaymentNotice = $@"
+                        <div style='margin-top: 15px; padding: 15px; background-color: #f8d7da; border-left: 4px solid #dc3545; border-radius: 4px;'>
+                            <strong style='color: #721c24;'>⚠️ QUAN TRỌNG:</strong><br/>
+                            <span style='color: #721c24;'>
+                                Tiền cọc không đủ để thanh toán các khoản nợ. 
+                                Hệ thống đã tạo hóa đơn trả thêm với số tiền <strong>{additionalDebt:N0} VNĐ</strong>.
+                                Vui lòng thanh toán hóa đơn này trong vòng 7 ngày.
+                            </span>
+                        </div>
+                    ";
+                }
+                else if (refund > 0)
                 {
                     refundStatus = $"<strong style='color: #28a745;'>✅ BQL sẽ hoàn trả cho bên thuê: {refund:N0} VNĐ</strong>";
                     refundColor = "#28a745";
-                }
-                else if (refund < 0)
-                {
-                    refundStatus = $"<strong style='color: #dc3545;'>⚠️ Bên thuê cần trả cho BQL: {Math.Abs(refund):N0} VNĐ</strong>";
-                    refundColor = "#dc3545";
                 }
                 else
                 {
@@ -485,7 +540,7 @@ namespace Sentana.API.Services
 
                             <div style='background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;'>
                                 <h3 style='color: #667eea; margin-top: 0; border-bottom: 2px solid #667eea; padding-bottom: 10px;'>
-                                    📊 Bảng Tính Nháp Trước Khi Chốt
+                                    📊 Bảng Quyết Toán
                                 </h3>
                                 
                                 <table style='width: 100%; border-collapse: collapse;'>
@@ -498,13 +553,15 @@ namespace Sentana.API.Services
                                         <td style='padding: 12px 0; text-align: right; font-weight: bold; color: #dc3545;'>- {unpaidInvoice:N0} VNĐ</td>
                                     </tr>
                                     <tr style='border-bottom: 1px solid #dee2e6;'>
-                                        <td style='padding: 12px 0; color: #666;'>Chi phí phát sinh (Additional Cost):</td>
+                                        <td style='padding: 12px 0; color: #666;'>Chi phí phát sinh:</td>
                                         <td style='padding: 12px 0; text-align: right; font-weight: bold; color: #dc3545;'>- {additionalCost:N0} VNĐ</td>
                                     </tr>
                                     <tr style='background-color: #e9ecef;'>
-                                        <td style='padding: 15px 10px; font-weight: bold; font-size: 16px;'>KẾT QUẢ (Refund):</td>
+                                        <td style='padding: 15px 10px; font-weight: bold; font-size: 16px;'>
+                                            {(needAdditionalPayment ? "CẦN TRẢ THÊM:" : "HOÀN TRẢ:")}
+                                        </td>
                                         <td style='padding: 15px 10px; text-align: right; font-size: 18px; color: {refundColor}; font-weight: bold;'>
-                                            {(refund >= 0 ? "+" : "")}{refund:N0} VNĐ
+                                            {(needAdditionalPayment ? additionalDebt : refund):N0} VNĐ
                                         </td>
                                     </tr>
                                 </table>
@@ -512,6 +569,8 @@ namespace Sentana.API.Services
                                 <div style='margin-top: 20px; padding: 15px; background-color: white; border-left: 4px solid {refundColor}; border-radius: 4px;'>
                                     {refundStatus}
                                 </div>
+
+                                {additionalPaymentNotice}
 
                                 {(string.IsNullOrEmpty(contract.TerminationReason) ? "" : $@"
                                 <div style='margin-top: 15px; padding: 15px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;'>
