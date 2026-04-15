@@ -403,8 +403,8 @@ namespace Sentana.API.Services
                     {
                         ContractId = contractId,
                         ApartmentId = contract.ApartmentId,
-                        BillingMonth = request.TerminationDate.Month,
-                        BillingYear = request.TerminationDate.Year,
+                        BillingMonth = null, // NULL để tránh duplicate với invoice tháng hiện tại
+                        BillingYear = null,  // NULL để tránh duplicate với invoice tháng hiện tại
                         TotalMoney = additionalDebt,
                         Pay = 0,
                         Debt = additionalDebt,
@@ -418,7 +418,7 @@ namespace Sentana.API.Services
                         DayCreat = DateOnly.FromDateTime(DateTime.Now),
                         CreatedAt = DateTime.Now,
                         IsDeleted = false,
-                        Note = $"Hóa đơn thanh lý hợp đồng {contract.ContractCode}. " +
+                        Note = $"Hóa đơn thanh lý hợp đồng {contract.ContractCode} (Ngày thanh lý: {request.TerminationDate:dd/MM/yyyy}). " +
                                $"Tiền cọc: {deposit:N0}đ không đủ trả " +
                                $"(Nợ tháng: {unpaidInvoice:N0}đ + Phí phát sinh: {additionalCost:N0}đ = {totalOwed:N0}đ). " +
                                $"Cư dân cần trả thêm: {additionalDebt:N0}đ"
