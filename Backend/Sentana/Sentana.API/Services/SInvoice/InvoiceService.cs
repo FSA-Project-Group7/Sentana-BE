@@ -412,6 +412,7 @@ namespace Sentana.API.Services.SInvoice
             if (request.Month.HasValue) query = query.Where(i => i.BillingMonth == request.Month.Value);
             if (request.Year.HasValue) query = query.Where(i => i.BillingYear == request.Year.Value);
             if (request.Status.HasValue) query = query.Where(i => i.Status == request.Status.Value);
+            if (request.Category.HasValue) query = query.Where(i => i.Category == request.Category.Value);
 
             int totalCount = await query.CountAsync();
 
@@ -469,7 +470,8 @@ namespace Sentana.API.Services.SInvoice
                     TotalMoney = invoice.TotalMoney,
                     Debt = invoice.Debt,
                     StatusName = invoice.Status?.ToString() ?? string.Empty,
-                    CreatedAt = invoice.CreatedAt?.ToString("dd/MM/yyyy HH:mm")
+                    CreatedAt = invoice.CreatedAt?.ToString("dd/MM/yyyy HH:mm"),
+                    Category = invoice.Category
                 });
             }
 
@@ -962,6 +964,91 @@ namespace Sentana.API.Services.SInvoice
                 TotalDebt = invoices.Sum(i => i.Debt ?? 0),
                 ByApartment = byApartment
             };
+        }
+
+        // Gửi email nhắc nợ cho cư dân
+        public async Task<ApiResponse<object>> SendPaymentReminderAsync(int invoiceId)
+        {
+            var invoice = await _context.Invoices
+                .Include(i => i.Contract)
+                    .ThenInclude(c => c.Account)
+                        .ThenInclude(a => a.Info)
+                .Include(i => i.Apartment)
+                .FirstOrDefaultAsync(i => i.InvoiceId == invoiceId);
+
+            if (invoice == null)
+                return ApiResponse<object>.Fail(404, "Không tìm thấy hóa đơn");
+
+            if (invoice.Status == InvoiceStatus.Paid)
+                return ApiResponse<object>.Fail(400, "Hóa đơn đã thanh toán");
+
+            var email = invoice.Contract?.Account?.Email;
+            if (string.IsNullOrEmpty(email))
+                return ApiResponse<object>.Fail(400, "Không tìm thấy email cư dân");
+
+            var residentName = invoice.Contract?.Account?.Info?.FullName ?? "Quý khách";
+            var apartmentCode = invoice.Apartment?.ApartmentCode ?? "N/A";
+            var categoryName = invoice.Category == InvoiceCategory.AdditionalPayment 
+                ? "Hóa đơn trả thêm (thanh lý hợp đồng)" 
+                : "Hóa đơn tiền tháng";
+
+            string emailBody = $@"
+                <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
+                    <div style='background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding: 30px; text-align: center;'>
+                        <h2 style='color: white; margin: 0;'>⚠️ NHẮC NHỞ THANH TOÁN</h2>
+                    </div>
+                    
+                    <div style='background-color: white; padding: 30px;'>
+                        <p>Kính gửi <strong>{residentName}</strong>,</p>
+                        
+                        <p>Hệ thống ghi nhận bạn có hóa đơn chưa thanh toán:</p>
+                        
+                        <div style='background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0;'>
+                            <table style='width: 100%;'>
+                                <tr>
+                                    <td><strong>Căn hộ:</strong></td>
+                                    <td>{apartmentCode}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Loại hóa đơn:</strong></td>
+                                    <td>{categoryName}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Kỳ hóa đơn:</strong></td>
+                                    <td>Tháng {invoice.BillingMonth}/{invoice.BillingYear}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Số tiền cần trả:</strong></td>
+                                    <td style='color: #dc3545; font-size: 18px; font-weight: bold;'>
+                                        {invoice.Debt:N0} VNĐ
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+
+                        {(invoice.Category == InvoiceCategory.AdditionalPayment ? 
+                            @"<div style='background-color: #f8d7da; padding: 15px; border-radius: 8px; margin: 20px 0;'>
+                                <strong style='color: #721c24;'>⚠️ LƯU Ý:</strong><br/>
+                                <span style='color: #721c24;'>
+                                    Đây là hóa đơn thanh lý hợp đồng. Vui lòng thanh toán trong vòng 7 ngày.
+                                </span>
+                            </div>" : ""
+                        )}
+
+                        <p>Vui lòng thanh toán sớm để tránh phát sinh phí trễ hạn.</p>
+                        
+                        <p>Trân trọng,<br/><strong>Ban Quản Lý Sentana</strong></p>
+                    </div>
+                </div>
+            ";
+
+            await _emailService.SendEmailAsync(
+                email,
+                $"[SENTANA] Nhắc nhở thanh toán hóa đơn tháng {invoice.BillingMonth}/{invoice.BillingYear}",
+                emailBody
+            );
+
+            return ApiResponse<object>.Success(null, "Đã gửi email nhắc nợ thành công");
         }
     }
 }

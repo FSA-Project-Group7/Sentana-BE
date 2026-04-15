@@ -55,6 +55,8 @@ public partial class Invoice
     public string? Note { get; set; }
     public string? ManagerNote { get; set; } // Dành cho Quản lý ghi chú khi đổi trạng thái/thu tiền
 
+    public InvoiceCategory Category { get; set; } = InvoiceCategory.MonthlyPayment; // Mặc định là hóa đơn tiền tháng
+
     public virtual Apartment? Apartment { get; set; }
 
     public virtual Contract? Contract { get; set; }

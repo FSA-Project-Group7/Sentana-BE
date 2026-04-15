@@ -23,7 +23,7 @@ namespace Sentana.API.Controllers
         public async Task<IActionResult> Terminate(int id, [FromBody] TerminateContractDto dto)
         {
             var result = await _contractService.TerminateContractAsync(id, dto);
-            return Ok(result);
+            return StatusCode(result.StatusCode, result);
         }
 
         [Authorize(Roles = "Manager")]

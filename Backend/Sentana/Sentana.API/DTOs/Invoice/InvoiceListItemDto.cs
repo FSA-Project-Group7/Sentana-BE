@@ -1,4 +1,6 @@
-﻿namespace Sentana.API.DTOs.Invoice
+﻿using Sentana.API.Enums;
+
+namespace Sentana.API.DTOs.Invoice
 {
     public class InvoiceListItemDto
     {
@@ -12,5 +14,9 @@
         public string StatusName { get; set; } = string.Empty;
         public string? CreatedAt { get; set; }
         public string? BillingPeriod { get; set; }
+        public InvoiceCategory Category { get; set; }
+        public string CategoryName => Category == InvoiceCategory.AdditionalPayment 
+            ? "Hóa đơn trả thêm" 
+            : "Hóa đơn tiền tháng";
     }
 }
