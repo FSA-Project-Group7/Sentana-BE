@@ -224,5 +224,40 @@ namespace Sentana.API.Controllers
                 return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
             }
         }
+
+        [HttpPost("upload-qr")]
+        [Authorize(Roles = "Manager")] 
+        public async Task<IActionResult> UploadAdminQrCode(IFormFile file)
+        {
+            try
+            {
+                // Kiểm tra file đầu vào
+                if (file == null || file.Length == 0)
+                    return BadRequest(new { success = false, message = "Vui lòng chọn một file ảnh hợp lệ." });
+
+                // Lấy AccountId từ Token của người đang đăng nhập
+                var accountIdClaim = User.FindFirst("AccountId")?.Value;
+                if (!int.TryParse(accountIdClaim, out var currentUserId))
+                    return Unauthorized(new { success = false, message = "Xác thực danh tính thất bại." });
+
+                // Gọi Service xử lý
+                var result = await _authService.UploadAdminQrCodeAsync(currentUserId, file);
+
+                if (!result.IsSuccess)
+                    return BadRequest(new { success = false, message = result.Message });
+
+                // Trả về JSON có chứa link ảnh QR mới
+                return Ok(new
+                {
+                    success = true,
+                    message = result.Message,
+                    qrUrl = result.QrUrl
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Lỗi máy chủ: " + ex.Message });
+            }
+        }
     }
 }

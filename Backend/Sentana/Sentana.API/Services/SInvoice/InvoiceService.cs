@@ -101,10 +101,13 @@ namespace Sentana.API.Services.SInvoice
                 }
             }
 
-            if (!targetApartmentIds.Any()) return new List<InvoiceResponseDto>();
+           if (!targetApartmentIds.Any()) return new List<InvoiceResponseDto>();
 
             var query = _context.Invoices
                 .Include(i => i.Apartment)
+                    .ThenInclude(a => a.Building)
+                        .ThenInclude(b => b.Manager)
+                            .ThenInclude(m => m.Info)
                 .Include(i => i.Contract)
                 .Include(i => i.ElectricMeter)
                 .Include(i => i.WaterMeter)
@@ -177,6 +180,7 @@ namespace Sentana.API.Services.SInvoice
                     DayCreat = invoice.CreatedAt?.ToString("dd/MM/yyyy HH:mm"), // Sử dụng CreatedAt thay vì DayCreat rỗng
                     DayPay = invoice.DayPay?.ToString("dd/MM/yyyy"),
                     StatusName = invoice.Status?.ToString() ?? string.Empty,
+                    QrCodeUrl = invoice.Apartment?.Building?.Manager?.Info?.QrCodeUrl,
                     Payments = invoice.Payments,
                     Details = new List<InvoiceDetailItemDto>()
                 };
@@ -240,6 +244,12 @@ namespace Sentana.API.Services.SInvoice
 
             int targetMonth = request.Month;
             int targetYear = request.Year;
+
+            var manager = await _context.Accounts.Include(a => a.Info).FirstOrDefaultAsync(a => a.AccountId == currentUserId);
+            if (manager?.Info == null || string.IsNullOrWhiteSpace(manager.Info.QrCodeUrl))
+            {
+                return (false, "BẠN CHƯA CÓ MÃ QR THANH TOÁN! Vui lòng vào mục 'Thông tin cá nhân' để cập nhật mã QR nhận tiền trước khi phát hành hóa đơn.", 0);
+            }
 
             var query = _context.Apartments.Where(a => a.Status == ApartmentStatus.Occupied && a.IsDeleted == false);
 
