@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sentana.API.Models;
 
@@ -11,9 +12,11 @@ using Sentana.API.Models;
 namespace Sentana.API.Migrations
 {
     [DbContext(typeof(SentanaContext))]
-    partial class SentanaContextModelSnapshot : ModelSnapshot
+    [Migration("20260415022230_AddAdminQrCode")]
+    partial class AddAdminQrCode
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -625,9 +628,6 @@ namespace Sentana.API.Migrations
                         .HasColumnType("int");
 
                     b.Property<int?>("BillingYear")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Category")
                         .HasColumnType("int");
 
                     b.Property<string>("CodeVoucher")

@@ -9,6 +9,7 @@ using Sentana.API.Enums;
 using Microsoft.Extensions.Caching.Memory;
 using System.Security.Cryptography;
 using Sentana.API.Services.SEmail;
+using Sentana.API.Services.SStorage;
 
 namespace Sentana.API.Services.SBuilding
 {
@@ -18,13 +19,15 @@ namespace Sentana.API.Services.SBuilding
         private readonly IConfiguration _configuration;
         private readonly IMemoryCache _cache;
         private readonly IEmailService _emailService;
+        private readonly IMinioService _minioService;
 
-        public AuthService(SentanaContext context, IConfiguration configuration, IMemoryCache cache, IEmailService emailService)
+        public AuthService(SentanaContext context, IConfiguration configuration, IMemoryCache cache, IEmailService emailService, IMinioService minioService)
         {
             _context = context;
             _configuration = configuration;
             _cache = cache;
             _emailService = emailService;
+            _minioService = minioService;
         }
 
         // login
@@ -89,51 +92,55 @@ namespace Sentana.API.Services.SBuilding
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
-
-        //get user profile
+        // get user profile
         public async Task<UserProfileResponseDto?> GetUserProfileAsync(int accountId)
-		{
-			
-			var user = await _context.Accounts
-				.Include(a => a.Role)
-				.Include(a => a.Info)
-				.FirstOrDefaultAsync(a => a.AccountId == accountId && a.Status == GeneralStatus.Active);
+        {
+            var user = await _context.Accounts
+                .Include(a => a.Role)
+                .Include(a => a.Info)
+                .FirstOrDefaultAsync(a => a.AccountId == accountId && a.Status == GeneralStatus.Active);
 
-			if (user == null)
-			{
-				return null;
-			}
+            if (user == null)
+            {
+                return null;
+            }
 
-			
-			var activeContract = await _context.Contracts
-				.Include(c => c.Apartment)          
-					.ThenInclude(a => a.Building)   
-				.FirstOrDefaultAsync(c => c.AccountId == accountId && c.Status == GeneralStatus.Active);
+            var activeContract = await _context.Contracts
+                .Include(c => c.Apartment)
+                    .ThenInclude(a => a.Building)
+                .FirstOrDefaultAsync(c => c.AccountId == accountId && c.Status == GeneralStatus.Active);
 
-			
-			return new UserProfileResponseDto
-			{
-				AccountId = user.AccountId,
-				UserName = user.UserName,
-				Email = user.Email,
-				Role = user.Role?.RoleName ?? "Resident",
-				FullName = user.Info?.FullName,
-				PhoneNumber = user.Info?.PhoneNumber,
-				BirthDay = user.Info?.BirthDay,
-				Address = user.Info?.Address,
-				CmndCccd = user.Info?.CmndCccd,
+            // Lấy tên Role ra một biến cho dễ kiểm tra
+            string roleName = user.Role?.RoleName ?? "Resident";
 
-				
-				ApartmentCode = activeContract?.Apartment?.ApartmentCode,
-				BuildingName = activeContract?.Apartment?.Building?.BuildingName ?? "Tòa nhà SENTANA",
-				ContractStart = activeContract?.StartDay, 
-				ContractEnd = activeContract?.EndDay,     
-				Status = activeContract != null ? "Đang cư trú" : "Chưa có hợp đồng"
-			};
-		}
+            return new UserProfileResponseDto
+            {
+                AccountId = user.AccountId,
+                UserName = user.UserName,
+                Email = user.Email,
+                Role = roleName,
+                FullName = user.Info?.FullName,
+                PhoneNumber = user.Info?.PhoneNumber,
+                BirthDay = user.Info?.BirthDay,
+                Address = user.Info?.Address,
+                CmndCccd = user.Info?.CmndCccd,
 
-		//update profile
-		public async Task<(bool IsSuccess, string Message)> UpdateUserProfileAsync(int accountId, UpdateProfileRequestDto request)
+                ApartmentCode = activeContract?.Apartment?.ApartmentCode,
+                BuildingName = activeContract?.Apartment?.Building?.BuildingName ?? "Tòa nhà SENTANA",
+                ContractStart = activeContract?.StartDay,
+                ContractEnd = activeContract?.EndDay,
+                Status = activeContract != null ? "Đang cư trú" : "Chưa có hợp đồng",
+
+                // ĐÃ THÊM: Ổ khóa bảo mật - Chỉ Admin/Manager mới được phép lấy mã QR ra ngoài
+                QrCodeUrl = (roleName.Equals("Manager", StringComparison.OrdinalIgnoreCase) ||
+                             roleName.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+                            ? user.Info?.QrCodeUrl
+                            : null
+            };
+        }
+
+        //update profile
+        public async Task<(bool IsSuccess, string Message)> UpdateUserProfileAsync(int accountId, UpdateProfileRequestDto request)
         {
             var user = await _context.Accounts
                 .Include(a => a.Info)
@@ -413,5 +420,34 @@ namespace Sentana.API.Services.SBuilding
             await _context.SaveChangesAsync();
             return true;
         }
-    }
+
+        // Hàm Upload QR Code
+        public async Task<(bool IsSuccess, string Message, string? QrUrl)> UploadAdminQrCodeAsync(int accountId, IFormFile file)
+        {
+            var user = await _context.Accounts
+                .Include(a => a.Info)
+                .FirstOrDefaultAsync(a => a.AccountId == accountId);
+
+            if (user == null) return (false, "Không tìm thấy tài khoản.", null);
+
+            var fileUrl = await _minioService.UploadFileAsync(file, "admin-qrcodes");
+
+            if (user.Info == null)
+            {
+                user.Info = new InFo
+                {
+                    QrCodeUrl = fileUrl,
+                    CreatedAt = DateTime.Now
+                };
+            }
+            else
+            {
+                user.Info.QrCodeUrl = fileUrl;
+                user.Info.UpdatedAt = DateTime.Now;
+            }
+
+            await _context.SaveChangesAsync();
+            return (true, "Cập nhật mã QR thành công.", fileUrl);
+        }
+}
 }

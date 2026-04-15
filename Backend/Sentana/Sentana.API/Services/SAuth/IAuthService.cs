@@ -1,4 +1,6 @@
 ﻿using Sentana.API.DTOs.Auth;
+using Microsoft.AspNetCore.Http;
+using System.Threading.Tasks;
 
 namespace Sentana.API.Services.SBuilding
 {
@@ -21,5 +23,7 @@ namespace Sentana.API.Services.SBuilding
         Task<bool> LogoutAsync(int accountId);
 
         Task<bool> SetupPasswordAsync(int accountId, SetupPasswordRequestDto request);
+
+        Task<(bool IsSuccess, string Message, string? QrUrl)> UploadAdminQrCodeAsync(int accountId, IFormFile file);
     }
 }

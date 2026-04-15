@@ -212,58 +212,63 @@ public class PaymentService : IPaymentService
     }
 
     public async Task<ApiResponse<object>> GetMyUnpaidInvoicesAsync()
-    {
-        var userClaim = _httpContextAccessor.HttpContext?.User?.FindFirst("AccountId");
-        if (userClaim == null)
-            return ApiResponse<object>.Fail(401, "Token không hợp lệ.");
+        {
+            var userClaim = _httpContextAccessor.HttpContext?.User?.FindFirst("AccountId");
+            if (userClaim == null)
+                return ApiResponse<object>.Fail(401, "Token không hợp lệ.");
 
-        int userId = int.Parse(userClaim.Value);
+            int userId = int.Parse(userClaim.Value);
 
-        var apartmentIds = await _context.ApartmentResidents
-            .Where(ar => ar.AccountId == userId
-                      && ar.Status == GeneralStatus.Active
-                      && ar.IsDeleted == false
-                      && ar.ApartmentId.HasValue)
-            .Select(ar => ar.ApartmentId!.Value)
-            .Distinct()
-            .ToListAsync();
+            var apartmentIds = await _context.ApartmentResidents
+                .Where(ar => ar.AccountId == userId
+                          && ar.Status == GeneralStatus.Active
+                          && ar.IsDeleted == false
+                          && ar.ApartmentId.HasValue)
+                .Select(ar => ar.ApartmentId!.Value)
+                .Distinct()
+                .ToListAsync();
 
-        if (!apartmentIds.Any())
-            return ApiResponse<object>.Fail(404, "Bạn chưa được gán vào căn hộ nào.");
+            if (!apartmentIds.Any())
+                return ApiResponse<object>.Fail(404, "Bạn chưa được gán vào căn hộ nào.");
 
-        var invoices = await _context.Invoices
-            .AsNoTracking()
-            .Include(i => i.Apartment)
-            .Where(i => i.ApartmentId.HasValue
-                        && apartmentIds.Contains(i.ApartmentId.Value)
-                        && i.Status == InvoiceStatus.Unpaid
-                        && (i.IsDeleted == false || i.IsDeleted == null))
-            .OrderByDescending(i => i.CreatedAt)
-            .ToListAsync();
+            var invoices = await _context.Invoices
+                .AsNoTracking()
+                .Include(i => i.Apartment)
+                    .ThenInclude(a => a.Building)
+                        .ThenInclude(b => b.Manager)
+                            .ThenInclude(m => m.Info)
+                .Where(i => i.ApartmentId.HasValue
+                            && apartmentIds.Contains(i.ApartmentId.Value)
+                            && i.Status == InvoiceStatus.Unpaid
+                            && (i.IsDeleted == false || i.IsDeleted == null))
+                .OrderByDescending(i => i.CreatedAt)
+                .ToListAsync();
 
-        var grouped = invoices
-            .GroupBy(i => new
-            {
-                ApartmentId = i.ApartmentId,
-                ApartmentCode = i.Apartment != null ? i.Apartment.ApartmentCode : null
-            })
-            .OrderBy(g => g.Key.ApartmentCode)
-            .Select(g => new
-            {
-                apartmentId = g.Key.ApartmentId,
-                apartmentCode = g.Key.ApartmentCode,
-                invoices = g.Select(i => new
+            var grouped = invoices
+                .GroupBy(i => new
                 {
-                    invoiceId = i.InvoiceId,
-                    month = i.BillingMonth,
-                    year = i.BillingYear,
-                    amount = i.TotalMoney
-                }).ToList()
-            })
-            .ToList();
+                    ApartmentId = i.ApartmentId,
+                    ApartmentCode = i.Apartment != null ? i.Apartment.ApartmentCode : null,
+                    QrCodeUrl = i.Apartment?.Building?.Manager?.Info?.QrCodeUrl
+                })
+                .OrderBy(g => g.Key.ApartmentCode)
+                .Select(g => new
+                {
+                    apartmentId = g.Key.ApartmentId,
+                    apartmentCode = g.Key.ApartmentCode,
+                    qrCodeUrl = g.Key.QrCodeUrl, // Trả link QR về cho Frontend
+                    invoices = g.Select(i => new
+                    {
+                        invoiceId = i.InvoiceId,
+                        month = i.BillingMonth,
+                        year = i.BillingYear,
+                        amount = i.TotalMoney
+                    }).ToList()
+                })
+                .ToList();
 
-        return ApiResponse<object>.Success(grouped, "Danh sách hóa đơn chưa thanh toán");
-    }
+            return ApiResponse<object>.Success(grouped, "Danh sách hóa đơn chưa thanh toán");
+        }
 
     public async Task<ApiResponse<object>> GetPaymentsByInvoiceAsync(int invoiceId)
     {

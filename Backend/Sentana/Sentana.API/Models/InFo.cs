@@ -32,5 +32,7 @@ public partial class InFo
 
     public bool? IsDeleted { get; set; }
 
+    public string? QrCodeUrl { get; set; }
+
     public virtual ICollection<Account> Accounts { get; set; } = new List<Account>();
 }
