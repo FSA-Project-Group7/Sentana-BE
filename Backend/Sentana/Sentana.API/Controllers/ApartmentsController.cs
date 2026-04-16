@@ -131,5 +131,17 @@ namespace Sentana.API.Controllers
 			try { await _apartmentService.HardDeleteApartmentAsync(id); return Ok(new { message = "Xóa vĩnh viễn thành công" }); }
 			catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
 		}
+
+		[HttpPatch("{id}/area")]
+		[Authorize(Roles = "Manager")]
+		public async Task<IActionResult> UpdateArea(int id, [FromBody] double newArea)
+		{
+			if (newArea <= 0) return BadRequest("Diện tích phải lớn hơn 0");
+
+			var result = await _apartmentService.UpdateAreaAsync(id, newArea);
+			if (!result) return NotFound("Không tìm thấy căn hộ");
+
+			return Ok(new { message = "Cập nhật diện tích thành công" });
+		}
 	}
 }

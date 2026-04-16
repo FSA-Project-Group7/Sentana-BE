@@ -12,5 +12,7 @@ namespace Sentana.API.Services.SApartment
 		Task<IEnumerable<ApartmentResponseDto>> GetDeletedApartmentsAsync();
 		Task<bool> RestoreApartmentAsync(int id);
 		Task<bool> HardDeleteApartmentAsync(int id);
+		Task<bool> UpdateAreaAsync(int id, double area);
+
 	}
 }
