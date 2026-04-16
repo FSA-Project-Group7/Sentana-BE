@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sentana.API.Models;
 
@@ -11,9 +12,11 @@ using Sentana.API.Models;
 namespace Sentana.API.Migrations
 {
     [DbContext(typeof(SentanaContext))]
-    partial class SentanaContextModelSnapshot : ModelSnapshot
+    [Migration("20260414095842_AddInvoiceCategory")]
+    partial class AddInvoiceCategory
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -590,9 +593,6 @@ namespace Sentana.API.Migrations
                         .HasMaxLength(20)
                         .IsUnicode(false)
                         .HasColumnType("varchar(20)");
-
-                    b.Property<string>("QrCodeUrl")
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<byte?>("Sex")
                         .HasColumnType("tinyint");

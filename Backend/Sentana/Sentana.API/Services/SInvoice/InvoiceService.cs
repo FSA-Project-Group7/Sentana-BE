@@ -31,6 +31,24 @@ namespace Sentana.API.Services.SInvoice
             _notificationPublisher = notificationPublisher;
         }
 
+        private static decimal GetEffectiveCollectedAmount(Invoice invoice)
+        {
+            if (invoice.Pay.HasValue && invoice.Pay.Value > 0)
+                return invoice.Pay.Value;
+
+            var totalMoney = invoice.TotalMoney ?? 0m;
+            var debt = invoice.Debt ?? 0m;
+            var derivedPaid = totalMoney - debt;
+
+            if (derivedPaid > 0)
+                return derivedPaid;
+
+            if (invoice.Status == InvoiceStatus.Paid)
+                return totalMoney;
+
+            return 0m;
+        }
+
         // View monthly invoice 
         public async Task<List<InvoiceResponseDto>> GetCurrentInvoicesAsync(ClaimsPrincipal user, int? month = null, int? year = null, int? apartmentId = null, int? accountId = null)
         {
@@ -57,17 +75,39 @@ namespace Sentana.API.Services.SInvoice
             }
             else
             {
-                var aptIds = await _context.Contracts
-                    .Where(c => c.AccountId == callerAccountId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
-                    .Select(c => c.ApartmentId)
-                    .Where(id => id.HasValue).Select(id => id!.Value).ToListAsync();
-                targetApartmentIds.AddRange(aptIds);
+                // Resident được xem hóa đơn theo căn hộ mà mình đang được gán (bao gồm chủ hộ và người ở cùng)
+                var residentApartmentIds = await _context.ApartmentResidents
+                    .Where(ar => ar.AccountId == callerAccountId
+                              && ar.Status == GeneralStatus.Active
+                              && ar.IsDeleted == false
+                              && ar.ApartmentId.HasValue)
+                    .Select(ar => ar.ApartmentId!.Value)
+                    .Distinct()
+                    .ToListAsync();
+
+                targetApartmentIds.AddRange(residentApartmentIds);
+
+                // Backward-compat: nếu dữ liệu cũ chỉ có Contract mà chưa gán ApartmentResident
+                if (!targetApartmentIds.Any())
+                {
+                    var contractApartmentIds = await _context.Contracts
+                        .Where(c => c.AccountId == callerAccountId && c.Status == GeneralStatus.Active && c.IsDeleted == false)
+                        .Select(c => c.ApartmentId)
+                        .Where(id => id.HasValue).Select(id => id!.Value)
+                        .Distinct()
+                        .ToListAsync();
+
+                    targetApartmentIds.AddRange(contractApartmentIds);
+                }
             }
 
-            if (!targetApartmentIds.Any()) return new List<InvoiceResponseDto>();
+           if (!targetApartmentIds.Any()) return new List<InvoiceResponseDto>();
 
             var query = _context.Invoices
                 .Include(i => i.Apartment)
+                    .ThenInclude(a => a.Building)
+                        .ThenInclude(b => b.Manager)
+                            .ThenInclude(m => m.Info)
                 .Include(i => i.Contract)
                 .Include(i => i.ElectricMeter)
                 .Include(i => i.WaterMeter)
@@ -140,6 +180,7 @@ namespace Sentana.API.Services.SInvoice
                     DayCreat = invoice.CreatedAt?.ToString("dd/MM/yyyy HH:mm"), // Sử dụng CreatedAt thay vì DayCreat rỗng
                     DayPay = invoice.DayPay?.ToString("dd/MM/yyyy"),
                     StatusName = invoice.Status?.ToString() ?? string.Empty,
+                    QrCodeUrl = invoice.Apartment?.Building?.Manager?.Info?.QrCodeUrl,
                     Payments = invoice.Payments,
                     Details = new List<InvoiceDetailItemDto>()
                 };
@@ -203,6 +244,12 @@ namespace Sentana.API.Services.SInvoice
 
             int targetMonth = request.Month;
             int targetYear = request.Year;
+
+            var manager = await _context.Accounts.Include(a => a.Info).FirstOrDefaultAsync(a => a.AccountId == currentUserId);
+            if (manager?.Info == null || string.IsNullOrWhiteSpace(manager.Info.QrCodeUrl))
+            {
+                return (false, "BẠN CHƯA CÓ MÃ QR THANH TOÁN! Vui lòng vào mục 'Thông tin cá nhân' để cập nhật mã QR nhận tiền trước khi phát hành hóa đơn.", 0);
+            }
 
             var query = _context.Apartments.Where(a => a.Status == ApartmentStatus.Occupied && a.IsDeleted == false);
 
@@ -412,6 +459,7 @@ namespace Sentana.API.Services.SInvoice
             if (request.Month.HasValue) query = query.Where(i => i.BillingMonth == request.Month.Value);
             if (request.Year.HasValue) query = query.Where(i => i.BillingYear == request.Year.Value);
             if (request.Status.HasValue) query = query.Where(i => i.Status == request.Status.Value);
+            if (request.Category.HasValue) query = query.Where(i => i.Category == request.Category.Value);
 
             int totalCount = await query.CountAsync();
 
@@ -469,7 +517,8 @@ namespace Sentana.API.Services.SInvoice
                     TotalMoney = invoice.TotalMoney,
                     Debt = invoice.Debt,
                     StatusName = invoice.Status?.ToString() ?? string.Empty,
-                    CreatedAt = invoice.CreatedAt?.ToString("dd/MM/yyyy HH:mm")
+                    CreatedAt = invoice.CreatedAt?.ToString("dd/MM/yyyy HH:mm"),
+                    Category = invoice.Category
                 });
             }
 
@@ -909,7 +958,7 @@ namespace Sentana.API.Services.SInvoice
                     Month = g.Key.BillingMonth ?? 0,
                     Year = g.Key.BillingYear ?? targetYear,
                     TotalBilled = g.Sum(i => i.TotalMoney ?? 0),
-                    TotalCollected = g.Sum(i => i.Pay ?? 0),
+                    TotalCollected = g.Sum(i => GetEffectiveCollectedAmount(i)),
                     TotalDebt = g.Sum(i => i.Debt ?? 0),
                     TotalInvoices = g.Count(),
                     PaidInvoices = g.Count(i => i.Status == InvoiceStatus.Paid),
@@ -917,7 +966,24 @@ namespace Sentana.API.Services.SInvoice
                 })
                 .ToList();
 
-            return grouped;
+            var groupedByMonth = grouped.ToDictionary(x => x.Month);
+            var fullYear = Enumerable.Range(1, 12)
+                .Select(month => groupedByMonth.TryGetValue(month, out var value)
+                    ? value
+                    : new MonthlyRevenueDto
+                    {
+                        Month = month,
+                        Year = targetYear,
+                        TotalBilled = 0,
+                        TotalCollected = 0,
+                        TotalDebt = 0,
+                        TotalInvoices = 0,
+                        PaidInvoices = 0,
+                        UnpaidInvoices = 0
+                    })
+                .ToList();
+
+            return fullYear;
         }
 
         // US14 - View Payment Statistics (Manager) — scoped to manager's buildings
@@ -952,7 +1018,7 @@ namespace Sentana.API.Services.SInvoice
                     TotalInvoices = g.Count(),
                     PaidInvoices = g.Count(i => i.Status == InvoiceStatus.Paid),
                     TotalBilled = g.Sum(i => i.TotalMoney ?? 0),
-                    TotalPaid = g.Sum(i => i.Pay ?? 0),
+                    TotalPaid = g.Sum(i => GetEffectiveCollectedAmount(i)),
                     TotalDebt = g.Sum(i => i.Debt ?? 0)
                 })
                 .OrderBy(a => a.ApartmentCode)
@@ -965,10 +1031,95 @@ namespace Sentana.API.Services.SInvoice
                 UnpaidInvoices = invoices.Count(i => i.Status == InvoiceStatus.Unpaid),
                 PendingVerificationInvoices = invoices.Count(i => i.Status == InvoiceStatus.PendingVerification),
                 TotalBilled = invoices.Sum(i => i.TotalMoney ?? 0),
-                TotalRevenue = invoices.Sum(i => i.Pay ?? 0),
+                TotalRevenue = invoices.Sum(i => GetEffectiveCollectedAmount(i)),
                 TotalDebt = invoices.Sum(i => i.Debt ?? 0),
                 ByApartment = byApartment
             };
+        }
+
+        // Gửi email nhắc nợ cho cư dân
+        public async Task<ApiResponse<object>> SendPaymentReminderAsync(int invoiceId)
+        {
+            var invoice = await _context.Invoices
+                .Include(i => i.Contract)
+                    .ThenInclude(c => c.Account)
+                        .ThenInclude(a => a.Info)
+                .Include(i => i.Apartment)
+                .FirstOrDefaultAsync(i => i.InvoiceId == invoiceId);
+
+            if (invoice == null)
+                return ApiResponse<object>.Fail(404, "Không tìm thấy hóa đơn");
+
+            if (invoice.Status == InvoiceStatus.Paid)
+                return ApiResponse<object>.Fail(400, "Hóa đơn đã thanh toán");
+
+            var email = invoice.Contract?.Account?.Email;
+            if (string.IsNullOrEmpty(email))
+                return ApiResponse<object>.Fail(400, "Không tìm thấy email cư dân");
+
+            var residentName = invoice.Contract?.Account?.Info?.FullName ?? "Quý khách";
+            var apartmentCode = invoice.Apartment?.ApartmentCode ?? "N/A";
+            var categoryName = invoice.Category == InvoiceCategory.AdditionalPayment 
+                ? "Hóa đơn trả thêm (thanh lý hợp đồng)" 
+                : "Hóa đơn tiền tháng";
+
+            string emailBody = $@"
+                <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
+                    <div style='background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding: 30px; text-align: center;'>
+                        <h2 style='color: white; margin: 0;'>⚠️ NHẮC NHỞ THANH TOÁN</h2>
+                    </div>
+                    
+                    <div style='background-color: white; padding: 30px;'>
+                        <p>Kính gửi <strong>{residentName}</strong>,</p>
+                        
+                        <p>Hệ thống ghi nhận bạn có hóa đơn chưa thanh toán:</p>
+                        
+                        <div style='background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0;'>
+                            <table style='width: 100%;'>
+                                <tr>
+                                    <td><strong>Căn hộ:</strong></td>
+                                    <td>{apartmentCode}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Loại hóa đơn:</strong></td>
+                                    <td>{categoryName}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Kỳ hóa đơn:</strong></td>
+                                    <td>Tháng {invoice.BillingMonth}/{invoice.BillingYear}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Số tiền cần trả:</strong></td>
+                                    <td style='color: #dc3545; font-size: 18px; font-weight: bold;'>
+                                        {invoice.Debt:N0} VNĐ
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+
+                        {(invoice.Category == InvoiceCategory.AdditionalPayment ? 
+                            @"<div style='background-color: #f8d7da; padding: 15px; border-radius: 8px; margin: 20px 0;'>
+                                <strong style='color: #721c24;'>⚠️ LƯU Ý:</strong><br/>
+                                <span style='color: #721c24;'>
+                                    Đây là hóa đơn thanh lý hợp đồng. Vui lòng thanh toán trong vòng 7 ngày.
+                                </span>
+                            </div>" : ""
+                        )}
+
+                        <p>Vui lòng thanh toán sớm để tránh phát sinh phí trễ hạn.</p>
+                        
+                        <p>Trân trọng,<br/><strong>Ban Quản Lý Sentana</strong></p>
+                    </div>
+                </div>
+            ";
+
+            await _emailService.SendEmailAsync(
+                email,
+                $"[SENTANA] Nhắc nhở thanh toán hóa đơn tháng {invoice.BillingMonth}/{invoice.BillingYear}",
+                emailBody
+            );
+
+            return ApiResponse<object>.Success(null, "Đã gửi email nhắc nợ thành công");
         }
     }
 }

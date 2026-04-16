@@ -28,6 +28,8 @@
 
         // danh sách chi tiết từng khoản thu
         public List<InvoiceDetailItemDto> Details { get; set; } = new List<InvoiceDetailItemDto>();
-        public string? BillingPeriod { get; set; } 
+        public string? BillingPeriod { get; set; }
+
+        public string? QrCodeUrl { get; set; }
     }
 }

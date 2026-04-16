@@ -19,6 +19,8 @@
 		public string? BuildingName { get; set; }
 		public DateOnly? ContractStart { get; set; }
 		public DateOnly? ContractEnd { get; set; }
-		public string? Status { get; set; }
+
+        public string? QrCodeUrl { get; set; }
+        public string? Status { get; set; }
 	}
 }

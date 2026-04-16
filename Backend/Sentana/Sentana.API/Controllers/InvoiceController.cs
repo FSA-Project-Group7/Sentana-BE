@@ -177,6 +177,14 @@ namespace Sentana.API.Controllers
         return Ok(ApiResponse<string>.Success(null, result.Message));
     }
 
+    [HttpPost("{invoiceId}/send-reminder")]
+    [Authorize(Roles = "Manager")]
+    public async Task<IActionResult> SendPaymentReminder(int invoiceId)
+    {
+        var result = await _invoiceService.SendPaymentReminderAsync(invoiceId);
+        return StatusCode(result.StatusCode, result);
+    }
+
         // US82 - View Outstanding Debt
         [HttpGet("outstanding-debts")]
         [Authorize(Roles = "Manager")]
@@ -294,8 +302,6 @@ namespace Sentana.API.Controllers
             try
             {
                 var result = await _invoiceService.GetMonthlyRevenueAsync(managerId, year);
-                if (result == null || !result.Any())
-                    return NotFound(ApiResponse<string>.Fail(404, "Không có dữ liệu doanh thu trong năm này."));
                 return Ok(ApiResponse<List<MonthlyRevenueDto>>.Success(result, "Lấy thống kê doanh thu hàng tháng thành công."));
             }
             catch (Exception ex)

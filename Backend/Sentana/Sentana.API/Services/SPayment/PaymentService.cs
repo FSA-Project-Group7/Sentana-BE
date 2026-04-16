@@ -55,7 +55,18 @@ public class PaymentService : IPaymentService
         if (contract == null)
             return ApiResponse<object>.Fail(404, "Contract không tồn tại.");
 
-        if (contract.AccountId != userId)
+        // Cho phép mọi cư dân đang được gán active vào căn hộ của hóa đơn upload proof (không chỉ chủ hộ)
+        if (!invoice.ApartmentId.HasValue)
+            return ApiResponse<object>.Fail(400, "Hóa đơn không hợp lệ (thiếu ApartmentId).");
+
+        var hasAccess = await _context.ApartmentResidents
+            .AnyAsync(ar => ar.AccountId == userId
+                         && ar.ApartmentId == invoice.ApartmentId.Value
+                         && ar.Status == GeneralStatus.Active
+                         && ar.IsDeleted == false);
+
+        // Backward-compat: nếu chưa có mapping ApartmentResident thì vẫn cho chủ hộ theo Contract upload
+        if (!hasAccess && contract.AccountId != userId)
             return ApiResponse<object>.Fail(403, "Bạn không có quyền upload cho hóa đơn này.");
 
         var existed = await _context.PaymentTransactions
@@ -108,18 +119,23 @@ public class PaymentService : IPaymentService
 
         int userId = int.Parse(userClaim.Value);
 
-        var contract = await _context.Contracts
-            .Where(c => c.AccountId == userId
-                        && c.Status == GeneralStatus.Active
-                        && c.IsDeleted == false)
-            .OrderByDescending(c => c.CreatedAt)
-            .FirstOrDefaultAsync();
+        // Resolve danh sách căn hộ của resident (bao gồm chủ hộ và người ở cùng)
+        var apartmentIds = await _context.ApartmentResidents
+            .Where(ar => ar.AccountId == userId
+                      && ar.Status == GeneralStatus.Active
+                      && ar.IsDeleted == false
+                      && ar.ApartmentId.HasValue)
+            .Select(ar => ar.ApartmentId!.Value)
+            .Distinct()
+            .ToListAsync();
 
-        if (contract == null)
-            return ApiResponse<object>.Fail(404, "Không có contract active.");
+        if (!apartmentIds.Any())
+            return ApiResponse<object>.Fail(404, "Bạn chưa được gán vào căn hộ nào.");
 
         var invoices = await _context.Invoices
-            .Where(i => i.ContractId == contract.ContractId
+            .Include(i => i.Apartment)
+            .Where(i => i.ApartmentId.HasValue
+                        && apartmentIds.Contains(i.ApartmentId.Value)
                         && i.Status == InvoiceStatus.Unpaid
                         && (i.IsDeleted == false || i.IsDeleted == null))
             .OrderByDescending(i => i.CreatedAt)
@@ -130,16 +146,28 @@ public class PaymentService : IPaymentService
 
         if (invoices.Count > 1)
         {
-            var list = invoices.Select(i => new
-            {
-                invoiceId = i.InvoiceId,
-                month = i.BillingMonth,
-                year = i.BillingYear,
-                amount = i.TotalMoney
-            });
+            var list = invoices
+                .GroupBy(i => new
+                {
+                    ApartmentId = i.ApartmentId,
+                    ApartmentCode = i.Apartment != null ? i.Apartment.ApartmentCode : null
+                })
+                .OrderBy(g => g.Key.ApartmentCode)
+                .Select(g => new
+                {
+                    apartmentId = g.Key.ApartmentId,
+                    apartmentCode = g.Key.ApartmentCode,
+                    invoices = g.Select(i => new
+                    {
+                        invoiceId = i.InvoiceId,
+                        month = i.BillingMonth,
+                        year = i.BillingYear,
+                        amount = i.TotalMoney
+                    })
+                });
 
-                return ApiResponse<object>.Success(list,
-         "Bạn có nhiều hóa đơn chưa thanh toán. Vui lòng chọn hóa đơn cụ thể để tiếp tục thanh toán.");
+            return ApiResponse<object>.Success(list,
+                "Bạn có nhiều hóa đơn chưa thanh toán. Vui lòng chọn hóa đơn cụ thể để tiếp tục thanh toán.");
         }
 
         var invoice = invoices.First();
@@ -173,6 +201,8 @@ public class PaymentService : IPaymentService
         {
             transactionId = transaction.TransactionId,
             invoiceId = invoice.InvoiceId,
+            apartmentId = invoice.ApartmentId,
+            apartmentCode = invoice.Apartment?.ApartmentCode,
             month = invoice.BillingMonth,
             year = invoice.BillingYear,
             amount = invoice.TotalMoney,
@@ -182,38 +212,63 @@ public class PaymentService : IPaymentService
     }
 
     public async Task<ApiResponse<object>> GetMyUnpaidInvoicesAsync()
-    {
-        var userClaim = _httpContextAccessor.HttpContext?.User?.FindFirst("AccountId");
-        if (userClaim == null)
-            return ApiResponse<object>.Fail(401, "Token không hợp lệ.");
+        {
+            var userClaim = _httpContextAccessor.HttpContext?.User?.FindFirst("AccountId");
+            if (userClaim == null)
+                return ApiResponse<object>.Fail(401, "Token không hợp lệ.");
 
-        int userId = int.Parse(userClaim.Value);
+            int userId = int.Parse(userClaim.Value);
 
-        var contract = await _context.Contracts
-            .Where(c => c.AccountId == userId
-                        && c.Status == GeneralStatus.Active
-                        && c.IsDeleted == false)
-            .OrderByDescending(c => c.CreatedAt)
-            .FirstOrDefaultAsync();
+            var apartmentIds = await _context.ApartmentResidents
+                .Where(ar => ar.AccountId == userId
+                          && ar.Status == GeneralStatus.Active
+                          && ar.IsDeleted == false
+                          && ar.ApartmentId.HasValue)
+                .Select(ar => ar.ApartmentId!.Value)
+                .Distinct()
+                .ToListAsync();
 
-        if (contract == null)
-            return ApiResponse<object>.Fail(404, "Không có contract.");
+            if (!apartmentIds.Any())
+                return ApiResponse<object>.Fail(404, "Bạn chưa được gán vào căn hộ nào.");
 
-        var invoices = await _context.Invoices
-            .Where(i => i.ContractId == contract.ContractId
-                        && i.Status == InvoiceStatus.Unpaid
-                        && (i.IsDeleted == false || i.IsDeleted == null))
-            .Select(i => new
-            {
-                invoiceId = i.InvoiceId,
-                month = i.BillingMonth,
-                year = i.BillingYear,
-                amount = i.TotalMoney
-            })
-            .ToListAsync();
+            var invoices = await _context.Invoices
+                .AsNoTracking()
+                .Include(i => i.Apartment)
+                    .ThenInclude(a => a.Building)
+                        .ThenInclude(b => b.Manager)
+                            .ThenInclude(m => m.Info)
+                .Where(i => i.ApartmentId.HasValue
+                            && apartmentIds.Contains(i.ApartmentId.Value)
+                            && i.Status == InvoiceStatus.Unpaid
+                            && (i.IsDeleted == false || i.IsDeleted == null))
+                .OrderByDescending(i => i.CreatedAt)
+                .ToListAsync();
 
-        return ApiResponse<object>.Success(invoices, "Danh sách hóa đơn chưa thanh toán");
-    }
+            var grouped = invoices
+                .GroupBy(i => new
+                {
+                    ApartmentId = i.ApartmentId,
+                    ApartmentCode = i.Apartment != null ? i.Apartment.ApartmentCode : null,
+                    QrCodeUrl = i.Apartment?.Building?.Manager?.Info?.QrCodeUrl
+                })
+                .OrderBy(g => g.Key.ApartmentCode)
+                .Select(g => new
+                {
+                    apartmentId = g.Key.ApartmentId,
+                    apartmentCode = g.Key.ApartmentCode,
+                    qrCodeUrl = g.Key.QrCodeUrl, // Trả link QR về cho Frontend
+                    invoices = g.Select(i => new
+                    {
+                        invoiceId = i.InvoiceId,
+                        month = i.BillingMonth,
+                        year = i.BillingYear,
+                        amount = i.TotalMoney
+                    }).ToList()
+                })
+                .ToList();
+
+            return ApiResponse<object>.Success(grouped, "Danh sách hóa đơn chưa thanh toán");
+        }
 
     public async Task<ApiResponse<object>> GetPaymentsByInvoiceAsync(int invoiceId)
     {
@@ -324,7 +379,17 @@ public class PaymentService : IPaymentService
             .OrderByDescending(c => c.CreatedAt)
             .FirstOrDefaultAsync();
 
-        return residentContract?.ApartmentId;
+        // Ưu tiên lấy theo mapping ApartmentResidents (cho người ở cùng)
+        var residentApartmentId = await _context.ApartmentResidents
+            .AsNoTracking()
+            .Where(ar => ar.AccountId == callerAccountId
+                      && ar.Status == GeneralStatus.Active
+                      && ar.IsDeleted == false
+                      && ar.ApartmentId.HasValue)
+            .Select(ar => (int?)ar.ApartmentId!.Value)
+            .FirstOrDefaultAsync();
+
+        return residentApartmentId ?? residentContract?.ApartmentId;
     }
 
     public async Task<ApiResponse<object>> GetAllTransactionsAsync()

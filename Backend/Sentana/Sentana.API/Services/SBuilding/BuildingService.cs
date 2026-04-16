@@ -375,29 +375,42 @@ namespace Sentana.API.Services.SBuilding
 
             if (!apartmentIds.Any()) return new ResidentKpiDto();
 
-            // Cư dân đang thực sự ở trong phòng (Status==Active, có record ApartmentResident chưa xóa)
+            var residentAccountIdsInScope = await _context.ApartmentResidents
+                .Where(ar => apartmentIds.Contains(ar.ApartmentId ?? 0) && ar.IsDeleted != true)
+                .Select(ar => ar.AccountId)
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            // Tất cả tài khoản Resident hợp lệ thuộc management scope
+            var residentAccountsInScope = await _context.Accounts
+                .Where(a => a.RoleId == 2
+                    && a.IsDeleted != true
+                    && residentAccountIdsInScope.Contains(a.AccountId))
+                .ToListAsync();
+
+            // BUG US80: cư dân bị khóa không được tính vào TotalResidents
+            var totalResidentAccounts = residentAccountsInScope
+                .Where(a => a.Status == GeneralStatus.Active)
+                .ToList();
+
+            // Cư dân đang thực sự ở trong phòng (có assignment active + account hợp lệ)
             var residentsInRoom = await _context.ApartmentResidents
                 .Include(ar => ar.Account)
                 .Where(ar =>
                     apartmentIds.Contains(ar.ApartmentId ?? 0) &&
                     ar.IsDeleted != true &&
-                    ar.Status == GeneralStatus.Active &&   // chỉ lấy active
+                    ar.Status == GeneralStatus.Active &&
                     ar.Account != null &&
                     ar.Account.RoleId == 2 &&
+                    ar.Account.Status == GeneralStatus.Active &&
                     ar.Account.IsDeleted != true)
                 .Select(ar => ar.AccountId)
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
                 .Distinct()
                 .CountAsync();
-
-            // Tất cả tài khoản Resident thuộc management scope
-            var totalResidentAccounts = await _context.Accounts
-                .Where(a => a.RoleId == 2 && a.IsDeleted != true &&
-                    _context.ApartmentResidents
-                        .Where(ar => apartmentIds.Contains(ar.ApartmentId ?? 0) && ar.IsDeleted != true)
-                        .Select(ar => ar.AccountId)
-                        .Distinct()
-                        .Contains(a.AccountId))
-                .ToListAsync();
 
             // Cư dân mới trong tháng hiện tại
             var now = DateTime.Now;
@@ -420,11 +433,18 @@ namespace Sentana.API.Services.SBuilding
                     .ToListAsync();
 
                 var count = await _context.ApartmentResidents
+                    .Include(ar => ar.Account)
                     .Where(ar =>
                         buildingAptIds.Contains(ar.ApartmentId ?? 0) &&
                         ar.IsDeleted != true &&
-                        ar.Status == GeneralStatus.Active)
+                        ar.Status == GeneralStatus.Active &&
+                        ar.Account != null &&
+                        ar.Account.RoleId == 2 &&
+                        ar.Account.Status == GeneralStatus.Active &&
+                        ar.Account.IsDeleted != true)
                     .Select(ar => ar.AccountId)
+                    .Where(id => id.HasValue)
+                    .Select(id => id!.Value)
                     .Distinct()
                     .CountAsync();
 
@@ -440,8 +460,8 @@ namespace Sentana.API.Services.SBuilding
             return new ResidentKpiDto
             {
                 TotalResidents = totalResidentAccounts.Count,
-                ActiveResidents = totalResidentAccounts.Count(r => r.Status == GeneralStatus.Active),
-                InactiveResidents = totalResidentAccounts.Count(r => r.Status == GeneralStatus.Inactive),
+                ActiveResidents = totalResidentAccounts.Count,
+                InactiveResidents = residentAccountsInScope.Count(r => r.Status == GeneralStatus.Inactive),
                 ResidentsInRoom = residentsInRoom,
                 ResidentsNotInRoom = Math.Max(0, totalResidentAccounts.Count - residentsInRoom),
                 NewResidentsThisMonth = newThisMonth,
