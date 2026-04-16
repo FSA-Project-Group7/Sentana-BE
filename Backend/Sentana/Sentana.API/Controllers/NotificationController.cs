@@ -13,21 +13,24 @@ namespace Sentana.API.Controllers
 
         public NotificationController(INotificationService service) => _service = service;
 
-        [HttpGet("my-notifications")]
-        public async Task<IActionResult> GetMyNotifications()
-        {
-            try
-            {
-                var data = await _service.GetMyNotificationsAsync(User);
-                return Ok(new { success = true, data = data });
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { success = false, message = ex.Message });
-            }
-        }
+		[HttpGet("my-notifications")]
+		public async Task<IActionResult> GetMyNotifications([FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 10)
+		{
+			try
+			{
+				// Nhận tham số phân trang từ Query URL
+				var result = await _service.GetMyNotificationsAsync(User, pageIndex, pageSize);
 
-        [HttpPut("{id}/read")]
+				// Trả về cả Items và UnreadCount
+				return Ok(new { success = true, items = result.Items, unreadCount = result.UnreadCount });
+			}
+			catch (Exception ex)
+			{
+				return BadRequest(new { success = false, message = ex.Message });
+			}
+		}
+
+		[HttpPut("{id}/read")]
         public async Task<IActionResult> MarkAsRead(int id)
         {
             try

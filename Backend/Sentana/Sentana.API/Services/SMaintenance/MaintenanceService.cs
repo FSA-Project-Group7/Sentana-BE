@@ -113,21 +113,26 @@ namespace Sentana.API.Services.SMaintenance
                 await _context.MaintenanceRequests.AddAsync(newRequest);
                 await _context.SaveChangesAsync();
 
-                // XỬ LÝ SIGNALR: BẮN THÔNG BÁO REALTIME CHO MANAGER
-                var fullRequest = await GetSingleRequestPayloadAsync(newRequest.RequestId);
-                var managerId = await _context.Apartments
-                    .Where(a => a.ApartmentId == request.ApartmentId)
-                    .Select(a => a.Building.ManagerId)
-                    .FirstOrDefaultAsync();
+				// XỬ LÝ SIGNALR VÀ LƯU DATABASE CHO MANAGER
+				var fullRequest = await GetSingleRequestPayloadAsync(newRequest.RequestId);
+				var managerId = await _context.Apartments
+					.Where(a => a.ApartmentId == request.ApartmentId)
+					.Select(a => a.Building.ManagerId)
+					.FirstOrDefaultAsync();
 
-                if (managerId.HasValue && fullRequest != null)
-                {
-                    await _hubContext.Clients.User(managerId.Value.ToString())
-                        .SendAsync(SignalREvents.MAINTENANCE_REQUEST, fullRequest);
-                }
+				if (managerId.HasValue && fullRequest != null)
+				{
+					await _notificationPublisher.QueueNotificationAsync(
+						managerId.Value,
+						"Yêu cầu mới",
+						$"P.{fullRequest.ApartmentName} vừa báo cáo sự cố: {request.Title}");
+					
+					await _hubContext.Clients.User(managerId.Value.ToString())
+						.SendAsync(SignalREvents.MAINTENANCE_REQUEST, fullRequest);
+				}
 
-                await transaction.CommitAsync();
-                return (true, "Đã gửi yêu cầu bảo trì thành công.", newRequest);
+				await transaction.CommitAsync();
+				return (true, "Đã gửi yêu cầu bảo trì thành công.", newRequest);
             }
             catch (Exception ex)
             {
@@ -223,15 +228,23 @@ namespace Sentana.API.Services.SMaintenance
             task.UpdatedAt = DateTime.Now;
             await _context.SaveChangesAsync();
 
-            var payload = await GetSingleRequestPayloadAsync(task.RequestId);
-            var managerId = task.Apartment?.Building?.ManagerId;
-            var notifyIds = new List<string> { task.AccountId.ToString()! };
-            if (managerId.HasValue) notifyIds.Add(managerId.Value.ToString());
+			var payload = await GetSingleRequestPayloadAsync(task.RequestId);
+			var managerId = task.Apartment?.Building?.ManagerId;
+			var notifyIds = new List<string> { task.AccountId.ToString()! };
+			if (managerId.HasValue) notifyIds.Add(managerId.Value.ToString());
 
-            await _hubContext.Clients.Users(notifyIds).SendAsync(SignalREvents.MAINTENANCE_TASKPROCESSING, payload);
+			// THÊM BLOCK NÀY ĐỂ LƯU DATABASE
+			if (task.AccountId.HasValue)
+				await _notificationPublisher.QueueNotificationAsync(task.AccountId.Value, "Đang xử lý", $"Thợ đã bắt đầu sửa chữa sự cố '{task.Title}'.");
 
-            return (true, "Đã bắt đầu xử lý.");
-        }
+			if (managerId.HasValue)
+				await _notificationPublisher.QueueNotificationAsync(managerId.Value, "Đang xử lý", $"Thợ đã bắt đầu sửa chữa sự cố '{task.Title}' tại P.{payload?.ApartmentName}.");
+
+			// SignalR cũ giữ nguyên
+			await _hubContext.Clients.Users(notifyIds).SendAsync(SignalREvents.MAINTENANCE_TASKPROCESSING, payload);
+
+			return (true, "Đã bắt đầu xử lý.");
+		}
 
         // FIX BUG 57
         public async Task<(bool IsSuccess, string Message)> FixTaskAsync(int requestId, FixTaskRequestDto request, int currentTechId)
@@ -361,27 +374,34 @@ namespace Sentana.API.Services.SMaintenance
             if (newTechAccount.TechAvailability == (byte)TechAvailability.Busy)
                 throw new Exception("Kỹ thuật viên này đang bận xử lý công việc khác.");
 
-            request.AssignedTo = dto.TechnicianId;
-            request.Priority = (byte)dto.Priority;
-            request.Status = MaintenanceRequestStatus.Pending;
-            request.UpdatedAt = DateTime.Now;
-            request.UpdatedBy = managerId;
+			request.AssignedTo = dto.TechnicianId;
+			request.Priority = (byte)dto.Priority;
+			request.Status = MaintenanceRequestStatus.Pending; // BE của bạn đang để 1 là Pending sau khi giao
+			request.UpdatedAt = DateTime.Now;
 
-            newTechAccount.TechAvailability = (byte)TechAvailability.Busy;
-            newTechAccount.UpdatedAt = DateTime.Now;
-            newTechAccount.UpdatedBy = managerId;
-            await _context.SaveChangesAsync();
-            var payload = await GetSingleRequestPayloadAsync(request.RequestId);
-            if (payload != null)
-            {
-                var notifyIds = new List<string> {
-                dto.TechnicianId.ToString(), // Gửi cho thợ
-                request.AccountId.ToString()  // Gửi cho Cư dân báo hỏng 
-                };
-                await _hubContext.Clients.Users(notifyIds).SendAsync(SignalREvents.MAINTENANCE_ASSIGNEDTASK, payload);
-            }
-            return true;
-        }
+			await _context.SaveChangesAsync();
+
+			var payload = await GetSingleRequestPayloadAsync(request.RequestId);
+			if (payload != null)
+			{
+				// 1. QUAN TRỌNG: Lưu thông báo vào Database để hiện ở Chuông
+				await _notificationPublisher.QueueNotificationAsync(dto.TechnicianId,
+					"Công việc mới",
+					$"Bạn vừa được giao xử lý sự cố: {request.Title} tại P.{payload.ApartmentName}");
+
+				if (request.AccountId.HasValue)
+				{
+					await _notificationPublisher.QueueNotificationAsync(request.AccountId.Value,
+						"Đã phân công",
+						$"Sự cố '{request.Title}' của bạn đã được giao cho kỹ thuật viên.");
+				}
+
+				// 2. Bắn SignalR (Đảm bảo tên Event là "ReceiveAssignedTask" cho khớp với FE của Tech)
+				var notifyIds = new List<string> { dto.TechnicianId.ToString(), request.AccountId.ToString()! };
+				await _hubContext.Clients.Users(notifyIds).SendAsync("ReceiveAssignedTask", payload);
+			}
+			return true;
+		}
 
         // HÀM HELPER DÙNG CHUNG ĐỂ LẤY PAYLOAD GỬI SIGNALR
         private async Task<MaintenanceResponseDto?> GetSingleRequestPayloadAsync(int requestId)
@@ -485,61 +505,73 @@ namespace Sentana.API.Services.SMaintenance
                 .FirstOrDefaultAsync();
         }
 
-        public async Task<(bool IsSuccess, string Message)> CloseTaskAsync(int requestId, int managerId)
-        {
-            var task = await _context.MaintenanceRequests
-            .Include(m => m.Account).ThenInclude(a => a.Info)
-            .Include(m => m.AssignedToNavigation).ThenInclude(t => t.Info)
-            .FirstOrDefaultAsync(m => m.RequestId == requestId);
-            if (task == null) return (false, "Không tìm thấy công việc.");
-            if (task.Status != MaintenanceRequestStatus.Fixed)
-                return (false, "Chỉ có thể đóng phiếu khi thợ đã báo cáo hoàn tất (Fixed).");
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            try
-            {
-                task.Status = MaintenanceRequestStatus.Closed;
-                task.UpdatedAt = DateTime.Now;
-                task.UpdatedBy = managerId;
-                if (task.AssignedTo.HasValue)
-                {
-                    var techAccount = await _context.Accounts.FindAsync(task.AssignedTo.Value);
-                    if (techAccount != null) techAccount.TechAvailability = (byte)TechAvailability.Free;
-                }
-                await _context.SaveChangesAsync();
-                if (task.Account != null && !string.IsNullOrEmpty(task.Account.Email))
-                {
-                    var emailContent = $@"
-                    <h3>Báo cáo hoàn tất yêu cầu bảo trì</h3>
-                    <p>Chào bạn {task.Account.Info?.FullName},</p>
-                    <p>Yêu cầu bảo trì <strong>'{task.Title}'</strong> của bạn đã được Ban quản lý nghiệm thu thành công.</p>
-                    <ul>
-                        <li>Kỹ thuật viên phụ trách: {task.AssignedToNavigation?.Info?.FullName}</li>
-                        <li>Thời gian hoàn thành: {task.FixDay?.ToString("dd/MM/yyyy HH:mm")}</li>
-                        <li>Ghi chú của thợ: {task.ResolutionNote}</li>
-                    </ul>
-                    <p>Cảm ơn bạn đã đồng hành cùng Sentana!</p>";
+		public async Task<(bool IsSuccess, string Message)> CloseTaskAsync(int requestId, int managerId)
+		{
+			var task = await _context.MaintenanceRequests
+				.Include(m => m.Apartment).ThenInclude(a => a.Building)
+				.Include(m => m.Account)
+				.FirstOrDefaultAsync(m => m.RequestId == requestId);
 
-                    var emailDto = new Sentana.API.DTOs.Email.EmailMessageDto
-                    {
-                        To = task.Account.Email,
-                        Subject = $"[Sentana] Nghiệm thu hoàn tất: {task.Title}",
-                        Body = emailContent
-                    };
-                    await _rabbitMQProducer.SendEmailMessage(emailDto);
-                }
-                var payload = await GetSingleRequestPayloadAsync(task.RequestId);
-                await _hubContext.Clients.User(task.AccountId.ToString()!).SendAsync(SignalREvents.MAINTENANCE_TASKCLOSED, payload);
-                await transaction.CommitAsync();
-                return (true, "Nghiệm thu ĐẠT: Đã đóng phiếu, giải phóng thợ và gửi Email thông báo.");
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                return (false, $"Lỗi hệ thống khi nghiệm thu: {ex.Message}");
-            }
-        }
+			if (task == null) return (false, "Không tìm thấy công việc.");
+			if (task.Status != MaintenanceRequestStatus.Fixed)
+				return (false, "Chỉ có thể đóng phiếu khi thợ đã báo cáo hoàn tất.");
 
-        public async Task<(bool IsSuccess, string Message)> RejectTaskAsync(int requestId, RejectTaskRequestDto request, int managerId)
+			using var transaction = await _context.Database.BeginTransactionAsync();
+			try
+			{
+				// 1. Cập nhật trạng thái và GHI CHÚ NGUỒN NGHIỆM THU
+				task.Status = MaintenanceRequestStatus.Closed;
+				task.UpdatedAt = DateTime.Now;
+				task.UpdatedBy = managerId;
+
+				// Thêm dòng ghi chú để phân biệt Admin hay Cư dân nghiệm thu
+				task.ResolutionNote = $"{task.ResolutionNote}\n[HỆ THỐNG: Đã được nghiệm thu bởi Ban Quản Lý]";
+
+				// 2. Giải phóng thợ
+				if (task.AssignedTo.HasValue)
+				{
+					var techAccount = await _context.Accounts.FindAsync(task.AssignedTo.Value);
+					if (techAccount != null) techAccount.TechAvailability = (byte)TechAvailability.Free;
+				}
+
+				await _context.SaveChangesAsync();
+
+				// 3. LƯU THÔNG BÁO VÀO DATABASE CHO CƯ DÂN & THỢ
+				var payload = await GetSingleRequestPayloadAsync(task.RequestId);
+
+				if (task.AccountId.HasValue)
+				{
+					await _notificationPublisher.QueueNotificationAsync(task.AccountId.Value,
+						"Nghiệm thu thành công", $"Ban quản lý đã thay mặt bạn nghiệm thu sự cố '{task.Title}'.");
+				}
+				if (task.AssignedTo.HasValue)
+				{
+					await _notificationPublisher.QueueNotificationAsync(task.AssignedTo.Value,
+						"Công việc hoàn tất", $"Quản lý đã nghiệm thu sự cố '{task.Title}' bạn vừa xử lý.");
+				}
+
+				// 4. SIGNALR: PHÁT SÓNG ĐỂ TỰ ĐỘNG REFRESH MÀN HÌNH KHÔNG CẦN F5
+				var notifyIds = new List<string>();
+				if (task.AccountId.HasValue) notifyIds.Add(task.AccountId.Value.ToString());
+				if (task.AssignedTo.HasValue) notifyIds.Add(task.AssignedTo.Value.ToString());
+
+				if (notifyIds.Any())
+				{
+					// Sự kiện TaskClosed này sẽ kích hoạt hàm reloadTrigger ở các màn hình khác
+					await _hubContext.Clients.Users(notifyIds).SendAsync("TaskClosed", payload);
+				}
+
+				await transaction.CommitAsync();
+				return (true, "Đã nghiệm thu hộ và đồng bộ dữ liệu toàn hệ thống.");
+			}
+			catch (Exception ex)
+			{
+				await transaction.RollbackAsync();
+				return (false, $"Lỗi: {ex.Message}");
+			}
+		}
+
+		public async Task<(bool IsSuccess, string Message)> RejectTaskAsync(int requestId, RejectTaskRequestDto request, int managerId)
         {
             var task = await _context.MaintenanceRequests.FindAsync(requestId);
             if (task == null) return (false, "Không tìm thấy công việc.");
@@ -568,8 +600,10 @@ namespace Sentana.API.Services.SMaintenance
 
 		public async Task<(bool IsSuccess, string Message)> ResidentAcceptTaskAsync(int requestId, int residentId)
 		{
+			// FIX LỖI 1: Bổ sung ThenInclude(Building) để lấy được ManagerId của Tòa nhà
 			var task = await _context.MaintenanceRequests
 				.Include(m => m.Apartment)
+					.ThenInclude(a => a.Building) // <-- QUAN TRỌNG
 				.FirstOrDefaultAsync(m => m.RequestId == requestId && m.AccountId == residentId);
 
 			if (task == null) return (false, "Không tìm thấy công việc hoặc bạn không có quyền truy cập.");
@@ -579,12 +613,10 @@ namespace Sentana.API.Services.SMaintenance
 			using var transaction = await _context.Database.BeginTransactionAsync();
 			try
 			{
-				// 1. Cập nhật trạng thái sự cố
 				task.Status = MaintenanceRequestStatus.Closed; // Đóng thẻ
 				task.UpdatedAt = DateTime.Now;
 				task.UpdatedBy = residentId;
 
-				// 2. Giải phóng Kỹ thuật viên (Chuyển thành Rảnh)
 				if (task.AssignedTo.HasValue)
 				{
 					var techAccount = await _context.Accounts.FindAsync(task.AssignedTo.Value);
@@ -593,21 +625,28 @@ namespace Sentana.API.Services.SMaintenance
 
 				await _context.SaveChangesAsync();
 
-				// 3. Thông báo SignalR cho Quản lý và Thợ
 				var payload = await GetSingleRequestPayloadAsync(task.RequestId);
 				var notifyIds = new List<string>();
-
-				// Add Manager ID
 				var managerId = task.Apartment?.Building?.ManagerId;
-				if (managerId.HasValue) notifyIds.Add(managerId.Value.ToString());
 
-				// Add Technician ID
-				if (task.AssignedTo.HasValue) notifyIds.Add(task.AssignedTo.Value.ToString());
+				// FIX LỖI 2: LƯU DATABASE CHO QUẢN LÝ
+				if (managerId.HasValue)
+				{
+					notifyIds.Add(managerId.Value.ToString());
+					await _notificationPublisher.QueueNotificationAsync(managerId.Value, "Hoàn thành", $"Cư dân P.{payload?.ApartmentName} đã nghiệm thu sự cố '{task.Title}'.");
+				}
+
+				// FIX LỖI 2: LƯU DATABASE CHO KỸ THUẬT VIÊN
+				if (task.AssignedTo.HasValue)
+				{
+					notifyIds.Add(task.AssignedTo.Value.ToString());
+					await _notificationPublisher.QueueNotificationAsync(task.AssignedTo.Value, "Hoàn tất", $"Cư dân đã nghiệm thu sự cố '{task.Title}'. Bạn đã rảnh tay!");
+				}
 
 				if (notifyIds.Any())
 				{
-					// Bạn có thể tạo thêm Event Name mới, hoặc dùng lại MAINTENANCE_TASKCLOSED
-					await _hubContext.Clients.Users(notifyIds).SendAsync(SignalREvents.MAINTENANCE_TASKCLOSED, payload);
+					// Ép cứng chuỗi "TaskClosed" để khớp tuyệt đối với useEffect của React
+					await _hubContext.Clients.Users(notifyIds).SendAsync("TaskClosed", payload);
 				}
 
 				await transaction.CommitAsync();
@@ -622,44 +661,45 @@ namespace Sentana.API.Services.SMaintenance
 
 		public async Task<(bool IsSuccess, string Message)> ResidentRejectTaskAsync(int requestId, string reason, int residentId)
 		{
+			// FIX LỖI 1: Bổ sung ThenInclude
 			var task = await _context.MaintenanceRequests
 				.Include(m => m.Apartment)
+					.ThenInclude(a => a.Building) // <-- QUAN TRỌNG
 				.FirstOrDefaultAsync(m => m.RequestId == requestId && m.AccountId == residentId);
 
 			if (task == null) return (false, "Không tìm thấy công việc hoặc bạn không có quyền.");
 			if (task.Status != MaintenanceRequestStatus.Fixed)
-				return (false, "Chỉ có thể từ chối nghiệm thu khi thợ đã báo cáo hoàn tất (Fixed).");
+				return (false, "Chỉ có thể từ chức nghiệm thu khi thợ đã báo cáo hoàn tất.");
 
-			// 1. Đẩy lùi trạng thái về Đang xử lý
 			task.Status = MaintenanceRequestStatus.Processing;
 			task.UpdatedAt = DateTime.Now;
 			task.UpdatedBy = residentId;
-
-			// 2. Ghi chú lý do từ chối
 			task.ResolutionNote = $"[CƯ DÂN YÊU CẦU LÀM LẠI: {reason}]\n--- Báo cáo cũ: {task.ResolutionNote}";
 
 			await _context.SaveChangesAsync();
 
-			// 3. Queue Notification cho Thợ (RabbitMQ → bulk insert + SignalR)
-			if (task.AssignedTo.HasValue)
-			{
-				await _notificationPublisher.QueueNotificationAsync(
-					task.AssignedTo.Value,
-					"Cư dân yêu cầu làm lại",
-					$"Sự cố '{task.Title}' chưa đạt yêu cầu. Lời nhắn: {reason}");
-			}
-
-			// 4. Bắn SignalR cho Quản lý và Thợ
 			var payload = await GetSingleRequestPayloadAsync(task.RequestId);
 			var notifyIds = new List<string>();
 			var managerId = task.Apartment?.Building?.ManagerId;
 
-			if (managerId.HasValue) notifyIds.Add(managerId.Value.ToString());
-			if (task.AssignedTo.HasValue) notifyIds.Add(task.AssignedTo.Value.ToString());
+			// FIX LỖI 2: LƯU DATABASE CHO QUẢN LÝ
+			if (managerId.HasValue)
+			{
+				notifyIds.Add(managerId.Value.ToString());
+				await _notificationPublisher.QueueNotificationAsync(managerId.Value, "Yêu cầu làm lại", $"Cư dân P.{payload?.ApartmentName} từ chối nghiệm thu sự cố '{task.Title}'.");
+			}
+
+			// FIX LỖI 2: LƯU DATABASE CHO KỸ THUẬT VIÊN
+			if (task.AssignedTo.HasValue)
+			{
+				notifyIds.Add(task.AssignedTo.Value.ToString());
+				await _notificationPublisher.QueueNotificationAsync(task.AssignedTo.Value, "Cư dân yêu cầu làm lại", $"Sự cố '{task.Title}' chưa đạt. Lời nhắn: {reason}");
+			}
 
 			if (notifyIds.Any())
 			{
-				await _hubContext.Clients.Users(notifyIds).SendAsync(SignalREvents.MAINTENANCE_TASKREJECTED, payload);
+				// Ép cứng chuỗi "TaskRejectedByManager" để khớp với useEffect của màn Thợ
+				await _hubContext.Clients.Users(notifyIds).SendAsync("TaskRejectedByManager", payload);
 			}
 
 			return (true, "Đã gửi yêu cầu xử lý lại cho Kỹ thuật viên.");
