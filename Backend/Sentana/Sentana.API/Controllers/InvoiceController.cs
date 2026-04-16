@@ -32,17 +32,28 @@ namespace Sentana.API.Controllers
         {
             try
             {
+                // Kiểm tra token và role
+                var accountIdClaim = User.FindFirst("AccountId")?.Value;
+                if (string.IsNullOrEmpty(accountIdClaim))
+                {
+                    return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ. Vui lòng đăng nhập lại."));
+                }
+
                 // Truyền null cho cả apartmentId và accountId. Service sẽ tự bóc Token lấy tài khoản.
                 var dtos = await _invoiceService.GetCurrentInvoicesAsync(User, month, year, null, null);
 
                 if (dtos == null || !dtos.Any())
-                    return NotFound(ApiResponse<string>.Fail(404, "Bạn không có hóa đơn nào trong khoảng thời gian này."));
+                    return Ok(ApiResponse<List<InvoiceResponseDto>>.Success(new List<InvoiceResponseDto>(), "Bạn không có hóa đơn nào trong khoảng thời gian này."));
 
                 return Ok(ApiResponse<List<InvoiceResponseDto>>.Success(dtos, "Lấy hóa đơn thành công."));
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ApiResponse<string>.Fail(401, ex.Message));
+            }
             catch (Exception ex)
             {
-                return BadRequest(ApiResponse<string>.Fail(400, ex.Message));
+                return BadRequest(ApiResponse<string>.Fail(400, $"Lỗi khi tải hóa đơn: {ex.Message}"));
             }
         }
 

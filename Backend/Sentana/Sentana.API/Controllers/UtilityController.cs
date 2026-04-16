@@ -57,10 +57,33 @@ namespace Sentana.API.Controllers
         [Authorize(Roles = "Resident")]
         public async Task<IActionResult> GetMyUtilityHistory([FromQuery] int? month, [FromQuery] int? year)
         {
-            var result = await _utilityService.GetUtilityHistoryAsync(User, null, month, year);
-            if (!result.IsSuccess) return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+            try
+            {
+                // Kiểm tra token
+                var accountIdClaim = User.FindFirst("AccountId")?.Value;
+                if (string.IsNullOrEmpty(accountIdClaim))
+                {
+                    return Unauthorized(ApiResponse<string>.Fail(401, "Token không hợp lệ. Vui lòng đăng nhập lại."));
+                }
 
-            return Ok(ApiResponse<List<UtilityHistoryDto>>.Success(result.Data, "Lấy lịch sử thành công."));
+                var result = await _utilityService.GetUtilityHistoryAsync(User, null, month, year);
+                
+                if (!result.IsSuccess) 
+                {
+                    // Trả về empty list thay vì BadRequest nếu không có dữ liệu
+                    if (result.Message.Contains("không tìm thấy hợp đồng") || result.Message.Contains("không có dữ liệu"))
+                    {
+                        return Ok(ApiResponse<List<UtilityHistoryDto>>.Success(new List<UtilityHistoryDto>(), "Chưa có dữ liệu điện nước."));
+                    }
+                    return BadRequest(ApiResponse<string>.Fail(400, result.Message));
+                }
+
+                return Ok(ApiResponse<List<UtilityHistoryDto>>.Success(result.Data ?? new List<UtilityHistoryDto>(), "Lấy lịch sử thành công."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<string>.Fail(400, $"Lỗi khi tải điện nước: {ex.Message}"));
+            }
         }
 
         // Dành cho Quản lý (Bắt buộc truyền ID phòng)

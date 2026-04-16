@@ -31,5 +31,10 @@
         public string? BillingPeriod { get; set; }
 
         public string? QrCodeUrl { get; set; }
+        
+        // Thêm các trường cần thiết
+        public int? Category { get; set; }
+        public string? CreatedAt { get; set; }
+        public string? Note { get; set; }
     }
 }
