@@ -245,7 +245,7 @@ namespace Sentana.API.Services
                 }
 
                 // 2. Xử lý Cư dân phụ (AdditionalResidents)
-                if (contract.ApartmentId.HasValue && request.AdditionalResidents != null)
+                if (contract.ApartmentId.HasValue)
                 {
                     int aptId = contract.ApartmentId.Value;
 
@@ -253,30 +253,46 @@ namespace Sentana.API.Services
                         .Where(r => r.ApartmentId == aptId && r.AccountId != contract.AccountId)
                         .ToListAsync();
 
+                    // Lấy danh sách AccountId từ request (nếu null thì coi như mảng rỗng)
+                    var requestedAccountIds = request.AdditionalResidents?.Select(r => r.AccountId).ToList() ?? new List<int>();
+
                     foreach (var r in existingResidents)
                     {
-                        r.IsDeleted = true; // Xóa mềm toàn bộ trước
+                        // Nếu AccountId không có trong request → Người này bị gỡ ra
+                        if (r.AccountId.HasValue && !requestedAccountIds.Contains(r.AccountId.Value))
+                        {
+                            r.IsDeleted = true; // Xóa mềm
+                            r.Status = GeneralStatus.Inactive;
+                            
+                            // Log để debug
+                            Console.WriteLine($"[INFO] Removed resident AccountId={r.AccountId} from ApartmentId={aptId}");
+                        }
                     }
 
-                    foreach (var newRes in request.AdditionalResidents)
+                    // Chỉ xử lý thêm/cập nhật nếu có AdditionalResidents
+                    if (request.AdditionalResidents != null && request.AdditionalResidents.Any())
                     {
-                        var exist = existingResidents.FirstOrDefault(x => x.AccountId == newRes.AccountId);
-                        if (exist != null)
+                        foreach (var newRes in request.AdditionalResidents)
                         {
-                            exist.IsDeleted = false; // Mở lại nếu có gửi lên
-                            exist.RelationshipId = newRes.RelationshipId;
-                        }
-                        else
-                        {
-                            await _context.ApartmentResidents.AddAsync(new ApartmentResident
+                            var exist = existingResidents.FirstOrDefault(x => x.AccountId == newRes.AccountId);
+                            if (exist != null)
                             {
-                                ApartmentId = aptId,
-                                AccountId = newRes.AccountId,
-                                RelationshipId = newRes.RelationshipId,
-                                Status = GeneralStatus.Active,
-                                CreatedAt = DateTime.Now,
-                                IsDeleted = false
-                            });
+                                exist.IsDeleted = false; // Mở lại nếu có gửi lên
+                                exist.Status = GeneralStatus.Active;
+                                exist.RelationshipId = newRes.RelationshipId;
+                            }
+                            else
+                            {
+                                await _context.ApartmentResidents.AddAsync(new ApartmentResident
+                                {
+                                    ApartmentId = aptId,
+                                    AccountId = newRes.AccountId,
+                                    RelationshipId = newRes.RelationshipId,
+                                    Status = GeneralStatus.Active,
+                                    CreatedAt = DateTime.Now,
+                                    IsDeleted = false
+                                });
+                            }
                         }
                     }
                 }
