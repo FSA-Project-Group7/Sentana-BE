@@ -129,10 +129,29 @@ namespace Sentana.API.Services.SInvoice
             foreach (var invoice in invoicesToProcess)
             {
                 int gap = 1;
-                string billingPeriodStr = $"Tháng {invoice.BillingMonth}/{invoice.BillingYear}";
+                string billingPeriodStr;
 
-                // Thuật toán truy hồi xác định hệ số gộp kỳ
-                if (invoice.Contract != null && invoice.Contract.StartDay.HasValue)
+                // Xử lý hóa đơn thanh lý (category = 1 - AdditionalPayment) - không có billingMonth/billingYear
+                if (invoice.Category == InvoiceCategory.AdditionalPayment)
+                {
+                    // Lấy tháng/năm từ CreatedAt
+                    if (invoice.CreatedAt.HasValue)
+                    {
+                        billingPeriodStr = $"Thanh lý {invoice.CreatedAt.Value.Month:D2}/{invoice.CreatedAt.Value.Year}";
+                    }
+                    else
+                    {
+                        billingPeriodStr = "Thanh lý hợp đồng";
+                    }
+                }
+                else
+                {
+                    // Hóa đơn thường (category = 2 - MonthlyPayment)
+                    billingPeriodStr = $"Tháng {invoice.BillingMonth}/{invoice.BillingYear}";
+                }
+
+                // Thuật toán truy hồi xác định hệ số gộp kỳ (chỉ áp dụng cho hóa đơn thường)
+                if (invoice.Category != InvoiceCategory.AdditionalPayment && invoice.Contract != null && invoice.Contract.StartDay.HasValue)
                 {
                     DateTime contractStartDate = invoice.Contract.StartDay.Value.ToDateTime(TimeOnly.MinValue);
                     int currentMonthId = (invoice.BillingYear ?? 0) * 12 + (invoice.BillingMonth ?? 0);
@@ -182,7 +201,11 @@ namespace Sentana.API.Services.SInvoice
                     StatusName = invoice.Status?.ToString() ?? string.Empty,
                     QrCodeUrl = invoice.Apartment?.Building?.Manager?.Info?.QrCodeUrl,
                     Payments = invoice.Payments,
-                    Details = new List<InvoiceDetailItemDto>()
+                    Details = new List<InvoiceDetailItemDto>(),
+                    // Thêm các trường mới - cast enum to int
+                    Category = (int?)invoice.Category,
+                    CreatedAt = invoice.CreatedAt?.ToString("dd/MM/yyyy HH:mm"),
+                    Note = invoice.Note
                 };
 
                 decimal calculatedBaseTotal = 0m;
