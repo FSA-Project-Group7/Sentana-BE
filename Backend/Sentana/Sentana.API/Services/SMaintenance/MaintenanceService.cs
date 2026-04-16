@@ -246,53 +246,78 @@ namespace Sentana.API.Services.SMaintenance
 			return (true, "Đã bắt đầu xử lý.");
 		}
 
-        // FIX BUG 57
-        public async Task<(bool IsSuccess, string Message)> FixTaskAsync(int requestId, FixTaskRequestDto request, int currentTechId)
-        {
-            var task = await _context.MaintenanceRequests
-                .Include(m => m.Apartment)
-                .ThenInclude(a => a.Building)
-                .FirstOrDefaultAsync(m => m.RequestId == requestId);
+		// FIX BUG 57
+		public async Task<(bool IsSuccess, string Message)> FixTaskAsync(int requestId, FixTaskRequestDto request, int currentTechId)
+		{
+			var task = await _context.MaintenanceRequests
+				.Include(m => m.Apartment)
+				.ThenInclude(a => a.Building)
+				.FirstOrDefaultAsync(m => m.RequestId == requestId);
 
-            if (task == null) return (false, "Không tìm thấy công việc.");
+			if (task == null) return (false, "Không tìm thấy công việc.");
+			if (task.AssignedTo != currentTechId) return (false, "Lỗi phân quyền: Bạn không thể thao tác trên công việc của người khác.");
 
-            if (task.AssignedTo != currentTechId) return (false, "Lỗi phân quyền: Bạn không thể thao tác trên công việc của người khác.");
-            if (task.Status != MaintenanceRequestStatus.Processing) return (false, "Trạng thái không hợp lệ. Chỉ có thể báo cáo hoàn tất khi đang Đang xử lý.");
+			// 1. CẬP NHẬT CHỐT CHẶN: Cho phép thợ submit khi đang xử lý (Processing) HOẶC bị bắt làm lại (Reopened)
+			if (task.Status != MaintenanceRequestStatus.Processing && task.Status != MaintenanceRequestStatus.Reopened)
+				return (false, "Trạng thái không hợp lệ. Chỉ có thể báo cáo hoàn tất khi Đang xử lý hoặc Yêu cầu làm lại.");
 
-            string? uploadedImageUrl = null;
-            if (request.Photo != null && request.Photo.Length > 0)
-            {
-                uploadedImageUrl = await _minioService.UploadImageAsync(request.Photo, "maintenance-fixed-images");
-            }
-            task.Status = MaintenanceRequestStatus.Fixed;
-            task.ResolutionNote = request.ResolutionNote;
-            task.FixDay = DateTime.Now;
-            if (uploadedImageUrl != null)
-            {
-                task.FixedImageUrl = uploadedImageUrl;
-            }
+			string? uploadedImageUrl = null;
+			if (request.Photo != null && request.Photo.Length > 0)
+			{
+				uploadedImageUrl = await _minioService.UploadImageAsync(request.Photo, "maintenance-fixed-images");
+			}
 
-            await _context.SaveChangesAsync();
+			// Kiểm tra xem đây là làm lần đầu hay khắc phục lại
+			bool isReDo = task.Status == MaintenanceRequestStatus.Reopened;
 
-            if (task.AccountId.HasValue && task.AccountId.Value > 0)
-            {
-                await _notificationPublisher.QueueNotificationAsync(
-                    task.AccountId.Value,
-                    "Bảo trì hoàn tất",
-                    $"Sự cố '{task.Title}' đã được kỹ thuật viên xử lý xong.");
-            }
+			// Chuyển trạng thái sang Chờ nghiệm thu
+			task.Status = MaintenanceRequestStatus.Fixed;
+			task.FixDay = DateTime.Now;
 
-            var payload = await GetSingleRequestPayloadAsync(task.RequestId);
-            var managerId = task.Apartment?.Building?.ManagerId;
-            var notifyIds = new List<string> { task.AccountId.ToString()! };
-            if (managerId.HasValue) notifyIds.Add(managerId.Value.ToString());
+			// 2. GIỮ LẠI LỊCH SỬ: Nếu là báo cáo lại, nối thêm vào log cũ thay vì ghi đè
+			if (isReDo)
+			{
+				task.ResolutionNote = $"[THỢ KHẮC PHỤC LẠI]: {request.ResolutionNote}\n{task.ResolutionNote}";
+			}
+			else
+			{
+				task.ResolutionNote = request.ResolutionNote;
+			}
 
-            await _hubContext.Clients.Users(notifyIds).SendAsync(SignalREvents.MAINTENANCE_TASKFIXED, payload);
+			if (uploadedImageUrl != null) task.FixedImageUrl = uploadedImageUrl;
 
-            return (true, "Đã cập nhật hoàn tất công việc.");
-        }
+			await _context.SaveChangesAsync();
 
-        public async Task<PagedResult<MaintenanceResponseDto>> GetRequestsForManagerAsync(int managerId, int pageIndex = 1, int pageSize = 10)
+			var payload = await GetSingleRequestPayloadAsync(task.RequestId);
+			var managerId = task.Apartment?.Building?.ManagerId;
+			var notifyIds = new List<string>();
+
+			if (task.AccountId.HasValue && task.AccountId.Value > 0)
+			{
+				notifyIds.Add(task.AccountId.Value.ToString());
+				string title = isReDo ? "Đã khắc phục lại sự cố" : "Bảo trì hoàn tất";
+				string msg = isReDo ? $"Kỹ thuật viên đã xử lý lại sự cố '{task.Title}'. Vui lòng kiểm tra."
+									: $"Sự cố '{task.Title}' đã được kỹ thuật viên xử lý xong.";
+				await _notificationPublisher.QueueNotificationAsync(task.AccountId.Value, title, msg);
+			}
+
+			if (managerId.HasValue)
+			{
+				notifyIds.Add(managerId.Value.ToString());
+				string titleAdmin = isReDo ? "Thợ đã khắc phục lại" : "Chờ nghiệm thu";
+				string msgAdmin = $"Thợ vừa báo cáo hoàn tất sự cố '{task.Title}' tại P.{payload?.ApartmentName}.";
+				await _notificationPublisher.QueueNotificationAsync(managerId.Value, titleAdmin, msgAdmin);
+			}
+
+			if (notifyIds.Any())
+			{
+				await _hubContext.Clients.Users(notifyIds).SendAsync("ReceiveFixedTask", payload);
+			}
+
+			return (true, "Đã gửi báo cáo hoàn tất công việc.");
+		}
+
+		public async Task<PagedResult<MaintenanceResponseDto>> GetRequestsForManagerAsync(int managerId, int pageIndex = 1, int pageSize = 10)
         {
             var query = _context.MaintenanceRequests
                 .Include(m => m.Apartment)
@@ -577,7 +602,7 @@ namespace Sentana.API.Services.SMaintenance
             if (task == null) return (false, "Không tìm thấy công việc.");
             if (task.Status != MaintenanceRequestStatus.Fixed)
                 return (false, "Chỉ có thể từ chối nghiệm thu khi thợ đã báo cáo hoàn tất (Fixed).");
-            task.Status = MaintenanceRequestStatus.Processing;
+            task.Status = MaintenanceRequestStatus.Reopened;
             task.UpdatedAt = DateTime.Now;
             task.UpdatedBy = managerId;
             task.ResolutionNote = $"[TỪ CHỐI NGHIỆM THU: {request.RejectReason}]\n--- Ghi chú cũ: {task.ResolutionNote}";
@@ -671,7 +696,7 @@ namespace Sentana.API.Services.SMaintenance
 			if (task.Status != MaintenanceRequestStatus.Fixed)
 				return (false, "Chỉ có thể từ chức nghiệm thu khi thợ đã báo cáo hoàn tất.");
 
-			task.Status = MaintenanceRequestStatus.Processing;
+			task.Status = MaintenanceRequestStatus.Reopened;
 			task.UpdatedAt = DateTime.Now;
 			task.UpdatedBy = residentId;
 			task.ResolutionNote = $"[CƯ DÂN YÊU CẦU LÀM LẠI: {reason}]\n--- Báo cáo cũ: {task.ResolutionNote}";

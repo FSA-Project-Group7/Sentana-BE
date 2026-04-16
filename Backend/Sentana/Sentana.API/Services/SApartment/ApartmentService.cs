@@ -336,5 +336,17 @@ namespace Sentana.API.Services.SApartment
 			await _context.SaveChangesAsync();
 			return true;
 		}
+
+		public async Task<bool> UpdateAreaAsync(int id, double area)
+		{
+			var apartment = await _context.Apartments.FindAsync(id);
+			if (apartment == null) return false;
+
+			apartment.Area = area;
+			apartment.UpdatedAt = DateTime.Now;
+
+			await _context.SaveChangesAsync();
+			return true;
+		}
 	}
 }
